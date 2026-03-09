@@ -1,0 +1,33 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Env
+.env
+.env.local
+
+# Data
+backend/data/papers/
+backend/data/summaries/
+backend/data/notes/
+backend/data/repos/
+backend/data/logs/
+backend/data/memory/
+backend/data/vectors/
+backend/data/cache/
+backend/data/research_copilot.db
+
+# IDE
+.vscode/
+.idea/

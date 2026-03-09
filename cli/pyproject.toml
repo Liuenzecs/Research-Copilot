@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-cli"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "typer==0.16.1",
+  "httpx==0.28.1",
+  "rich==14.1.0"
+]
+
+[project.scripts]
+research-cli = "research_cli.main:app"
