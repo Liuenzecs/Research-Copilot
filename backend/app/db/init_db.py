@@ -14,6 +14,7 @@ from app.models.db import summary_record  # noqa: F401
 from app.models.db import task_artifact_record  # noqa: F401
 from app.models.db import task_record  # noqa: F401
 from app.models.db import translation_record  # noqa: F401
+from app.models.db import weekly_report_record  # noqa: F401
 
 
 def initialize_database() -> None:

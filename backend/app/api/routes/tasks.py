@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -69,15 +70,34 @@ def list_tasks(
     include_archived: bool = Query(default=False),
     status: str | None = None,
     task_type: str | None = None,
+    artifact_ref_type: str | None = None,
+    artifact_ref_id: int | None = None,
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
-    stmt = select(TaskRecord)
+    stmt = select(TaskRecord).distinct()
+
+    if artifact_ref_type or artifact_ref_id is not None:
+        stmt = stmt.join(TaskArtifactRecord, TaskArtifactRecord.task_id == TaskRecord.id)
+        if artifact_ref_type:
+            stmt = stmt.where(TaskArtifactRecord.artifact_ref_type == artifact_ref_type)
+        if artifact_ref_id is not None:
+            stmt = stmt.where(TaskArtifactRecord.artifact_ref_id == artifact_ref_id)
+
     if not include_archived:
         stmt = stmt.where(TaskRecord.archived_at.is_(None))
     if status:
         stmt = stmt.where(TaskRecord.status == status)
     if task_type:
         stmt = stmt.where(TaskRecord.task_type == task_type)
+    if date_from:
+        start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        stmt = stmt.where(TaskRecord.created_at >= start)
+    if date_to:
+        end = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+        stmt = stmt.where(TaskRecord.created_at <= end)
+
     stmt = stmt.order_by(TaskRecord.created_at.desc())
     rows = db.execute(stmt).scalars().all()
     return [_task_out(r) for r in rows]

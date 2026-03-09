@@ -10,5 +10,6 @@ def build_paper_index_item(paper, state=None) -> dict:
         'pdf_local_path': paper.pdf_local_path,
         'reading_status': getattr(state, 'reading_status', 'unread') if state else 'unread',
         'interest_level': getattr(state, 'interest_level', None) if state else None,
+        'repro_interest': getattr(state, 'repro_interest', 'none') if state else 'none',
         'is_core_paper': getattr(state, 'is_core_paper', False) if state else False,
     }

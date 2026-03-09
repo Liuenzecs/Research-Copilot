@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.db.base import Base, TimestampMixin
@@ -13,6 +15,8 @@ class ReproductionRecord(TimestampMixin, Base):
     paper_id: Mapped[int | None] = mapped_column(ForeignKey('papers.id'), nullable=True, index=True)
     repo_id: Mapped[int | None] = mapped_column(ForeignKey('repos.id'), nullable=True, index=True)
     plan_markdown: Mapped[str] = mapped_column(Text)
+    progress_summary: Mapped[str] = mapped_column(Text, default='')
+    progress_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default='planned', index=True)
 
     paper = relationship('PaperRecord', back_populates='reproductions')
@@ -31,6 +35,11 @@ class ReproductionStepRecord(TimestampMixin, Base):
     command: Mapped[str] = mapped_column(Text)
     purpose: Mapped[str] = mapped_column(Text, default='')
     risk_level: Mapped[str] = mapped_column(String(20), default='medium')
+    step_status: Mapped[str] = mapped_column(String(20), default='pending', index=True)
+    progress_note: Mapped[str] = mapped_column(Text, default='')
+    blocker_reason: Mapped[str] = mapped_column(Text, default='')
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     requires_manual_confirm: Mapped[bool] = mapped_column(Boolean, default=True)
     expected_output: Mapped[str] = mapped_column(Text, default='')
 

@@ -8,6 +8,7 @@ from app.api.routes import (
     memory,
     papers,
     reflections,
+    reports,
     reproduction,
     repos,
     settings,
@@ -42,3 +43,4 @@ app.include_router(library.router)
 app.include_router(settings.router)
 app.include_router(reflections.router)
 app.include_router(tasks.router)
+app.include_router(reports.router)

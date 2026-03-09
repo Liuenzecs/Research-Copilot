@@ -65,6 +65,17 @@ export default function ReflectionTemplateForm({ onSubmit }: { onSubmit: (payloa
     });
   }
 
+  function refineReportSummary() {
+    const structured =
+      fields.one_sentence_report_summary ||
+      fields.what_i_learned ||
+      fields.current_result ||
+      fields.paper_in_my_words ||
+      markdown;
+    if (!structured) return;
+    setReportSummary(structured.replace(/\s+/g, ' ').trim().slice(0, 120));
+  }
+
   return (
     <form className="card" onSubmit={submit}>
       <h3 className="title" style={{ fontSize: 16 }}>结构化研究心得模板</h3>
@@ -105,12 +116,15 @@ export default function ReflectionTemplateForm({ onSubmit }: { onSubmit: (payloa
         <label className="subtle">
           <input type="checkbox" checked={reportWorthy} onChange={(e) => setReportWorthy(e.target.checked)} /> 是否值得向导师汇报
         </label>
-        <input
-          className="input"
-          placeholder="一句话汇报摘要"
-          value={reportSummary}
-          onChange={(e) => setReportSummary(e.target.value)}
-        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="input"
+            placeholder="一句话汇报摘要"
+            value={reportSummary}
+            onChange={(e) => setReportSummary(e.target.value)}
+          />
+          <Button type="button" className="secondary" onClick={refineReportSummary}>一键提炼</Button>
+        </div>
       </div>
       <div style={{ marginTop: 10 }}>
         <Button type="submit">保存研究心得</Button>

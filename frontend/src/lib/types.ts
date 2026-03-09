@@ -9,6 +9,8 @@
   venue?: string;
   pdf_url?: string;
   pdf_local_path?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type Summary = {
@@ -16,11 +18,23 @@ export type Summary = {
   paper_id: number;
   summary_type: string;
   content_en: string;
+  problem_en?: string;
+  method_en?: string;
+  contributions_en?: string;
+  limitations_en?: string;
+  future_work_en?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type Reflection = {
   id: number;
   reflection_type: string;
+  related_paper_id?: number | null;
+  related_summary_id?: number | null;
+  related_repo_id?: number | null;
+  related_reproduction_id?: number | null;
+  related_task_id?: number | null;
   template_type: string;
   stage: string;
   lifecycle_status: 'draft' | 'finalized' | 'archived';
@@ -29,11 +43,115 @@ export type Reflection = {
   is_report_worthy: boolean;
   report_summary: string;
   event_date: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type Task = {
   id: number;
   task_type: string;
   status: string;
+  trigger_source?: string;
   created_at: string;
+  updated_at?: string;
+  input_json?: Record<string, unknown>;
+  output_json?: Record<string, unknown>;
+};
+
+export type PaperWorkspace = {
+  paper: Paper;
+  research_state: {
+    reading_status: string;
+    interest_level: number;
+    repro_interest: string;
+    user_rating?: number | null;
+    last_opened_at?: string | null;
+    topic_cluster?: string;
+    is_core_paper: boolean;
+    updated_at?: string;
+  };
+  summaries: Summary[];
+  reflections: Reflection[];
+  recent_tasks: Task[];
+};
+
+export type LibraryItem = {
+  id: number;
+  title_en: string;
+  source: string;
+  year?: number;
+  pdf_local_path?: string;
+  reading_status: string;
+  interest_level?: number;
+  repro_interest?: string;
+  is_core_paper: boolean;
+  summary_count: number;
+  reflection_count?: number;
+};
+
+export type ReproductionStep = {
+  id: number;
+  step_no: number;
+  command: string;
+  purpose: string;
+  risk_level: string;
+  step_status: 'pending' | 'in_progress' | 'done' | 'blocked' | 'skipped';
+  progress_note: string;
+  blocker_reason: string;
+  blocked_at?: string | null;
+  resolved_at?: string | null;
+  requires_manual_confirm: boolean;
+  expected_output: string;
+  safe: boolean;
+  safety_reason: string;
+};
+
+export type ReproductionDetail = {
+  reproduction_id: number;
+  paper_id?: number | null;
+  repo_id?: number | null;
+  status: string;
+  plan_markdown: string;
+  progress_summary: string;
+  progress_percent?: number | null;
+  steps: ReproductionStep[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type WeeklyReportContext = {
+  week_start: string;
+  week_end: string;
+  report_worthy_reflections: Array<Record<string, unknown>>;
+  recent_papers: Array<Record<string, unknown>>;
+  reproduction_progress: Array<Record<string, unknown>>;
+  blockers: Array<Record<string, unknown>>;
+  next_actions: string[];
+};
+
+export type WeeklyReportDraft = {
+  id: number;
+  week_start: string;
+  week_end: string;
+  title: string;
+  draft_markdown: string;
+  status: 'draft' | 'finalized' | 'archived';
+  source_snapshot_json: Record<string, unknown>;
+  generated_task_id?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MemoryItem = {
+  id: number;
+  memory_type: string;
+  layer: string;
+  text_content: string;
+  importance: number;
+  pinned: boolean;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  ref_table?: string;
+  ref_id?: number | null;
 };

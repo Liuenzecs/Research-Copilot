@@ -1,25 +1,35 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.db.paper_record import PaperRecord, PaperResearchStateRecord
+from app.models.db.reflection_record import ReflectionRecord
+from app.models.db.summary_record import SummaryRecord
+from app.models.db.task_artifact_record import TaskArtifactRecord
+from app.models.db.task_record import TaskRecord
 from app.models.schemas.paper import (
+    PaperContextReflectionCreateRequest,
     PaperDownloadRequest,
     PaperDownloadResponse,
     PaperOut,
+    PaperResearchStateUpdate,
     PaperSearchRequest,
     PaperSearchResponse,
+    PaperWorkspaceResponse,
 )
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.normalizer import dedupe_and_rank
 from app.services.paper_search.openalex import OpenAlexSearchService
 from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
+from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
+from app.services.reflection.service import reflection_service
 from app.services.workflow.service import workflow_service
 
 router = APIRouter(prefix='/papers', tags=['papers'])
@@ -46,12 +56,54 @@ def to_paper_out(p: PaperRecord) -> PaperOut:
     )
 
 
-def ensure_research_state(db: Session, paper_id: int) -> None:
+def summary_to_dict(item: SummaryRecord) -> dict:
+    return {
+        'id': item.id,
+        'paper_id': item.paper_id,
+        'summary_type': item.summary_type,
+        'content_en': item.content_en,
+        'problem_en': item.problem_en,
+        'method_en': item.method_en,
+        'contributions_en': item.contributions_en,
+        'limitations_en': item.limitations_en,
+        'future_work_en': item.future_work_en,
+        'provider': item.provider,
+        'model': item.model,
+        'created_at': item.created_at,
+        'updated_at': item.updated_at,
+    }
+
+
+def reflection_to_dict(item: ReflectionRecord) -> dict:
+    return {
+        'id': item.id,
+        'reflection_type': item.reflection_type,
+        'related_paper_id': item.related_paper_id,
+        'related_summary_id': item.related_summary_id,
+        'related_repo_id': item.related_repo_id,
+        'related_reproduction_id': item.related_reproduction_id,
+        'related_task_id': item.related_task_id,
+        'template_type': item.template_type,
+        'stage': item.stage,
+        'lifecycle_status': item.lifecycle_status,
+        'content_structured_json': json.loads(item.content_structured_json or '{}'),
+        'content_markdown': item.content_markdown,
+        'is_report_worthy': item.is_report_worthy,
+        'report_summary': item.report_summary,
+        'event_date': item.event_date,
+        'created_at': item.created_at,
+        'updated_at': item.updated_at,
+    }
+
+
+def ensure_research_state(db: Session, paper_id: int) -> PaperResearchStateRecord:
     state = db.execute(select(PaperResearchStateRecord).where(PaperResearchStateRecord.paper_id == paper_id)).scalar_one_or_none()
     if state is None:
         state = PaperResearchStateRecord(paper_id=paper_id)
         db.add(state)
         db.commit()
+        db.refresh(state)
+    return state
 
 
 def upsert_paper(db: Session, paper) -> PaperRecord:
@@ -87,6 +139,19 @@ def upsert_paper(db: Session, paper) -> PaperRecord:
         db.refresh(row)
     ensure_research_state(db, row.id)
     return row
+
+
+def derive_related_task_id(db: Session, paper_id: int, summary_id: int | None) -> int | None:
+    conditions = [and_(TaskArtifactRecord.artifact_ref_type == 'papers', TaskArtifactRecord.artifact_ref_id == paper_id)]
+    if summary_id is not None:
+        conditions.append(and_(TaskArtifactRecord.artifact_ref_type == 'summaries', TaskArtifactRecord.artifact_ref_id == summary_id))
+
+    artifact = (
+        db.execute(select(TaskArtifactRecord).where(or_(*conditions)).order_by(TaskArtifactRecord.created_at.desc()))
+        .scalars()
+        .first()
+    )
+    return artifact.task_id if artifact else None
 
 
 @router.post('/search', response_model=PaperSearchResponse)
@@ -195,6 +260,225 @@ async def download_paper(payload: PaperDownloadRequest, db: Session = Depends(ge
         raise
 
     return PaperDownloadResponse(paper_id=paper.id, pdf_local_path=paper.pdf_local_path, downloaded=True)
+
+
+@router.get('/{paper_id}/workspace', response_model=PaperWorkspaceResponse)
+def get_paper_workspace(paper_id: int, db: Session = Depends(get_db)) -> PaperWorkspaceResponse:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    state = ensure_research_state(db, paper.id)
+    summaries = (
+        db.execute(select(SummaryRecord).where(SummaryRecord.paper_id == paper.id).order_by(SummaryRecord.created_at.desc()))
+        .scalars()
+        .all()
+    )
+    summary_ids = [x.id for x in summaries]
+
+    if summary_ids:
+        reflection_filter = or_(
+            ReflectionRecord.related_paper_id == paper.id,
+            ReflectionRecord.related_summary_id.in_(summary_ids),
+        )
+    else:
+        reflection_filter = ReflectionRecord.related_paper_id == paper.id
+
+    reflections = (
+        db.execute(
+            select(ReflectionRecord)
+            .where(reflection_filter)
+            .order_by(ReflectionRecord.event_date.desc(), ReflectionRecord.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    reflection_ids = [x.id for x in reflections]
+    artifact_conditions = [and_(TaskArtifactRecord.artifact_ref_type == 'papers', TaskArtifactRecord.artifact_ref_id == paper.id)]
+    if summary_ids:
+        artifact_conditions.append(and_(TaskArtifactRecord.artifact_ref_type == 'summaries', TaskArtifactRecord.artifact_ref_id.in_(summary_ids)))
+    if reflection_ids:
+        artifact_conditions.append(and_(TaskArtifactRecord.artifact_ref_type == 'reflections', TaskArtifactRecord.artifact_ref_id.in_(reflection_ids)))
+
+    tasks = (
+        db.execute(
+            select(TaskRecord)
+            .join(TaskArtifactRecord, TaskArtifactRecord.task_id == TaskRecord.id)
+            .where(or_(*artifact_conditions))
+            .order_by(TaskRecord.created_at.desc())
+            .distinct()
+            .limit(20)
+        )
+        .scalars()
+        .all()
+    )
+
+    task_rows = [
+        {
+            'id': t.id,
+            'task_type': t.task_type,
+            'status': t.status,
+            'created_at': t.created_at,
+            'updated_at': t.updated_at,
+        }
+        for t in tasks
+    ]
+
+    research_state = {
+        'reading_status': state.reading_status,
+        'interest_level': state.interest_level,
+        'repro_interest': state.repro_interest,
+        'user_rating': state.user_rating,
+        'last_opened_at': state.last_opened_at,
+        'topic_cluster': state.topic_cluster,
+        'is_core_paper': state.is_core_paper,
+        'updated_at': state.updated_at,
+    }
+
+    return PaperWorkspaceResponse(
+        paper=to_paper_out(paper),
+        research_state=research_state,
+        summaries=[summary_to_dict(item) for item in summaries],
+        reflections=[reflection_to_dict(item) for item in reflections],
+        recent_tasks=task_rows,
+    )
+
+
+@router.patch('/{paper_id}/research-state')
+def update_paper_research_state(
+    paper_id: int,
+    payload: PaperResearchStateUpdate,
+    db: Session = Depends(get_db),
+) -> dict:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    state = ensure_research_state(db, paper_id)
+    changes = payload.model_dump(exclude_none=True)
+    for key, value in changes.items():
+        setattr(state, key, value)
+    state.last_opened_at = datetime.now(timezone.utc)
+
+    db.add(state)
+    db.commit()
+    db.refresh(state)
+
+    workflow_task = workflow_service.create_task(
+        db,
+        task_type='paper_research_state_update',
+        input_json={'paper_id': paper_id, 'changes': changes},
+        status='completed',
+    )
+    workflow_service.add_artifact(
+        db,
+        workflow_task.id,
+        artifact_type='paper_state',
+        artifact_ref_type='papers',
+        artifact_ref_id=paper_id,
+        snapshot_json=changes,
+    )
+
+    return {
+        'paper_id': paper_id,
+        'reading_status': state.reading_status,
+        'interest_level': state.interest_level,
+        'repro_interest': state.repro_interest,
+        'user_rating': state.user_rating,
+        'topic_cluster': state.topic_cluster,
+        'is_core_paper': state.is_core_paper,
+        'last_opened_at': state.last_opened_at,
+    }
+
+
+@router.post('/{paper_id}/reflections')
+def create_paper_context_reflection(
+    paper_id: int,
+    payload: PaperContextReflectionCreateRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    summary_id = payload.summary_id
+    if summary_id is not None:
+        summary = db.get(SummaryRecord, summary_id)
+        if summary is None or summary.paper_id != paper_id:
+            raise HTTPException(status_code=400, detail='summary_id does not belong to this paper')
+
+    related_task_id = derive_related_task_id(db, paper_id=paper_id, summary_id=summary_id)
+
+    task = workflow_service.create_task(
+        db,
+        task_type='paper_reflection_create',
+        input_json={'paper_id': paper_id, **payload.model_dump(mode='json')},
+        status='running',
+    )
+
+    reflection = reflection_service.create(
+        db,
+        reflection_type='paper',
+        related_paper_id=paper_id,
+        related_summary_id=summary_id,
+        related_task_id=related_task_id,
+        template_type='paper',
+        stage=payload.stage,
+        lifecycle_status=payload.lifecycle_status,
+        content_structured_json=payload.content_structured_json,
+        content_markdown=payload.content_markdown,
+        is_report_worthy=payload.is_report_worthy,
+        report_summary=payload.report_summary,
+        event_date=payload.event_date or date.today(),
+    )
+
+    workflow_service.add_artifact(
+        db,
+        task.id,
+        artifact_type='reflection',
+        artifact_ref_type='reflections',
+        artifact_ref_id=reflection.id,
+        snapshot_json={'related_paper_id': paper_id, 'related_summary_id': summary_id, 'related_task_id': related_task_id},
+    )
+    workflow_service.update_task(db, task, status='completed', output_json={'reflection_id': reflection.id})
+
+    return reflection_to_dict(reflection)
+
+
+@router.post('/{paper_id}/memory')
+def push_paper_to_memory(paper_id: int, db: Session = Depends(get_db)) -> dict:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    text = f"{paper.title_en}\n\n{paper.abstract_en}".strip()
+    item = memory_service.create_memory(
+        db,
+        memory_type='PaperMemory',
+        layer='structured',
+        text_content=text,
+        ref_table='papers',
+        ref_id=paper.id,
+        importance=0.6,
+    )
+
+    task = workflow_service.create_task(
+        db,
+        task_type='paper_memory_push',
+        input_json={'paper_id': paper.id},
+        status='completed',
+    )
+    workflow_service.add_artifact(
+        db,
+        task.id,
+        artifact_type='memory_item',
+        artifact_ref_type='memory_items',
+        artifact_ref_id=item.id,
+        snapshot_json={'paper_id': paper.id},
+    )
+
+    return {'paper_id': paper.id, 'memory_id': item.id}
 
 
 @router.get('/{paper_id}', response_model=PaperOut)

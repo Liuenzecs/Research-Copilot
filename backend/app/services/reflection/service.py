@@ -29,6 +29,7 @@ class ReflectionService:
         is_report_worthy: bool = False,
         report_summary: str = '',
         related_paper_id: int | None = None,
+        related_summary_id: int | None = None,
         related_repo_id: int | None = None,
         related_reproduction_id: int | None = None,
         related_task_id: int | None = None,
@@ -37,6 +38,7 @@ class ReflectionService:
         reflection = ReflectionRecord(
             reflection_type=reflection_type,
             related_paper_id=related_paper_id,
+            related_summary_id=related_summary_id,
             related_repo_id=related_repo_id,
             related_reproduction_id=related_reproduction_id,
             related_task_id=related_task_id,
@@ -95,6 +97,7 @@ class ReflectionService:
         date_from: date | None = None,
         date_to: date | None = None,
         related_paper_id: int | None = None,
+        related_summary_id: int | None = None,
         related_repo_id: int | None = None,
         related_reproduction_id: int | None = None,
         related_task_id: int | None = None,
@@ -110,6 +113,8 @@ class ReflectionService:
             stmt = stmt.where(ReflectionRecord.event_date <= date_to)
         if related_paper_id:
             stmt = stmt.where(ReflectionRecord.related_paper_id == related_paper_id)
+        if related_summary_id:
+            stmt = stmt.where(ReflectionRecord.related_summary_id == related_summary_id)
         if related_repo_id:
             stmt = stmt.where(ReflectionRecord.related_repo_id == related_repo_id)
         if related_reproduction_id:

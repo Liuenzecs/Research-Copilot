@@ -1,4 +1,5 @@
-﻿from datetime import datetime
+﻿from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,3 +49,22 @@ class PaperResearchStateUpdate(BaseModel):
     user_rating: int | None = None
     topic_cluster: str | None = None
     is_core_paper: bool | None = None
+
+
+class PaperWorkspaceResponse(BaseModel):
+    paper: PaperOut
+    research_state: dict[str, Any]
+    summaries: list[dict[str, Any]]
+    reflections: list[dict[str, Any]]
+    recent_tasks: list[dict[str, Any]]
+
+
+class PaperContextReflectionCreateRequest(BaseModel):
+    summary_id: int | None = None
+    stage: str = 'initial'
+    lifecycle_status: str = 'draft'
+    content_structured_json: dict[str, Any] = Field(default_factory=dict)
+    content_markdown: str = ''
+    is_report_worthy: bool = False
+    report_summary: str = ''
+    event_date: date | None = None

@@ -14,6 +14,7 @@ class ReflectionRecord(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reflection_type: Mapped[str] = mapped_column(String(30), index=True)
     related_paper_id: Mapped[int | None] = mapped_column(ForeignKey('papers.id'), nullable=True, index=True)
+    related_summary_id: Mapped[int | None] = mapped_column(ForeignKey('summaries.id'), nullable=True, index=True)
     related_repo_id: Mapped[int | None] = mapped_column(ForeignKey('repos.id'), nullable=True, index=True)
     related_reproduction_id: Mapped[int | None] = mapped_column(ForeignKey('reproductions.id'), nullable=True, index=True)
     related_task_id: Mapped[int | None] = mapped_column(ForeignKey('tasks.id'), nullable=True, index=True)
@@ -27,6 +28,7 @@ class ReflectionRecord(TimestampMixin, Base):
     event_date: Mapped[date] = mapped_column(Date, index=True)
 
     paper = relationship('PaperRecord', back_populates='reflections')
+    summary = relationship('SummaryRecord', back_populates='reflections')
     repo = relationship('RepoRecord', back_populates='reflections')
     reproduction = relationship('ReproductionRecord', back_populates='reflections')
     task = relationship('TaskRecord')

@@ -22,3 +22,4 @@ class SummaryRecord(TimestampMixin, Base):
     model: Mapped[str] = mapped_column(String(100), default='local')
 
     paper = relationship('PaperRecord', back_populates='summaries')
+    reflections = relationship('ReflectionRecord', back_populates='summary')

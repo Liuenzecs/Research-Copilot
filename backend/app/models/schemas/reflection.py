@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class ReflectionCreateRequest(BaseModel):
     reflection_type: str
     related_paper_id: int | None = None
+    related_summary_id: int | None = None
     related_repo_id: int | None = None
     related_reproduction_id: int | None = None
     related_task_id: int | None = None
@@ -34,6 +35,7 @@ class ReflectionOut(BaseModel):
     id: int
     reflection_type: str
     related_paper_id: int | None
+    related_summary_id: int | None
     related_repo_id: int | None
     related_reproduction_id: int | None
     related_task_id: int | None

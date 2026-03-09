@@ -14,6 +14,8 @@ class MemoryOut(BaseModel):
     id: int
     memory_type: str
     layer: str
+    ref_table: str
+    ref_id: int | None
     text_content: str
     importance: float
     pinned: bool
