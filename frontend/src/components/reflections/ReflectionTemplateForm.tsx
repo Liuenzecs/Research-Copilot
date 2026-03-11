@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 
 import Button from '@/components/common/Button';
+import { READING_STATUS_OPTIONS } from '@/lib/researchState';
 
 export type ReflectionFormPayload = {
   reflection_type: 'paper' | 'reproduction';
@@ -84,13 +85,20 @@ export default function ReflectionTemplateForm({ onSubmit }: { onSubmit: (payloa
           <option value="paper">论文心得</option>
           <option value="reproduction">复现心得</option>
         </select>
-        <input className="input" value={stage} onChange={(e) => setStage(e.target.value)} placeholder="阶段，如 skimmed / experiment" />
+        <select className="select" value={stage} onChange={(e) => setStage(e.target.value)}>
+          <option value="initial">初始</option>
+          <option value="progress">进行中</option>
+          <option value="experiment">实验</option>
+          {READING_STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
       </div>
       <div className="grid-2" style={{ marginTop: 10 }}>
         <select className="select" value={lifecycleStatus} onChange={(e) => setLifecycleStatus(e.target.value as 'draft' | 'finalized' | 'archived')}>
-          <option value="draft">draft</option>
-          <option value="finalized">finalized</option>
-          <option value="archived">archived</option>
+          <option value="draft">草稿</option>
+          <option value="finalized">已定稿</option>
+          <option value="archived">已归档</option>
         </select>
         <input className="input" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
       </div>

@@ -9,18 +9,37 @@ import PaperWorkspaceView from '@/components/papers/PaperWorkspace';
 import { searchPapers } from '@/lib/api';
 import { Paper } from '@/lib/types';
 
+const LAST_SELECTED_PAPER_KEY = 'research-copilot:last-selected-paper-id';
+
+function parsePaperId(raw: string | null): number | null {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 export default function SearchPage() {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
   const [searchMessage, setSearchMessage] = useState('');
 
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const paperIdParam = sp.get('paper_id');
-    if (paperIdParam && Number.isFinite(Number(paperIdParam))) {
-      setSelectedPaperId(Number(paperIdParam));
-    }
+    const fromQuery = parsePaperId(new URLSearchParams(window.location.search).get('paper_id'));
+    const fromStorage = parsePaperId(window.localStorage.getItem(LAST_SELECTED_PAPER_KEY));
+    setSelectedPaperId(fromQuery ?? fromStorage);
   }, []);
+
+  useEffect(() => {
+    if (!selectedPaperId) return;
+
+    window.localStorage.setItem(LAST_SELECTED_PAPER_KEY, String(selectedPaperId));
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('paper_id') !== String(selectedPaperId)) {
+      url.searchParams.set('paper_id', String(selectedPaperId));
+      window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+    }
+  }, [selectedPaperId]);
 
   async function onSearch(query: string) {
     setSearchMessage('');
@@ -29,7 +48,15 @@ export default function SearchPage() {
       const items = (result.items ?? []) as Paper[];
       const warnings = result.warnings ?? [];
       setPapers(items);
-      setSelectedPaperId(items[0]?.id ?? null);
+
+      if (items.length > 0) {
+        setSelectedPaperId((current) => {
+          if (current && items.some((item) => item.id === current)) {
+            return current;
+          }
+          return items[0].id;
+        });
+      }
 
       if (items.length === 0 && warnings.length > 0) {
         setSearchMessage(`当前搜索源暂时不可用：${warnings.join(' | ')}`);

@@ -20,6 +20,15 @@ Research Copilot is a local-first, single-user research workbench (not chatbot-s
 ## Project Layout
 Top-level structure follows the fixed baseline in the planning instructions.
 
+## Runtime Data Root
+Canonical runtime data root: `backend/data` (project root relative).
+
+All generated/local runtime artifacts are stored under this root, including:
+- SQLite DB: `backend/data/research_copilot.db`
+- downloaded PDFs: `backend/data/papers/`
+- vector store: `backend/data/vectors/`
+- cache/log/memory runtime files
+
 ## Local Setup (Windows)
 
 ### 1) Backend
@@ -58,9 +67,13 @@ cd scripts
 ## Environment
 Copy `.env.example` to `.env` at project root and set keys if needed.
 
+## Repo Hygiene
+- `.env` and runtime generated artifacts are ignored by default.
+- Keep `.env.example` tracked as the safe template.
+- Legacy runtime path `backend/backend/data` is ignored for cleanup compatibility.
+
 ## MVP Notes
 - English paper content is canonical.
 - Chinese translation is optional and non-destructive.
 - Reflection lifecycle: `draft | finalized | archived`.
 - Tasks are audit-oriented and archived via status updates (no hard delete API).
-

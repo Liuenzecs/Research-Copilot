@@ -8,7 +8,7 @@ function contextLink(item: MemoryItem) {
   if (item.ref_table === 'papers') return `/search?paper_id=${item.ref_id}`;
   if (item.ref_table === 'reproductions') return '/reproduction';
   if (item.ref_table === 'reflections') return '/reflections';
-  if (item.ref_table === 'summaries') return `/search?paper_id=${item.ref_id}`;
+  if (item.ref_table === 'summaries') return '/search';
   return null;
 }
 

@@ -7,6 +7,7 @@ import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import { listLibrary } from '@/lib/api';
+import { readingStatusLabel, READING_STATUS_OPTIONS, reproInterestLabel, REPRO_INTEREST_OPTIONS } from '@/lib/researchState';
 import { LibraryItem } from '@/lib/types';
 
 export default function LibraryPage() {
@@ -47,17 +48,15 @@ export default function LibraryPage() {
         <div className="grid-2">
           <select className="select" value={readingStatus} onChange={(e) => setReadingStatus(e.target.value)}>
             <option value="">全部阅读状态</option>
-            <option value="unread">unread</option>
-            <option value="skimmed">skimmed</option>
-            <option value="deep_read">deep_read</option>
-            <option value="archived">archived</option>
+            {READING_STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
           <select className="select" value={reproInterest} onChange={(e) => setReproInterest(e.target.value)}>
             <option value="">全部复现兴趣</option>
-            <option value="none">none</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
+            {REPRO_INTEREST_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -75,7 +74,10 @@ export default function LibraryPage() {
             {filtered.map((item) => (
               <li key={String(item.id)} style={{ marginBottom: 8 }}>
                 <strong>{item.title_en}</strong>
-                <span className="subtle">{' '}· {item.reading_status} · summary={item.summary_count} · reflection={item.reflection_count ?? 0}</span>
+                <span className="subtle">
+                  {' '}· {readingStatusLabel(item.reading_status)} · 复现兴趣 {reproInterestLabel(item.repro_interest)} ·
+                  summary={item.summary_count} · reflection={item.reflection_count ?? 0}
+                </span>
                 <div>
                   <Link className="button secondary" href={`/search?paper_id=${item.id}`}>打开论文工作区</Link>
                 </div>

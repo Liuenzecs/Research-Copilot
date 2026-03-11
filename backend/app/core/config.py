@@ -5,6 +5,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+CANONICAL_RUNTIME_DATA_ROOT = PROJECT_ROOT / 'backend' / 'data'
 
 
 class Settings(BaseSettings):
@@ -24,9 +25,9 @@ class Settings(BaseSettings):
     host: str = Field(default='0.0.0.0', alias='RESEARCH_COPILOT_HOST')
     port: int = Field(default=8000, alias='RESEARCH_COPILOT_PORT')
 
-    db_url: str = Field(default='sqlite:///./backend/data/research_copilot.db', alias='RESEARCH_COPILOT_DB_URL')
-    data_dir: str = Field(default='./backend/data', alias='RESEARCH_COPILOT_DATA_DIR')
-    vector_dir: str = Field(default='./backend/data/vectors', alias='RESEARCH_COPILOT_VECTOR_DIR')
+    db_url: str = Field(default='sqlite:///backend/data/research_copilot.db', alias='RESEARCH_COPILOT_DB_URL')
+    data_dir: str = Field(default='backend/data', alias='RESEARCH_COPILOT_DATA_DIR')
+    vector_dir: str = Field(default='backend/data/vectors', alias='RESEARCH_COPILOT_VECTOR_DIR')
 
     openai_api_key: str = Field(default='', alias='OPENAI_API_KEY')
     openai_model: str = Field(default='gpt-4o-mini', alias='OPENAI_MODEL')
@@ -37,6 +38,43 @@ class Settings(BaseSettings):
     github_token: str = Field(default='', alias='GITHUB_TOKEN')
 
     default_search_sources: str = 'arxiv,semantic_scholar'
+
+    @staticmethod
+    def _resolve_project_path(value: str, fallback: Path) -> Path:
+        clean = (value or '').strip()
+        if not clean:
+            return fallback.resolve()
+        path = Path(clean).expanduser()
+        if not path.is_absolute():
+            path = (PROJECT_ROOT / path).resolve()
+        return path
+
+    @staticmethod
+    def _normalize_sqlite_url(value: str, data_root: Path) -> str:
+        if not value:
+            value = f"sqlite:///{(data_root / 'research_copilot.db').as_posix()}"
+        if not value.startswith('sqlite'):
+            return value
+        if ':memory:' in value.lower():
+            return value
+        prefix = 'sqlite:///'
+        if not value.startswith(prefix):
+            return value
+        raw_path = value[len(prefix):]
+        db_path = Path(raw_path).expanduser()
+        if not db_path.is_absolute():
+            db_path = (PROJECT_ROOT / db_path).resolve()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db_path.as_posix()}"
+
+    def model_post_init(self, __context) -> None:
+        canonical_data_dir = self._resolve_project_path(self.data_dir, CANONICAL_RUNTIME_DATA_ROOT)
+        self.data_dir = str(canonical_data_dir)
+
+        canonical_vector_dir = self._resolve_project_path(self.vector_dir, canonical_data_dir / 'vectors')
+        self.vector_dir = str(canonical_vector_dir)
+
+        self.db_url = self._normalize_sqlite_url(self.db_url, canonical_data_dir)
 
     def ensure_dirs(self) -> None:
         base = Path(self.data_dir)

@@ -57,9 +57,9 @@ export default function ReflectionsPage() {
         </div>
         <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">全部状态</option>
-          <option value="draft">draft</option>
-          <option value="finalized">finalized</option>
-          <option value="archived">archived</option>
+          <option value="draft">草稿</option>
+          <option value="finalized">已定稿</option>
+          <option value="archived">已归档</option>
         </select>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button className="secondary" onClick={() => { setDateFrom(daysAgo(7)); setDateTo(new Date().toISOString().slice(0, 10)); }}>最近7天</Button>

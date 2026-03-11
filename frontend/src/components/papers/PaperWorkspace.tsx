@@ -15,7 +15,78 @@ import {
   quickSummary,
   updatePaperResearchState,
 } from '@/lib/api';
+import {
+  readingStatusLabel,
+  READING_STATUS_OPTIONS,
+  reproInterestLabel,
+  REPRO_INTEREST_OPTIONS,
+} from '@/lib/researchState';
 import { PaperWorkspace } from '@/lib/types';
+
+type WorthReproducing = 'yes' | 'maybe' | 'no';
+
+type ReflectionDraft = {
+  mostImportantContribution: string;
+  whatILearned: string;
+  worthReproducing: WorthReproducing;
+  reportSummary: string;
+  freeNotes: string;
+};
+
+function firstNonEmpty(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    const normalized = (value || '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function deriveWorthReproducing(reproInterest: string): WorthReproducing {
+  if (reproInterest === 'high' || reproInterest === 'medium') return 'yes';
+  if (reproInterest === 'low') return 'maybe';
+  return 'no';
+}
+
+function summarizeText(text: string, max = 220): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max)}...`;
+}
+
+function buildDraftFromContext(workspace: PaperWorkspace, summaryId: number | ''): ReflectionDraft {
+  const summary = summaryId
+    ? workspace.summaries.find((item) => item.id === summaryId)
+    : workspace.summaries[0];
+
+  const mostImportantContribution = firstNonEmpty(
+    summary?.contributions_en,
+    summary?.method_en,
+    summary?.problem_en,
+    summarizeText(summary?.content_en || ''),
+  );
+
+  const whatILearned = firstNonEmpty(
+    summarizeText(summary?.content_en || '', 360),
+    summarizeText(workspace.paper.abstract_en || '', 360),
+  );
+
+  const reportSummary = summarizeText(
+    firstNonEmpty(
+      summary?.contributions_en,
+      `${workspace.paper.title_en}：${whatILearned}`,
+      workspace.paper.title_en,
+    ),
+    120,
+  );
+
+  return {
+    mostImportantContribution,
+    whatILearned,
+    worthReproducing: deriveWorthReproducing(workspace.research_state.repro_interest || 'none'),
+    reportSummary,
+    freeNotes: '',
+  };
+}
 
 export default function PaperWorkspaceView({ paperId }: { paperId: number | null }) {
   const [workspace, setWorkspace] = useState<PaperWorkspace | null>(null);
@@ -30,12 +101,24 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   const [isCorePaper, setIsCorePaper] = useState(false);
   const [topicCluster, setTopicCluster] = useState('');
 
-  const [reflectionSummary, setReflectionSummary] = useState('');
-  const [reflectionNote, setReflectionNote] = useState('');
+  const [reflectionDraft, setReflectionDraft] = useState<ReflectionDraft>({
+    mostImportantContribution: '',
+    whatILearned: '',
+    worthReproducing: 'no',
+    reportSummary: '',
+    freeNotes: '',
+  });
   const [reportWorthy, setReportWorthy] = useState(false);
   const [selectedSummaryId, setSelectedSummaryId] = useState<number | ''>('');
+  const [reflectionDirty, setReflectionDirty] = useState(false);
+  const [lastPrefillKey, setLastPrefillKey] = useState('');
 
   const summaries = workspace?.summaries ?? [];
+
+  const selectedSummary = useMemo(() => {
+    if (selectedSummaryId === '') return summaries[0];
+    return summaries.find((item) => item.id === selectedSummaryId) || summaries[0];
+  }, [summaries, selectedSummaryId]);
 
   async function reload() {
     if (!paperId) {
@@ -52,8 +135,13 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
       setReproInterest(data.research_state.repro_interest || 'none');
       setIsCorePaper(Boolean(data.research_state.is_core_paper));
       setTopicCluster(data.research_state.topic_cluster || '');
-      const firstSummary = data.summaries[0]?.id;
-      setSelectedSummaryId(firstSummary ?? '');
+      setSelectedSummaryId((previous) => {
+        const summaryIds = data.summaries.map((item) => item.id);
+        if (previous !== '' && summaryIds.includes(previous as number)) {
+          return previous;
+        }
+        return data.summaries[0]?.id ?? '';
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -64,6 +152,29 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   useEffect(() => {
     reload();
   }, [paperId]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    const summaryKey = selectedSummaryId === '' ? (workspace.summaries[0]?.id ?? 'none') : selectedSummaryId;
+    const prefillKey = [
+      workspace.paper.id,
+      summaryKey,
+      workspace.research_state.repro_interest || 'none',
+      workspace.research_state.reading_status || 'unread',
+    ].join(':');
+
+    if (reflectionDirty && prefillKey === lastPrefillKey) return;
+
+    const draft = buildDraftFromContext(workspace, selectedSummaryId);
+    setReflectionDraft(draft);
+    setLastPrefillKey(prefillKey);
+    setReflectionDirty(false);
+  }, [workspace, selectedSummaryId, reflectionDirty, lastPrefillKey]);
+
+  function updateReflectionDraft(patch: Partial<ReflectionDraft>) {
+    setReflectionDraft((previous) => ({ ...previous, ...patch }));
+    setReflectionDirty(true);
+  }
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusy(action);
@@ -80,8 +191,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   }
 
   const currentPaper = workspace?.paper;
-
-  const latestSummary = useMemo(() => summaries[0], [summaries]);
+  const latestSummary = summaries[0];
 
   if (!paperId) {
     return <EmptyState title="未选择论文" hint="请从左侧结果选择论文进入集中工作区。" />;
@@ -165,16 +275,14 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         <h4 className="title" style={{ fontSize: 16 }}>阅读状态</h4>
         <div className="grid-2" style={{ marginTop: 8 }}>
           <select className="select" value={readingStatus} onChange={(e) => setReadingStatus(e.target.value)}>
-            <option value="unread">unread</option>
-            <option value="skimmed">skimmed</option>
-            <option value="deep_read">deep_read</option>
-            <option value="archived">archived</option>
+            {READING_STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
           <select className="select" value={reproInterest} onChange={(e) => setReproInterest(e.target.value)}>
-            <option value="none">none</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
+            {REPRO_INTEREST_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </div>
         <div className="grid-2" style={{ marginTop: 8 }}>
@@ -234,54 +342,116 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         )}
 
         <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+          <p className="subtle" style={{ margin: 0 }}>
+            上下文：paper#{currentPaper.id}
+            {selectedSummary ? ` · summary#${selectedSummary.id}` : ''}
+            {' · 当前阅读阶段 '}
+            {readingStatusLabel(readingStatus)}
+            {' · 复现兴趣 '}
+            {reproInterestLabel(reproInterest)}
+          </p>
           <select
             className="select"
             value={selectedSummaryId}
-            onChange={(e) => setSelectedSummaryId(e.target.value ? Number(e.target.value) : '')}
+            onChange={(e) => {
+              setSelectedSummaryId(e.target.value ? Number(e.target.value) : '');
+              setReflectionDirty(false);
+            }}
           >
             <option value="">不绑定摘要</option>
             {summaries.map((item) => (
               <option key={item.id} value={item.id}>摘要 #{item.id} ({item.summary_type})</option>
             ))}
           </select>
-          <input
-            className="input"
-            placeholder="一句话汇报摘要"
-            value={reflectionSummary}
-            onChange={(e) => setReflectionSummary(e.target.value)}
+          <textarea
+            className="textarea"
+            placeholder="最重要贡献（可编辑预填）"
+            value={reflectionDraft.mostImportantContribution}
+            onChange={(e) => updateReflectionDraft({ mostImportantContribution: e.target.value })}
           />
           <textarea
             className="textarea"
-            placeholder="论文心得补充"
-            value={reflectionNote}
-            onChange={(e) => setReflectionNote(e.target.value)}
+            placeholder="我学到了什么（可编辑预填）"
+            value={reflectionDraft.whatILearned}
+            onChange={(e) => updateReflectionDraft({ whatILearned: e.target.value })}
+          />
+          <select
+            className="select"
+            value={reflectionDraft.worthReproducing}
+            onChange={(e) => updateReflectionDraft({ worthReproducing: e.target.value as WorthReproducing })}
+          >
+            <option value="yes">值得复现</option>
+            <option value="maybe">可评估后再决定</option>
+            <option value="no">暂不复现</option>
+          </select>
+          <input
+            className="input"
+            placeholder="一句话汇报摘要（可编辑预填）"
+            value={reflectionDraft.reportSummary}
+            onChange={(e) => updateReflectionDraft({ reportSummary: e.target.value })}
+          />
+          <textarea
+            className="textarea"
+            placeholder="自由补充笔记"
+            value={reflectionDraft.freeNotes}
+            onChange={(e) => updateReflectionDraft({ freeNotes: e.target.value })}
           />
           <label className="subtle">
             <input type="checkbox" checked={reportWorthy} onChange={(e) => setReportWorthy(e.target.checked)} /> 标记为可汇报
           </label>
-          <Button
-            disabled={busy !== ''}
-            onClick={() =>
-              runAction('reflection', async () => {
-                await createPaperReflection(currentPaper.id, {
-                  summary_id: selectedSummaryId === '' ? undefined : selectedSummaryId,
-                  stage: readingStatus,
-                  lifecycle_status: 'draft',
-                  content_structured_json: {
-                    paper_in_my_words: reflectionNote,
-                    one_sentence_report_summary: reflectionSummary,
-                  },
-                  content_markdown: reflectionNote,
-                  is_report_worthy: reportWorthy,
-                  report_summary: reflectionSummary,
-                });
-                setReflectionNote('');
-                setNotice('论文心得已创建');
-              })
-            }
-          >
-            {busy === 'reflection' ? '创建中...' : '创建论文心得'}
-          </Button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              className="secondary"
+              type="button"
+              disabled={!workspace}
+              onClick={() => {
+                if (!workspace) return;
+                setReflectionDraft(buildDraftFromContext(workspace, selectedSummaryId));
+                setReflectionDirty(false);
+                setNotice('已根据当前论文上下文重新预填。');
+              }}
+            >
+              重新预填草稿
+            </Button>
+            <Button
+              disabled={busy !== ''}
+              onClick={() =>
+                runAction('reflection', async () => {
+                  const selectedSummaryValue = selectedSummaryId === '' ? selectedSummary?.id : selectedSummaryId;
+                  const markdownSections = [
+                    reflectionDraft.mostImportantContribution ? `## Most Important Contribution\n${reflectionDraft.mostImportantContribution}` : '',
+                    reflectionDraft.whatILearned ? `## What I Learned\n${reflectionDraft.whatILearned}` : '',
+                    reflectionDraft.freeNotes ? `## Free Notes\n${reflectionDraft.freeNotes}` : '',
+                  ].filter(Boolean);
+
+                  await createPaperReflection(currentPaper.id, {
+                    summary_id: selectedSummaryValue || undefined,
+                    stage: readingStatus,
+                    lifecycle_status: 'draft',
+                    content_structured_json: {
+                      related_paper_title: currentPaper.title_en,
+                      related_paper_source: currentPaper.source,
+                      related_summary_id: selectedSummaryValue ? String(selectedSummaryValue) : '',
+                      reading_stage: readingStatus,
+                      most_important_contribution: reflectionDraft.mostImportantContribution,
+                      what_i_learned: reflectionDraft.whatILearned,
+                      worth_reproducing: reflectionDraft.worthReproducing,
+                      worth_reporting_to_professor: reportWorthy ? 'yes' : 'no',
+                      one_sentence_report_summary: reflectionDraft.reportSummary,
+                      free_notes: reflectionDraft.freeNotes,
+                    },
+                    content_markdown: markdownSections.join('\n\n'),
+                    is_report_worthy: reportWorthy,
+                    report_summary: reflectionDraft.reportSummary,
+                  });
+                  setReflectionDirty(false);
+                  setNotice('论文心得已创建（草稿，可继续编辑）。');
+                })
+              }
+            >
+              {busy === 'reflection' ? '创建中...' : '创建论文心得'}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -290,7 +460,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         <p className="subtle">心得 {workspace.reflections.length} 条 · 任务 {workspace.recent_tasks.length} 条</p>
         {workspace.reflections.slice(0, 5).map((item) => (
           <div key={item.id} style={{ marginTop: 6 }}>
-            <strong>心得#{item.id}</strong> {item.stage} {item.report_summary ? `- ${item.report_summary}` : ''}
+            <strong>心得#{item.id}</strong> {readingStatusLabel(item.stage)} {item.report_summary ? `- ${item.report_summary}` : ''}
           </div>
         ))}
       </div>

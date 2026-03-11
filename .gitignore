@@ -13,20 +13,21 @@ node_modules/
 .next/
 out/
 
-# Env
+# Env (keep template files)
 .env
 .env.local
+.env.*
+!.env.example
 
-# Data
-backend/data/papers/
-backend/data/summaries/
-backend/data/notes/
-backend/data/repos/
-backend/data/logs/
-backend/data/memory/
-backend/data/vectors/
-backend/data/cache/
-backend/data/research_copilot.db
+# Runtime data (canonical)
+backend/data/**
+
+# Legacy runtime data path (cleanup guard)
+backend/backend/data/**
+
+# Optional placeholders
+!backend/data/.gitkeep
+!backend/backend/data/.gitkeep
 
 # Scripts runtime
 scripts/.backend_url
