@@ -4,9 +4,20 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=(
+            str(PROJECT_ROOT / '.env'),
+            str(PROJECT_ROOT / 'backend' / '.env'),
+            '.env',
+            '../.env',
+        ),
+        env_file_encoding='utf-8',
+        extra='ignore',
+    )
 
     app_name: str = 'Research Copilot'
     env: str = Field(default='dev', alias='RESEARCH_COPILOT_ENV')
@@ -21,6 +32,7 @@ class Settings(BaseSettings):
     openai_model: str = Field(default='gpt-4o-mini', alias='OPENAI_MODEL')
     deepseek_api_key: str = Field(default='', alias='DEEPSEEK_API_KEY')
     deepseek_model: str = Field(default='deepseek-chat', alias='DEEPSEEK_MODEL')
+    semantic_scholar_api_key: str = Field(default='', alias='SEMANTIC_SCHOLAR_API_KEY')
 
     github_token: str = Field(default='', alias='GITHUB_TOKEN')
 

@@ -2,8 +2,11 @@
 
 import json
 from datetime import date, datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -154,6 +157,26 @@ def derive_related_task_id(db: Session, paper_id: int, summary_id: int | None) -
     return artifact.task_id if artifact else None
 
 
+def format_search_error(source: str, exc: Exception) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        return f'{source}: 网络连接失败，已跳过该数据源。'
+    if isinstance(exc, httpx.TimeoutException):
+        return f'{source}: 请求超时，已跳过该数据源。'
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if source == 'semantic_scholar' and status == 429:
+            return (
+                'semantic_scholar: 达到速率限制(429)，本次已自动降级为 arXiv 结果。'
+                '可选：在 .env 配置 SEMANTIC_SCHOLAR_API_KEY 或稍后重试。'
+            )
+        return f'{source}: 上游 HTTP {status}'
+    message = str(exc).strip()
+    if message:
+        trimmed = message if len(message) <= 160 else f'{message[:160]}...'
+        return f'{source}: {trimmed}'
+    return f'{source}: {exc.__class__.__name__}'
+
+
 @router.post('/search', response_model=PaperSearchResponse)
 async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_db)) -> PaperSearchResponse:
     task = workflow_service.create_task(
@@ -174,9 +197,9 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
             elif source == 'openalex':
                 papers.extend(await openalex_service.search(payload.query, payload.limit))
         except Exception as exc:
-            errors.append(f'{source}: {exc}')
+            errors.append(format_search_error(source, exc))
 
-    unified = dedupe_and_rank(papers, payload.limit)
+    unified = dedupe_and_rank(papers, payload.limit, payload.query)
     stored = [upsert_paper(db, p) for p in unified]
 
     workflow_service.add_artifact(
@@ -192,7 +215,7 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
         status='completed' if not errors else 'completed_with_warnings',
         output_json={'paper_ids': [p.id for p in stored], 'errors': errors},
     )
-    return PaperSearchResponse(items=[to_paper_out(p) for p in stored])
+    return PaperSearchResponse(items=[to_paper_out(p) for p in stored], warnings=errors)
 
 
 @router.post('/download', response_model=PaperDownloadResponse)
@@ -479,6 +502,30 @@ def push_paper_to_memory(paper_id: int, db: Session = Depends(get_db)) -> dict:
     )
 
     return {'paper_id': paper.id, 'memory_id': item.id}
+
+
+@router.get('/{paper_id}/pdf')
+def get_paper_pdf(
+    paper_id: int,
+    download: bool = Query(default=True),
+    db: Session = Depends(get_db),
+):
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+    if not paper.pdf_local_path:
+        raise HTTPException(status_code=404, detail='Paper PDF has not been downloaded yet')
+
+    path = Path(paper.pdf_local_path)
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f'PDF file missing on disk: {path}')
+
+    if download:
+        return FileResponse(path=str(path), media_type='application/pdf', filename=path.name)
+    return FileResponse(path=str(path), media_type='application/pdf')
 
 
 @router.get('/{paper_id}', response_model=PaperOut)

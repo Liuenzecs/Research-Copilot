@@ -23,12 +23,15 @@ class OpenAIProvider(LLMProvider):
         if not self._enabled or self._client is None:
             return f'[local-fallback] {prompt[:1500]}'
 
-        response = await self._client.responses.create(
-            model=self.model,
-            input=[
-                {'role': 'system', 'content': system_prompt or 'You are a research assistant.'},
-                {'role': 'user', 'content': prompt},
-            ],
-            max_output_tokens=1500,
-        )
-        return response.output_text.strip()
+        try:
+            response = await self._client.responses.create(
+                model=self.model,
+                input=[
+                    {'role': 'system', 'content': system_prompt or 'You are a research assistant.'},
+                    {'role': 'user', 'content': prompt},
+                ],
+                max_output_tokens=1500,
+            )
+            return response.output_text.strip()
+        except Exception:
+            return f'[local-fallback] {prompt[:1500]}'

@@ -27,12 +27,18 @@ class DeepSeekProvider(LLMProvider):
         if not self._enabled or self._client is None:
             return f'[local-fallback] {prompt[:1500]}'
 
-        response = await self._client.responses.create(
-            model=self.model,
-            input=[
-                {'role': 'system', 'content': system_prompt or 'You are a research assistant.'},
-                {'role': 'user', 'content': prompt},
-            ],
-            max_output_tokens=1500,
-        )
-        return response.output_text.strip()
+        try:
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {'role': 'system', 'content': system_prompt or 'You are a research assistant.'},
+                    {'role': 'user', 'content': prompt},
+                ],
+                max_tokens=1500,
+                temperature=0.2,
+            )
+            text = (response.choices[0].message.content or '').strip()
+            return text or f'[local-fallback] {prompt[:1500]}'
+        except Exception:
+            # Keep product workflow available even when provider key/model is misconfigured.
+            return f'[local-fallback] {prompt[:1500]}'

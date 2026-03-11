@@ -28,6 +28,10 @@ backend/data/vectors/
 backend/data/cache/
 backend/data/research_copilot.db
 
+# Scripts runtime
+scripts/.backend_url
+scripts/.frontend_url
+
 # IDE
 .vscode/
 .idea/

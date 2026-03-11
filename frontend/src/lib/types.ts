@@ -23,6 +23,8 @@ export type Summary = {
   contributions_en?: string;
   limitations_en?: string;
   future_work_en?: string;
+  provider?: string;
+  model?: string;
   created_at?: string;
   updated_at?: string;
 };

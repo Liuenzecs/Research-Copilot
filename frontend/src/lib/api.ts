@@ -46,7 +46,7 @@ export async function health() {
 }
 
 export async function searchPapers(query: string, limit = 10) {
-  return request<{ items: Paper[] }>('/papers/search', {
+  return request<{ items: Paper[]; warnings?: string[] }>('/papers/search', {
     method: 'POST',
     body: JSON.stringify({ query, sources: ['arxiv', 'semantic_scholar'], limit }),
   });
@@ -118,6 +118,10 @@ export async function pushPaperToMemory(paperId: number) {
     method: 'POST',
     body: JSON.stringify({}),
   });
+}
+
+export function getPaperPdfUrl(paperId: number, download = true) {
+  return `${API_BASE}/papers/${paperId}/pdf${download ? '?download=true' : '?download=false'}`;
 }
 
 export async function listLibrary() {

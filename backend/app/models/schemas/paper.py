@@ -29,6 +29,7 @@ class PaperOut(BaseModel):
 
 class PaperSearchResponse(BaseModel):
     items: list[PaperOut]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PaperDownloadRequest(BaseModel):

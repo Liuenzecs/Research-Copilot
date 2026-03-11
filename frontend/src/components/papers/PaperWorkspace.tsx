@@ -5,13 +5,23 @@ import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/common/Button';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
-import { createPaperReflection, deepSummary, downloadPaper, getPaperWorkspace, pushPaperToMemory, quickSummary, updatePaperResearchState } from '@/lib/api';
+import {
+  createPaperReflection,
+  deepSummary,
+  downloadPaper,
+  getPaperPdfUrl,
+  getPaperWorkspace,
+  pushPaperToMemory,
+  quickSummary,
+  updatePaperResearchState,
+} from '@/lib/api';
 import { PaperWorkspace } from '@/lib/types';
 
 export default function PaperWorkspaceView({ paperId }: { paperId: number | null }) {
   const [workspace, setWorkspace] = useState<PaperWorkspace | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
 
   const [readingStatus, setReadingStatus] = useState('unread');
@@ -58,6 +68,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusy(action);
     setError('');
+    setNotice('');
     try {
       await fn();
       await reload();
@@ -92,16 +103,59 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         <p className="subtle">{currentPaper.source} · {currentPaper.year ?? 'N/A'} · PDF: {currentPaper.pdf_local_path || '未下载'}</p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-          <Button onClick={() => runAction('download', async () => { await downloadPaper(currentPaper.id); })} disabled={busy !== ''}>
+          <Button
+            onClick={() =>
+              runAction('download', async () => {
+                const result = await downloadPaper(currentPaper.id);
+                setNotice(`PDF 已保存到：${result.pdf_local_path}`);
+              })
+            }
+            disabled={busy !== ''}
+          >
             {busy === 'download' ? '下载中...' : '下载PDF'}
           </Button>
-          <Button onClick={() => runAction('quick', async () => { await quickSummary(currentPaper.id); })} disabled={busy !== ''} className="secondary">
+          <Button
+            className="secondary"
+            disabled={!currentPaper.pdf_local_path}
+            onClick={() => window.open(getPaperPdfUrl(currentPaper.id, true), '_blank', 'noopener,noreferrer')}
+            title={currentPaper.pdf_local_path ? '在浏览器打开/保存该 PDF' : '请先下载 PDF'}
+          >
+            打开PDF
+          </Button>
+          <Button
+            onClick={() =>
+              runAction('quick', async () => {
+                const result = await quickSummary(currentPaper.id);
+                setNotice(`快速总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
+              })
+            }
+            disabled={busy !== ''}
+            className="secondary"
+          >
             {busy === 'quick' ? '生成中...' : '快速总结'}
           </Button>
-          <Button onClick={() => runAction('deep', async () => { await deepSummary(currentPaper.id); })} disabled={busy !== ''} className="secondary">
+          <Button
+            onClick={() =>
+              runAction('deep', async () => {
+                const result = await deepSummary(currentPaper.id);
+                setNotice(`深度总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
+              })
+            }
+            disabled={busy !== ''}
+            className="secondary"
+          >
             {busy === 'deep' ? '生成中...' : '深度总结'}
           </Button>
-          <Button onClick={() => runAction('memory', async () => { await pushPaperToMemory(currentPaper.id); })} disabled={busy !== ''} className="secondary">
+          <Button
+            onClick={() =>
+              runAction('memory', async () => {
+                const result = await pushPaperToMemory(currentPaper.id);
+                setNotice(`已推送到长期记忆，memory_id=${result.memory_id}`);
+              })
+            }
+            disabled={busy !== ''}
+            className="secondary"
+          >
             {busy === 'memory' ? '处理中...' : '推送到记忆'}
           </Button>
         </div>
@@ -151,6 +205,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
                   topic_cluster: topicCluster,
                   is_core_paper: isCorePaper,
                 });
+                setNotice('阅读状态已更新');
               })
             }
           >
@@ -163,7 +218,15 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         <h4 className="title" style={{ fontSize: 16 }}>论文摘要与结构化心得</h4>
         {latestSummary ? (
           <>
-            <p className="subtle">当前摘要: #{latestSummary.id} ({latestSummary.summary_type})</p>
+            <p className="subtle">
+              当前摘要: #{latestSummary.id} ({latestSummary.summary_type}) · provider={latestSummary.provider || 'heuristic'} ·
+              model={latestSummary.model || 'local'}
+            </p>
+            {latestSummary.provider === 'heuristic' ? (
+              <p className="subtle" style={{ color: '#b45309' }}>
+                当前是本地兜底摘要。若你已配置 DeepSeek，请重启后端使 .env 生效。
+              </p>
+            ) : null}
             <p style={{ whiteSpace: 'pre-wrap' }}>{latestSummary.content_en}</p>
           </>
         ) : (
@@ -213,6 +276,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
                   report_summary: reflectionSummary,
                 });
                 setReflectionNote('');
+                setNotice('论文心得已创建');
               })
             }
           >
@@ -232,6 +296,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
       </div>
 
       {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
+      {notice ? <p style={{ color: '#0f766e' }}>{notice}</p> : null}
     </div>
   );
 }
