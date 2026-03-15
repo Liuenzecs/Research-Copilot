@@ -86,6 +86,63 @@ def test_reproduction_step_tracking_and_reflection(client, monkeypatch):
     assert reflection.json()['related_reproduction_id'] == reproduction_id
 
 
+def test_reproduction_step_note_log_creates_analysis_without_blocking(client, monkeypatch):
+    _mock_reproduction_planner(monkeypatch)
+    paper_id = _create_paper(client, monkeypatch, source_id='repro-log-note-1', title='Repro Log Note Paper')
+
+    plan_resp = client.post('/reproduction/plan', json={'paper_id': paper_id})
+    assert plan_resp.status_code == 200
+    reproduction_id = plan_resp.json()['reproduction_id']
+    step_id = plan_resp.json()['steps'][0]['id']
+
+    log_resp = client.post(
+        f'/reproduction/{reproduction_id}/steps/{step_id}/logs',
+        json={'log_text': "ModuleNotFoundError: No module named 'torch'", 'log_kind': 'note'},
+    )
+    assert log_resp.status_code == 200
+    assert log_resp.json()['step_id'] == step_id
+    assert log_resp.json()['error_type'] == 'missing_dependency'
+    assert 'install the missing dependency' in log_resp.json()['next_step_suggestion']
+
+    detail = client.get(f'/reproduction/{reproduction_id}')
+    assert detail.status_code == 200
+    assert detail.json()['steps'][0]['step_status'] == 'pending'
+    assert len(detail.json()['logs']) == 1
+    assert detail.json()['logs'][0]['step_id'] == step_id
+
+
+def test_reproduction_step_blocker_log_blocks_step_and_updates_detail(client, monkeypatch):
+    _mock_reproduction_planner(monkeypatch)
+    paper_id = _create_paper(client, monkeypatch, source_id='repro-log-blocker-1', title='Repro Log Blocker Paper')
+
+    plan_resp = client.post('/reproduction/plan', json={'paper_id': paper_id})
+    assert plan_resp.status_code == 200
+    reproduction_id = plan_resp.json()['reproduction_id']
+    step_id = plan_resp.json()['steps'][0]['id']
+
+    before = client.get(f'/reproduction/{reproduction_id}')
+    assert before.status_code == 200
+    before_updated_at = before.json()['updated_at']
+
+    time.sleep(1.1)
+    log_resp = client.post(
+        f'/reproduction/{reproduction_id}/steps/{step_id}/logs',
+        json={'log_text': 'CUDA out of memory while running baseline', 'log_kind': 'blocker'},
+    )
+    assert log_resp.status_code == 200
+    assert log_resp.json()['error_type'] == 'oom'
+    assert 'reducing batch size' in log_resp.json()['next_step_suggestion']
+
+    detail = client.get(f'/reproduction/{reproduction_id}')
+    assert detail.status_code == 200
+    step = detail.json()['steps'][0]
+    assert step['step_status'] == 'blocked'
+    assert step['blocked_at'] is not None
+    assert step['blocker_reason'] == 'CUDA out of memory while running baseline'
+    assert detail.json()['updated_at'] != before_updated_at
+    assert len(detail.json()['logs']) == 1
+
+
 def test_list_reproductions_returns_latest_updated_for_paper(client, monkeypatch):
     _mock_reproduction_planner(monkeypatch)
     paper_id = _create_paper(client, monkeypatch, source_id='repro-list-1', title='Repro List Paper')

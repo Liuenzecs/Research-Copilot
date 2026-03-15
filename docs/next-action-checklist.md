@@ -1,6 +1,6 @@
 # Next Action Checklist
 
-本文件用于记录“已完成什么、下一批做什么、暂缓什么”。
+本文件用于记录“已完成什么、下一批做什么、暂缓什么”。  
 要求：每完成一批计划后，必须同步更新本文件。
 
 ---
@@ -18,27 +18,46 @@
 - [x] 支持真实的“不绑定摘要”状态
 - [x] paper-only reflection 创建时不发送 `summary_id`
 - [x] 在 `Paper Workspace` 增加“进入复现工作区”按钮
-- [x] 跳转约定为 `/reproduction?paper_id=<id>`
-- [x] reproduction 页面支持读取 `paper_id`
-- [x] reproduction 页面支持读取 `reproduction_id`
-- [x] `reproduction_id` 优先于 `paper_id`
-- [x] 带 `paper_id` 进入时自动搜索 repo candidates
-- [x] 带 `paper_id` 进入时自动查最近一条 reproduction
-- [x] 若有历史 reproduction，自动打开最近一条继续推进
-- [x] 同时保留“新建新的复现记录”
-- [x] 支持选择 repo 生成 reproduction plan
-- [x] 支持不选 repo、直接按 paper-only 生成 plan
+- [x] reproduction 页面支持 `paper_id / reproduction_id`
+- [x] 自动搜索 repo candidates
+- [x] 自动打开最近一条 reproduction
 - [x] 新增 `GET /reproduction`
 - [x] `POST /repos/find` 改为应用层幂等复用
-- [x] 增加相关后端回归测试
+
+### 第二批：复现工作区细化 + blocker/log 正式接入
+
+完成日期：2026-03-15
+
+已完成：
+
+- [x] 补齐 reproduction 顶部上下文状态区
+- [x] 明确区分“继续最近一次复现 / 查看指定复现 / 准备新建复现”
+- [x] 展示当前论文上下文、复现状态、进度摘要与最后更新时间
+- [x] 明确展示 repo 语义与 paper-only 语义
+- [x] 将 `ReproStepTracker` 升级为步骤卡片视图
+- [x] 展示 `purpose`
+- [x] 展示 `risk_level`
+- [x] 展示 `expected_output`
+- [x] 展示 `requires_manual_confirm`
+- [x] 展示 `safe / safety_reason`
+- [x] 正式接入步骤级 `reproduction_logs`
+- [x] 新增步骤日志写入接口
+- [x] `GET /reproduction/{id}` 返回日志列表
+- [x] 支持 `note / blocker` 两类日志
+- [x] blocker 日志自动将步骤标记为 `blocked`
+- [x] 扩展本地日志分析，生成 `error_type / next_step_suggestion`
+- [x] 增加后端回归测试
 - [x] 前端通过 `npm run build`
 
-本批未做：
+本批明确未做：
 
+- [ ] 自动执行命令并自动采集日志
+- [ ] 文件型日志上传
+- [ ] reproduction 级全局日志页
+- [ ] 独立 blocker dashboard
 - [ ] 周报链路修整
 - [ ] memory graph / memory 管理 UI
 - [ ] profile 面板
-- [ ] 大范围架构重写
 
 ---
 
@@ -46,23 +65,20 @@
 
 这部分代表“高价值、低到中等成本、建议下一批直接做”。
 
-- [ ] 完善 reproduction detail 顶部状态提示
-- [ ] 在 reproduction step 面板展示 `purpose`
-- [ ] 在 reproduction step 面板展示 `risk_level`
-- [ ] 在 reproduction step 面板展示 `expected_output`
-- [ ] 在 reproduction step 面板展示 `safe / safety_reason`
-- [ ] 明确区分继续最近复现与新建复现的提示文案
-- [ ] 复查复现页异常态、空态、加载态的中文文案一致性
+- [ ] 修正 weekly report 上下文展示
+- [ ] 在 weekly report 中明确展示最近论文与复现进展
+- [ ] 优化 weekly report 到 paper / reproduction 的回跳
+- [ ] 复查 reproduction 页剩余 warning / empty / loading 文案一致性
+- [ ] 继续收敛复现记录与 reflection 回流提示
 
 ---
 
 ## Improve Next
 
-- [ ] 修正 weekly report 上下文展示
-- [ ] 让 weekly report 更容易回跳到具体 paper / reproduction
 - [ ] 改善 memory 检索结果的精确回跳
 - [ ] 统一前端 Chinese-first 文案
 - [ ] 收敛前端页面层直接处理 API 细节的写法
+- [ ] 继续减少页面层对内部字段名的直接暴露
 
 ---
 
@@ -72,7 +88,7 @@
 - [ ] researcher profile 面板
 - [ ] repo 独立工作面
 - [ ] task 独立工作面
-- [ ] 更大范围的路由/服务层重构
+- [ ] 更大范围的路由 / 服务层重构
 
 ---
 

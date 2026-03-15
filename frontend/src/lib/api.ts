@@ -7,6 +7,7 @@ import {
   Reflection,
   ReproductionDetail,
   ReproductionListItem,
+  ReproductionLog,
   ReproductionPlanResult,
   RepoFindResponse,
   Summary,
@@ -212,6 +213,17 @@ export async function updateReproductionStep(
 ) {
   return request(`/reproduction/${reproductionId}/steps/${stepId}`, {
     method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReproductionStepLog(
+  reproductionId: number,
+  stepId: number,
+  payload: { log_text: string; log_kind: 'note' | 'blocker' },
+) {
+  return request<ReproductionLog>(`/reproduction/${reproductionId}/steps/${stepId}/logs`, {
+    method: 'POST',
     body: JSON.stringify(payload),
   });
 }

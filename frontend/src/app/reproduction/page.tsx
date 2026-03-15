@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
@@ -10,6 +10,7 @@ import Loading from '@/components/common/Loading';
 import ReproStepTracker from '@/components/reproduction/ReproStepTracker';
 import {
   createReproductionReflection,
+  createReproductionStepLog,
   findRepos,
   getPaper,
   getReproductionDetail,
@@ -39,6 +40,41 @@ function buildReproductionUrl(params: { paperId?: number | null; reproductionId?
   }
   const query = search.toString();
   return query ? `/reproduction?${query}` : '/reproduction';
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('zh-CN', { hour12: false });
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case 'planned':
+      return '已规划';
+    case 'in_progress':
+      return '进行中';
+    case 'done':
+      return '已完成';
+    case 'blocked':
+      return '已阻塞';
+    default:
+      return status;
+  }
+}
+
+function contextModeLabel(mode: ContextMode) {
+  switch (mode) {
+    case 'continuing_recent':
+      return '继续最近一次复现';
+    case 'detail':
+      return '查看指定复现';
+    case 'ready_new':
+      return '准备新建复现';
+    default:
+      return '等待上下文';
+  }
 }
 
 function ReproductionPageContent() {
@@ -99,7 +135,7 @@ function ReproductionPageContent() {
 
       if (queryReproductionId) {
         setContextMode('detail');
-        setContextMessage('');
+        setContextMessage('你正在查看指定复现。');
         setRepoCandidates([]);
         setSelectedRepoId(null);
 
@@ -155,7 +191,7 @@ function ReproductionPageContent() {
             setRepoCandidates(repoResult.value.items);
           } else {
             setRepoCandidates([]);
-            nextWarnings.push(`Repo 自动搜索失败：${(repoResult.reason as Error).message}；你仍可按 paper-only 生成计划。`);
+            nextWarnings.push(`Repo 自动搜索失败：${(repoResult.reason as Error).message}。你仍可按 paper-only 继续。`);
           }
 
           if (reproductionResult.status === 'fulfilled' && reproductionResult.value.length > 0) {
@@ -169,15 +205,15 @@ function ReproductionPageContent() {
               if (cancelled) return;
               setDetail(null);
               setContextMode('ready_new');
-              setContextMessage('已进入准备新建复现的状态。');
-              nextWarnings.push(`最近一次复现加载失败：${(reproError as Error).message}；不影响新建流程。`);
+              setContextMessage('当前论文暂无可继续的复现记录，已准备新建。');
+              nextWarnings.push(`最近复现加载失败：${(reproError as Error).message}。这不会影响你新建复现。`);
             }
           } else {
             setDetail(null);
             setContextMode('ready_new');
             setContextMessage('当前论文暂无历史复现，已准备新建。');
             if (reproductionResult.status === 'rejected') {
-              nextWarnings.push(`历史复现查询失败：${(reproductionResult.reason as Error).message}；不影响新建流程。`);
+              nextWarnings.push(`历史复现查询失败：${(reproductionResult.reason as Error).message}。这不会影响你新建复现。`);
             }
           }
 
@@ -208,7 +244,6 @@ function ReproductionPageContent() {
     }
 
     void hydrateFromQuery();
-
     return () => {
       cancelled = true;
     };
@@ -222,7 +257,10 @@ function ReproductionPageContent() {
         const paper = await getPaper(latest.paper_id);
         setActivePaper(paper);
       } catch {
-        return;
+        setWarnings((previous) => {
+          const message = '论文上下文刷新失败，但当前复现详情仍可继续查看。';
+          return previous.includes(message) ? previous : [...previous, message];
+        });
       }
     }
   }
@@ -241,8 +279,27 @@ function ReproductionPageContent() {
   }
 
   const selectedRepo = repoCandidates.find((item) => item.id === selectedRepoId) ?? null;
+  const currentRepo = detail?.repo ?? selectedRepo;
   const currentReproductionId = detail?.reproduction_id ?? null;
-  const planButtonLabel = contextMode === 'continuing_recent'
+  const shouldShowContextCard = Boolean(activePaper || detail);
+
+  const contextSummary = useMemo(() => {
+    if (detail?.repo) {
+      return `当前计划绑定 repo：${detail.repo.owner}/${detail.repo.name}`;
+    }
+    if (detail) {
+      return '当前计划未绑定 repo，按 paper-only 推进。';
+    }
+    if (selectedRepo) {
+      return `当前准备使用 repo：${selectedRepo.owner}/${selectedRepo.name}`;
+    }
+    if (activePaper) {
+      return '当前尚未选择 repo，你仍可直接按 paper-only 新建复现。';
+    }
+    return '';
+  }, [activePaper, detail, selectedRepo]);
+
+  const planButtonLabel = detail && contextMode === 'continuing_recent'
     ? selectedRepo
       ? '新建新的复现记录（使用选中 Repo）'
       : '新建新的复现记录（paper-only）'
@@ -254,7 +311,7 @@ function ReproductionPageContent() {
     <>
       <Card>
         <h2 className="title">复现工作区</h2>
-        <p className="subtle">流程：paper 上下文 → repo 候选 → 计划生成 → 步骤跟踪 → 阻塞记录 → 复现心得。</p>
+        <p className="subtle">流程：paper 上下文 → repo 候选 → 计划生成 → 步骤跟踪 → blocker/log 记录 → 复现心得。</p>
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 8 }}>
@@ -262,15 +319,15 @@ function ReproductionPageContent() {
         <div className="grid-2">
           <input
             className="input"
-            placeholder="输入 paper_id 后载入上下文"
+            placeholder="输入 paper_id 后载入论文上下文"
             value={manualPaperId}
-            onChange={(e) => setManualPaperId(e.target.value)}
+            onChange={(event) => setManualPaperId(event.target.value)}
           />
           <input
             className="input"
             placeholder="输入 reproduction_id 直接打开"
             value={manualReproductionId}
-            onChange={(e) => setManualReproductionId(e.target.value)}
+            onChange={(event) => setManualReproductionId(event.target.value)}
           />
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -305,16 +362,7 @@ function ReproductionPageContent() {
         </div>
       </div>
 
-      {loading ? <Loading text="加载复现上下文..." /> : null}
-
-      {activePaper ? (
-        <Card>
-          <h3 className="title" style={{ fontSize: 16 }}>当前论文上下文</h3>
-          <p style={{ marginBottom: 6 }}><strong>{activePaper.title_en}</strong></p>
-          <p className="subtle">paper#{activePaper.id} · {activePaper.authors || 'Unknown authors'} · {activePaper.year ?? 'N/A'}</p>
-          {contextMessage ? <p className="subtle" style={{ color: '#0f766e' }}>{contextMessage}</p> : null}
-        </Card>
-      ) : null}
+      {loading ? <Loading text="加载复现工作区..." /> : null}
 
       {warnings.map((warning) => (
         <p key={warning} style={{ color: '#b45309', margin: 0 }}>{warning}</p>
@@ -322,11 +370,51 @@ function ReproductionPageContent() {
       {error ? <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p> : null}
       {notice ? <p style={{ color: '#0f766e', margin: 0 }}>{notice}</p> : null}
 
+      {shouldShowContextCard ? (
+        <Card>
+          <h3 className="title" style={{ fontSize: 16 }}>当前复现上下文</h3>
+          <p style={{ marginBottom: 6 }}>
+            <strong>{contextModeLabel(contextMode)}</strong>
+          </p>
+          {contextMessage ? <p className="subtle" style={{ marginTop: 0 }}>{contextMessage}</p> : null}
+          {activePaper ? (
+            <p className="subtle" style={{ margin: 0 }}>
+              论文：paper#{activePaper.id} · {activePaper.title_en}
+            </p>
+          ) : (
+            <p className="subtle" style={{ margin: 0 }}>当前未加载到论文上下文。</p>
+          )}
+          {detail ? (
+            <>
+              <p className="subtle" style={{ margin: '6px 0 0 0' }}>
+                复现：#{detail.reproduction_id} · 状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}%
+              </p>
+              <p className="subtle" style={{ margin: '6px 0 0 0' }}>
+                进度摘要：{detail.progress_summary || '尚未填写'}
+              </p>
+              <p className="subtle" style={{ margin: '6px 0 0 0' }}>
+                最后更新：{formatDateTime(detail.updated_at)}
+              </p>
+            </>
+          ) : (
+            <p className="subtle" style={{ margin: '6px 0 0 0' }}>当前还没有打开复现记录，正在准备新建。</p>
+          )}
+          <p className="subtle" style={{ margin: '6px 0 0 0' }}>{contextSummary}</p>
+          {currentRepo ? (
+            <p className="subtle" style={{ margin: '6px 0 0 0' }}>
+              Repo：{currentRepo.owner}/{currentRepo.name} · <a href={currentRepo.repo_url} target="_blank" rel="noopener noreferrer">{currentRepo.repo_url}</a>
+            </p>
+          ) : detail ? (
+            <p className="subtle" style={{ margin: '6px 0 0 0' }}>Repo：当前计划未绑定 repo，按 paper-only 推进。</p>
+          ) : null}
+        </Card>
+      ) : null}
+
       {activePaper ? (
         <Card>
           <h3 className="title" style={{ fontSize: 16 }}>Repo 候选与新建复现</h3>
           <p className="subtle">
-            默认使用当前论文标题自动搜索 repo。你可以选择某个 repo 生成计划，也可以不选 repo，直接按 paper-only 继续。
+            默认使用当前论文标题自动搜索 repo。你可以选择某个 repo 生成新计划，也可以不选 repo，直接按 paper-only 推进。
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             <Button
@@ -389,7 +477,7 @@ function ReproductionPageContent() {
           <Card>
             <h3 className="title" style={{ fontSize: 16 }}>复现概览 #{detail.reproduction_id}</h3>
             <p className="subtle">
-              状态: {detail.status} · 进度: {detail.progress_percent ?? 0}% · paper_id: {detail.paper_id ?? 'N/A'} · repo_id: {detail.repo_id ?? 'paper-only'}
+              状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}% · paper_id：{detail.paper_id ?? 'N/A'} · repo：{detail.repo ? `${detail.repo.owner}/${detail.repo.name}` : 'paper-only'}
             </p>
             <pre style={{ whiteSpace: 'pre-wrap' }}>{detail.plan_markdown}</pre>
           </Card>
@@ -398,9 +486,9 @@ function ReproductionPageContent() {
             <h4 style={{ margin: 0 }}>更新整体进度</h4>
             <input
               className="input"
-              placeholder="progress_summary"
+              placeholder="请填写当前复现进度摘要"
               value={progressSummary}
-              onChange={(e) => setProgressSummary(e.target.value)}
+              onChange={(event) => setProgressSummary(event.target.value)}
             />
             <input
               className="input"
@@ -408,7 +496,7 @@ function ReproductionPageContent() {
               min={0}
               type="number"
               value={progressPercent}
-              onChange={(e) => setProgressPercent(Number(e.target.value))}
+              onChange={(event) => setProgressPercent(Number(event.target.value))}
             />
             <Button
               className="secondary"
@@ -435,17 +523,24 @@ function ReproductionPageContent() {
               if (!currentReproductionId) return;
               await updateReproductionStep(currentReproductionId, stepId, payload);
               await refreshDetail();
+              setNotice('步骤状态已更新。');
+            }}
+            onCreateLog={async (stepId, payload) => {
+              if (!currentReproductionId) return;
+              await createReproductionStepLog(currentReproductionId, stepId, payload);
+              await refreshDetail();
+              setNotice(payload.log_kind === 'blocker' ? '阻塞日志已保存，并已自动标记该步骤为 blocked。' : '步骤日志已保存，并已生成下一步建议。');
             }}
           />
 
           <div className="card" style={{ display: 'grid', gap: 8 }}>
             <h4 style={{ margin: 0 }}>复现心得快速记录</h4>
-            <textarea className="textarea" placeholder="我今天做了什么" value={todayWork} onChange={(e) => setTodayWork(e.target.value)} />
-            <textarea className="textarea" placeholder="遇到的问题" value={issue} onChange={(e) => setIssue(e.target.value)} />
-            <textarea className="textarea" placeholder="下一步" value={nextStep} onChange={(e) => setNextStep(e.target.value)} />
-            <input className="input" placeholder="一句话汇报摘要" value={reportSummary} onChange={(e) => setReportSummary(e.target.value)} />
+            <textarea className="textarea" placeholder="我今天做了什么" value={todayWork} onChange={(event) => setTodayWork(event.target.value)} />
+            <textarea className="textarea" placeholder="遇到的问题" value={issue} onChange={(event) => setIssue(event.target.value)} />
+            <textarea className="textarea" placeholder="下一步" value={nextStep} onChange={(event) => setNextStep(event.target.value)} />
+            <input className="input" placeholder="一句话汇报摘要" value={reportSummary} onChange={(event) => setReportSummary(event.target.value)} />
             <label className="subtle">
-              <input type="checkbox" checked={reportWorthy} onChange={(e) => setReportWorthy(e.target.checked)} /> 标记为可汇报
+              <input type="checkbox" checked={reportWorthy} onChange={(event) => setReportWorthy(event.target.checked)} /> 标记为可汇报
             </label>
             <Button
               disabled={busy !== ''}
@@ -482,7 +577,7 @@ function ReproductionPageContent() {
       ) : null}
 
       {!loading && !activePaper && !detail && !error ? (
-        <EmptyState title="等待复现上下文" hint="从论文工作区进入，或在上方手工输入 paper_id / reproduction_id。" />
+        <EmptyState title="等待复现上下文" hint="请从论文工作区进入，或在上方手工输入 paper_id / reproduction_id。" />
       ) : null}
     </>
   );

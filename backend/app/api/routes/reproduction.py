@@ -10,15 +10,18 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.db.paper_record import PaperRecord
 from app.models.db.repo_record import RepoRecord
-from app.models.db.reproduction_record import ReproductionRecord, ReproductionStepRecord
+from app.models.db.reproduction_record import ReproductionLogRecord, ReproductionRecord, ReproductionStepRecord
 from app.models.db.task_artifact_record import TaskArtifactRecord
+from app.models.schemas.repo import RepoOut
 from app.models.schemas.reproduction import (
     ReproductionDetailResponse,
     ReproductionExecuteRequest,
     ReproductionExecuteResponse,
     ReproductionListItemOut,
+    ReproductionLogOut,
     ReproductionPlanRequest,
     ReproductionPlanResponse,
+    ReproductionStepLogCreateRequest,
     ReproductionStepOut,
     ReproductionStepUpdateRequest,
     ReproductionUpdateRequest,
@@ -26,6 +29,7 @@ from app.models.schemas.reproduction import (
 from app.services.memory.service import memory_service
 from app.services.reflection.service import reflection_service
 from app.services.reproduction.executor import reproduction_executor
+from app.services.reproduction.log_analyzer import analyze_log
 from app.services.reproduction.planner import reproduction_planner
 from app.services.reproduction.safety import assess_commands
 from app.services.workflow.service import workflow_service
@@ -71,6 +75,55 @@ def _load_steps(db: Session, reproduction_id: int) -> list[ReproductionStepRecor
     )
 
 
+def _load_logs(db: Session, reproduction_id: int) -> list[ReproductionLogRecord]:
+    return (
+        db.execute(
+            select(ReproductionLogRecord)
+            .where(ReproductionLogRecord.reproduction_id == reproduction_id)
+            .order_by(ReproductionLogRecord.created_at.desc(), ReproductionLogRecord.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _repo_out(repo: RepoRecord | None) -> RepoOut | None:
+    if repo is None:
+        return None
+
+    return RepoOut(
+        id=repo.id,
+        paper_id=repo.paper_id,
+        platform=repo.platform,
+        repo_url=repo.repo_url,
+        owner=repo.owner,
+        name=repo.name,
+        stars=repo.stars,
+        forks=repo.forks,
+        readme_summary=repo.readme_summary,
+        created_at=repo.created_at,
+        updated_at=repo.updated_at,
+    )
+
+
+def _log_out(log: ReproductionLogRecord) -> ReproductionLogOut:
+    return ReproductionLogOut(
+        id=log.id,
+        reproduction_id=log.reproduction_id,
+        step_id=log.step_id,
+        log_text=log.log_text,
+        error_type=log.error_type,
+        next_step_suggestion=log.next_step_suggestion,
+        created_at=log.created_at,
+    )
+
+
+def _default_blocker_reason(log_text: str) -> str:
+    first_line = next((line.strip() for line in log_text.splitlines() if line.strip()), '')
+    text = first_line or log_text.strip()
+    return text[:120]
+
+
 def _reproduction_list_item(repro: ReproductionRecord) -> ReproductionListItemOut:
     return ReproductionListItemOut(
         reproduction_id=repro.id,
@@ -85,18 +138,22 @@ def _reproduction_list_item(repro: ReproductionRecord) -> ReproductionListItemOu
 
 def _reproduction_detail(db: Session, repro: ReproductionRecord) -> ReproductionDetailResponse:
     steps = _load_steps(db, repro.id)
+    logs = _load_logs(db, repro.id)
     assessments = assess_commands([step.command for step in steps])
     out_steps = [_step_out(step, safe=assessments[idx]['allowed'], safety_reason=assessments[idx]['reason']) for idx, step in enumerate(steps)]
+    repo = db.get(RepoRecord, repro.repo_id) if repro.repo_id is not None else None
 
     return ReproductionDetailResponse(
         reproduction_id=repro.id,
         paper_id=repro.paper_id,
         repo_id=repro.repo_id,
+        repo=_repo_out(repo),
         status=repro.status,
         plan_markdown=repro.plan_markdown,
         progress_summary=repro.progress_summary,
         progress_percent=repro.progress_percent,
         steps=out_steps,
+        logs=[_log_out(log) for log in logs],
         created_at=repro.created_at,
         updated_at=repro.updated_at,
     )
@@ -327,6 +384,74 @@ def update_reproduction_step(
 
     check = assess_commands([step.command])[0]
     return _step_out(step, safe=check['allowed'], safety_reason=check['reason'])
+
+
+@router.post('/{reproduction_id}/steps/{step_id}/logs', response_model=ReproductionLogOut)
+def create_reproduction_step_log(
+    reproduction_id: int,
+    step_id: int,
+    payload: ReproductionStepLogCreateRequest,
+    db: Session = Depends(get_db),
+) -> ReproductionLogOut:
+    repro = _repro_or_404(db, reproduction_id)
+    step = db.get(ReproductionStepRecord, step_id)
+    if step is None or step.reproduction_id != reproduction_id:
+        raise HTTPException(status_code=404, detail='Reproduction step not found')
+
+    task = workflow_service.create_task(
+        db,
+        task_type='reproduction_log_create',
+        input_json={
+            'reproduction_id': reproduction_id,
+            'step_id': step_id,
+            'log_kind': payload.log_kind,
+            'log_text': payload.log_text,
+        },
+        status='running',
+    )
+
+    analysis = analyze_log(payload.log_text)
+    now = datetime.now(timezone.utc)
+    log_row = ReproductionLogRecord(
+        reproduction_id=reproduction_id,
+        step_id=step_id,
+        log_text=payload.log_text,
+        error_type=analysis['error_type'],
+        next_step_suggestion=analysis['next_step_suggestion'],
+    )
+    db.add(log_row)
+
+    snapshot_json: dict[str, object] = {
+        'step_id': step_id,
+        'log_kind': payload.log_kind,
+        'error_type': analysis['error_type'],
+    }
+    if payload.log_kind == 'blocker':
+        previous = step.step_status
+        step.step_status = 'blocked'
+        if previous != 'blocked':
+            step.blocked_at = now
+        if not (step.blocker_reason or '').strip():
+            step.blocker_reason = _default_blocker_reason(payload.log_text)
+        snapshot_json['blocked'] = True
+
+    repro.updated_at = now
+    db.add(step)
+    db.add(repro)
+    db.commit()
+    db.refresh(log_row)
+
+    workflow_service.add_artifact(
+        db,
+        task.id,
+        artifact_type='reproduction_log',
+        artifact_ref_type='reproduction_logs',
+        artifact_ref_id=log_row.id,
+        snapshot_json=snapshot_json,
+    )
+    workflow_service.update_task(db, task, status='completed', output_json={'reproduction_log_id': log_row.id})
+
+    return _log_out(log_row)
 
 
 @router.post('/{reproduction_id}/reflections')

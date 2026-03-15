@@ -108,6 +108,16 @@ export type ReproductionStep = {
   safety_reason: string;
 };
 
+export type ReproductionLog = {
+  id: number;
+  reproduction_id: number;
+  step_id?: number | null;
+  log_text: string;
+  error_type: string;
+  next_step_suggestion: string;
+  created_at: string;
+};
+
 export type ReproductionPlanResult = {
   reproduction_id: number;
   status: string;
@@ -130,7 +140,9 @@ export type ReproductionListItem = {
 export type ReproductionDetail = ReproductionPlanResult & {
   paper_id?: number | null;
   repo_id?: number | null;
+  repo?: RepoCandidate | null;
   steps: ReproductionStep[];
+  logs: ReproductionLog[];
   created_at: string;
   updated_at: string;
 };
