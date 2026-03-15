@@ -1,8 +1,6 @@
-﻿import type { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
-import Sidebar from '@/components/layout/Sidebar';
 import Topbar from '@/components/layout/Topbar';
-import ContextPanel from '@/components/layout/ContextPanel';
 
 import '../styles/globals.css';
 
@@ -16,12 +14,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="zh-CN" suppressHydrationWarning>
       <body>
         <div className="workbench">
-          <Sidebar />
-          <main className="main-col">
-            <Topbar />
-            <section className="workspace">{children}</section>
-          </main>
-          <ContextPanel />
+          <Topbar />
+          <main className="workspace">{children}</main>
         </div>
       </body>
     </html>

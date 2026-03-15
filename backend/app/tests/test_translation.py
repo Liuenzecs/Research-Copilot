@@ -1,4 +1,4 @@
-﻿from app.services.paper_search.base import SearchPaper
+from app.services.paper_search.base import SearchPaper
 
 
 def test_key_field_translation(client, monkeypatch):
@@ -27,3 +27,42 @@ def test_key_field_translation(client, monkeypatch):
     rows = trans.json()
     assert len(rows) >= 1
     assert rows[0]['disclaimer'] == 'AI翻译，仅供辅助理解'
+
+
+def test_segment_selection_translation_prefers_public_api(client, monkeypatch):
+    async def fake_public(text: str):
+        return '选词翻译结果', 'libretranslate', 'public-free'
+
+    monkeypatch.setattr('app.services.translation.service.translation_service._translate_via_libretranslate', fake_public)
+
+    response = client.post(
+        '/translation/segment',
+        json={
+            'text': 'Selected text for translation',
+            'mode': 'selection',
+            'locator': {'paper_id': 1, 'paragraph_id': 2, 'selected_text': 'Selected text for translation'},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['content_zh'] == '选词翻译结果'
+    assert payload['disclaimer'] == 'AI翻译，仅供辅助理解'
+
+
+def test_segment_selection_translation_falls_back_to_local_helper(client, monkeypatch):
+    async def broken_public(text: str):
+        raise RuntimeError('service unavailable')
+
+    monkeypatch.setattr('app.services.translation.service.translation_service._translate_via_libretranslate', broken_public)
+
+    response = client.post(
+        '/translation/segment',
+        json={
+            'text': 'Fallback translation text',
+            'mode': 'selection',
+            'locator': {'paper_id': 1, 'paragraph_id': 1, 'selected_text': 'Fallback translation text'},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['content_zh'].startswith('【中文辅助】')

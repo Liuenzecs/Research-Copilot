@@ -85,6 +85,7 @@ async def translate_segment(payload: SegmentTranslationRequest, db: Session = De
         field_name='',
         locator_json=json.dumps(payload.locator or {}, ensure_ascii=False),
         english_text=payload.text,
+        prefer_public_api=payload.mode == 'selection',
     )
     workflow_service.update_task(db, task, status='completed', output_json={'translation_id': row.id})
     return to_translation_out(row)

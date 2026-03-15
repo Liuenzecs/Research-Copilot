@@ -53,9 +53,9 @@ export default function DashboardPage() {
           <h3 className="title" style={{ fontSize: 16 }}>
             继续研究
           </h3>
-          <p className="subtle">直接进入论文、复现和心得主工作面。</p>
+          <p className="subtle">直接进入论文搜索、复现和心得主工作面。</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link href="/search" className="button secondary">论文工作区</Link>
+            <Link href="/search" className="button secondary">论文搜索</Link>
             <Link href="/reproduction" className="button secondary">复现跟踪</Link>
             <Link href="/reflections" className="button secondary">研究心得</Link>
           </div>

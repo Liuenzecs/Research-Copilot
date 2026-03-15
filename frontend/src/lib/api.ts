@@ -1,10 +1,12 @@
-﻿import { API_BASE } from './constants';
+import { API_BASE } from './constants';
 import {
   BrainstormIdeaResult,
   LibraryItem,
   MemoryItem,
   Paper,
+  PaperReader,
   PaperWorkspace,
+  ProviderSettings,
   Reflection,
   ReproductionDetail,
   ReproductionListItem,
@@ -13,6 +15,7 @@ import {
   RepoFindResponse,
   Summary,
   Task,
+  TranslationResult,
   WeeklyReportContext,
   WeeklyReportDraft,
 } from './types';
@@ -32,24 +35,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message = error instanceof Error ? error.message : '未知网络错误';
     throw new Error(`无法连接后端服务：${API_BASE}。请确认后端已启动，且 NEXT_PUBLIC_API_BASE 配置正确。原始错误：${message}`);
   }
+
   if (!response.ok) {
     const message = await response.text();
     throw new Error(`API error ${response.status}: ${message}`);
   }
+
   if (response.status === 204) {
     return {} as T;
   }
+
   return response.json() as Promise<T>;
 }
 
 function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const sp = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v === undefined || v === null || v === '') return;
-    sp.set(k, String(v));
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    sp.set(key, String(value));
   });
-  const value = sp.toString();
-  return value ? `?${value}` : '';
+  const query = sp.toString();
+  return query ? `?${query}` : '';
 }
 
 export async function health() {
@@ -90,6 +96,10 @@ export async function getPaper(paperId: number) {
 
 export async function getPaperWorkspace(paperId: number) {
   return request<PaperWorkspace>(`/papers/${paperId}/workspace`);
+}
+
+export async function getPaperReader(paperId: number) {
+  return request<PaperReader>(`/papers/${paperId}/reader`);
 }
 
 export async function updatePaperResearchState(
@@ -139,6 +149,21 @@ export function getPaperPdfUrl(paperId: number, download = true) {
   return `${API_BASE}/papers/${paperId}/pdf${download ? '?download=true' : '?download=false'}`;
 }
 
+export async function translateSegment(payload: {
+  text: string;
+  mode?: 'paragraph' | 'selection';
+  locator?: Record<string, unknown>;
+}) {
+  return request<TranslationResult>('/translation/segment', {
+    method: 'POST',
+    body: JSON.stringify({
+      text: payload.text,
+      mode: payload.mode ?? 'paragraph',
+      locator: payload.locator ?? {},
+    }),
+  });
+}
+
 export async function listLibrary() {
   return request<{ items: LibraryItem[]; total: number }>('/library/list');
 }
@@ -186,7 +211,7 @@ export async function listTasks(params?: {
 }
 
 export async function providerSettings() {
-  return request('/settings/providers');
+  return request<ProviderSettings>('/settings/providers');
 }
 
 export async function findRepos(payload: { paper_id?: number; query?: string }) {

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     semantic_scholar_api_key: str = Field(default='', alias='SEMANTIC_SCHOLAR_API_KEY')
 
     github_token: str = Field(default='', alias='GITHUB_TOKEN')
+    libretranslate_api_url: str = Field(default='https://translate.argosopentech.com/translate', alias='LIBRETRANSLATE_API_URL')
+    libretranslate_api_key: str = Field(default='', alias='LIBRETRANSLATE_API_KEY')
+    libretranslate_timeout_seconds: float = Field(default=12.0, alias='LIBRETRANSLATE_TIMEOUT_SECONDS')
 
     default_search_sources: str = 'arxiv,semantic_scholar'
 

@@ -1,4 +1,4 @@
-﻿export type Paper = {
+export type Paper = {
   id: number;
   source: string;
   source_id: string;
@@ -60,21 +60,35 @@ export type Task = {
   output_json?: Record<string, unknown>;
 };
 
+export type PaperResearchState = {
+  reading_status: string;
+  interest_level: number;
+  repro_interest: string;
+  user_rating?: number | null;
+  last_opened_at?: string | null;
+  topic_cluster?: string;
+  is_core_paper: boolean;
+  updated_at?: string;
+};
+
 export type PaperWorkspace = {
   paper: Paper;
-  research_state: {
-    reading_status: string;
-    interest_level: number;
-    repro_interest: string;
-    user_rating?: number | null;
-    last_opened_at?: string | null;
-    topic_cluster?: string;
-    is_core_paper: boolean;
-    updated_at?: string;
-  };
+  research_state: PaperResearchState;
   summaries: Summary[];
   reflections: Reflection[];
   recent_tasks: Task[];
+};
+
+export type PaperReaderParagraph = {
+  paragraph_id: number;
+  text: string;
+};
+
+export type PaperReader = PaperWorkspace & {
+  pdf_downloaded: boolean;
+  reader_ready: boolean;
+  paragraphs: PaperReaderParagraph[];
+  text_notice: string;
 };
 
 export type LibraryItem = {
@@ -273,4 +287,28 @@ export type BrainstormIdeaResult = {
   id: number;
   idea_type: string;
   content: string;
+};
+
+export type TranslationResult = {
+  id: number;
+  target_type: string;
+  target_id: number;
+  unit_type: string;
+  field_name: string;
+  content_en_snapshot: string;
+  content_zh: string;
+  disclaimer: string;
+};
+
+export type ProviderSettings = {
+  openai_enabled: boolean;
+  openai_model: string;
+  deepseek_enabled: boolean;
+  deepseek_model: string;
+  libretranslate_enabled: boolean;
+  libretranslate_api_url: string;
+  semantic_scholar_api_key_configured: boolean;
+  github_token_configured: boolean;
+  llm_mode: string;
+  notes: string[];
 };

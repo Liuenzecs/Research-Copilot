@@ -60,6 +60,23 @@ class PaperWorkspaceResponse(BaseModel):
     recent_tasks: list[dict[str, Any]]
 
 
+class PaperReaderParagraph(BaseModel):
+    paragraph_id: int
+    text: str
+
+
+class PaperReaderResponse(BaseModel):
+    paper: PaperOut
+    research_state: dict[str, Any]
+    summaries: list[dict[str, Any]]
+    reflections: list[dict[str, Any]]
+    recent_tasks: list[dict[str, Any]]
+    pdf_downloaded: bool
+    reader_ready: bool
+    paragraphs: list[PaperReaderParagraph]
+    text_notice: str = ''
+
+
 class PaperContextReflectionCreateRequest(BaseModel):
     summary_id: int | None = None
     stage: str = 'initial'
