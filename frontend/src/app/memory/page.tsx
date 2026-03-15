@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useState } from 'react';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
+import StatusStack from '@/components/common/StatusStack';
 import MemoryGraph from '@/components/memory/MemoryGraph';
 import MemoryList from '@/components/memory/MemoryList';
 import ProfilePanel from '@/components/memory/ProfilePanel';
@@ -16,10 +17,20 @@ export default function MemoryPage() {
   const [memoryType, setMemoryType] = useState('');
   const [layer, setLayer] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [notice, setNotice] = useState('');
 
   async function searchMemory() {
-    if (!query.trim()) return;
+    if (!query.trim()) {
+      setError('');
+      setNotice('');
+      setInfo('请输入记忆检索问题。');
+      return;
+    }
+
     setError('');
+    setInfo('');
+    setNotice('');
     try {
       const payload = await queryMemory({
         query,
@@ -28,6 +39,9 @@ export default function MemoryPage() {
         layers: layer ? [layer] : [],
       });
       setItems(payload);
+      if (payload.length > 0) {
+        setNotice(`已返回 ${payload.length} 条记忆结果。`);
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -37,36 +51,42 @@ export default function MemoryPage() {
     <>
       <Card>
         <h2 className="title">长期记忆</h2>
-        <p className="subtle">支持按类型/层过滤，并可跳转回论文/复现/心得上下文。</p>
+        <p className="subtle">支持按类型与层级过滤，并可精确回跳到论文、复现与心得上下文。</p>
       </Card>
       <div className="card" style={{ display: 'grid', gap: 8 }}>
         <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="输入记忆检索问题" />
         <div className="grid-2">
           <select className="select" value={memoryType} onChange={(e) => setMemoryType(e.target.value)}>
-            <option value="">全部类型</option>
-            <option value="PaperMemory">PaperMemory</option>
-            <option value="SummaryMemory">SummaryMemory</option>
-            <option value="ReflectionMemory">ReflectionMemory</option>
-            <option value="ReproMemory">ReproMemory</option>
-            <option value="IdeaMemory">IdeaMemory</option>
-            <option value="RepoMemory">RepoMemory</option>
+            <option value="">全部记忆类型</option>
+            <option value="PaperMemory">论文记忆</option>
+            <option value="SummaryMemory">摘要记忆</option>
+            <option value="ReflectionMemory">心得记忆</option>
+            <option value="ReproMemory">复现记忆</option>
+            <option value="IdeaMemory">灵感记忆</option>
+            <option value="RepoMemory">代码仓记忆</option>
           </select>
           <select className="select" value={layer} onChange={(e) => setLayer(e.target.value)}>
-            <option value="">全部层</option>
-            <option value="raw">raw</option>
-            <option value="structured">structured</option>
-            <option value="semantic">semantic</option>
-            <option value="profile">profile</option>
+            <option value="">全部层级</option>
+            <option value="raw">原始层</option>
+            <option value="structured">结构层</option>
+            <option value="semantic">语义层</option>
+            <option value="profile">画像层</option>
           </select>
         </div>
         <div style={{ marginTop: 10 }}>
           <Button onClick={searchMemory}>检索记忆</Button>
         </div>
       </div>
+      <StatusStack
+        items={[
+          ...(error ? [{ variant: 'error' as const, message: error }] : []),
+          ...(info ? [{ variant: 'info' as const, message: info }] : []),
+          ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
+        ]}
+      />
       <MemoryList items={items} />
       <MemoryGraph />
       <ProfilePanel />
-      {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
     </>
   );
 }

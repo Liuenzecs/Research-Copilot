@@ -1,32 +1,37 @@
-﻿"use client";
+"use client";
 
 import { useState } from 'react';
 
-import { API_BASE } from '@/lib/constants';
+import StatusStack from '@/components/common/StatusStack';
+import { createReflection as createReflectionRequest } from '@/lib/api';
 
 import ReflectionTemplateForm, { ReflectionFormPayload } from './ReflectionTemplateForm';
 
 export default function ReflectionEditor({ onCreated }: { onCreated: () => Promise<void> }) {
   const [error, setError] = useState<string>('');
+  const [notice, setNotice] = useState<string>('');
 
   async function createReflection(payload: ReflectionFormPayload) {
     setError('');
-    const response = await fetch(`${API_BASE}/reflections`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      setError(`创建失败: ${response.status}`);
-      return;
+    setNotice('');
+    try {
+      await createReflectionRequest(payload);
+      await onCreated();
+      setNotice('心得已创建。');
+    } catch (e) {
+      setError((e as Error).message);
     }
-    await onCreated();
   }
 
   return (
     <div>
       <ReflectionTemplateForm onSubmit={createReflection} />
-      {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
+      <StatusStack
+        items={[
+          ...(error ? [{ variant: 'error' as const, message: error }] : []),
+          ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
+        ]}
+      />
     </div>
   );
 }

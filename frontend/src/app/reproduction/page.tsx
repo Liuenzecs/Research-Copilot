@@ -7,6 +7,7 @@ import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
+import StatusStack from '@/components/common/StatusStack';
 import ReproStepTracker from '@/components/reproduction/ReproStepTracker';
 import {
   createReproductionReflection,
@@ -364,11 +365,13 @@ function ReproductionPageContent() {
 
       {loading ? <Loading text="加载复现工作区..." /> : null}
 
-      {warnings.map((warning) => (
-        <p key={warning} style={{ color: '#b45309', margin: 0 }}>{warning}</p>
-      ))}
-      {error ? <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p> : null}
-      {notice ? <p style={{ color: '#0f766e', margin: 0 }}>{notice}</p> : null}
+      <StatusStack
+        items={[
+          ...(error ? [{ variant: 'error' as const, message: error }] : []),
+          ...warnings.map((message) => ({ variant: 'warning' as const, message })),
+          ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
+        ]}
+      />
 
       {shouldShowContextCard ? (
         <Card>

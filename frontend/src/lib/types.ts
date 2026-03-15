@@ -246,6 +246,11 @@ export type WeeklyReportDraft = {
   updated_at: string;
 };
 
+export type MemoryJumpTarget = {
+  kind: 'paper' | 'reproduction' | 'reflection' | 'brainstorm';
+  path: string;
+};
+
 export type MemoryItem = {
   id: number;
   memory_type: string;
@@ -258,4 +263,11 @@ export type MemoryItem = {
   updated_at: string;
   ref_table?: string;
   ref_id?: number | null;
+  jump_target?: MemoryJumpTarget | null;
+};
+
+export type BrainstormIdeaResult = {
+  id: number;
+  idea_type: string;
+  content: string;
 };

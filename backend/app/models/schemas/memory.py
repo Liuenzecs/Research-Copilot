@@ -3,6 +3,11 @@
 from pydantic import BaseModel, Field
 
 
+class MemoryJumpTarget(BaseModel):
+    kind: str
+    path: str
+
+
 class MemoryQueryRequest(BaseModel):
     query: str
     memory_types: list[str] = Field(default_factory=list)
@@ -22,6 +27,7 @@ class MemoryOut(BaseModel):
     archived: bool
     created_at: datetime
     updated_at: datetime
+    jump_target: MemoryJumpTarget | None = None
 
 
 class MemoryLinkRequest(BaseModel):

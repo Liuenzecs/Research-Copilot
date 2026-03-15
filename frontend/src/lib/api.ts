@@ -1,5 +1,6 @@
 ﻿import { API_BASE } from './constants';
 import {
+  BrainstormIdeaResult,
   LibraryItem,
   MemoryItem,
   Paper,
@@ -148,6 +149,17 @@ export async function listReflections(params?: {
   return request<Reflection[]>(`/reflections${qs(params ?? {})}`);
 }
 
+export async function createReflection(payload: Record<string, unknown>) {
+  return request<Reflection>('/reflections', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getReflection(reflectionId: number) {
+  return request<Reflection>(`/reflections/${reflectionId}`);
+}
+
 export async function reflectionTimeline(params?: { date_from?: string; date_to?: string }) {
   return request<Array<{ reflection: Reflection; task_type?: string; task_status?: string }>>(`/reflections/timeline${qs(params ?? {})}`);
 }
@@ -270,5 +282,12 @@ export async function queryMemory(params: { query: string; top_k?: number; memor
       memory_types: params.memory_types ?? [],
       layers: params.layers ?? [],
     }),
+  });
+}
+
+export async function generateBrainstormIdeas(topic: string, paperIds: number[] = []) {
+  return request<BrainstormIdeaResult>('/brainstorm/ideas', {
+    method: 'POST',
+    body: JSON.stringify({ topic, paper_ids: paperIds }),
   });
 }

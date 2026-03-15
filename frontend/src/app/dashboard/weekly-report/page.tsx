@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
+import StatusStack from '@/components/common/StatusStack';
 import ReportDraftEditor from '@/components/reporting/ReportDraftEditor';
 import WeeklyReportPanel from '@/components/reporting/WeeklyReportPanel';
 import { createWeeklyReportDraft, getWeeklyReportContext, listWeeklyReportDrafts, updateWeeklyReportDraft } from '@/lib/api';
@@ -137,8 +138,12 @@ export default function WeeklyReportPage() {
         </div>
       </div>
 
-      {error ? <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p> : null}
-      {notice ? <p style={{ color: '#0f766e', margin: 0 }}>{notice}</p> : null}
+      <StatusStack
+        items={[
+          ...(error ? [{ variant: 'error' as const, message: error }] : []),
+          ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
+        ]}
+      />
 
       <div className="grid-2" style={{ alignItems: 'start' }}>
         <WeeklyReportPanel context={context} contextSource={contextSource} />

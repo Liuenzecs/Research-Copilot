@@ -120,6 +120,40 @@
 - memory / profile 扩展
 - 新的工作面或新的数据库迁移
 
+### 第四批：第二次收口批 —— Memory 精确回跳 + 页面状态统一 + Chinese-first 收敛
+
+完成日期：2026-03-15
+
+本批已完成：
+
+- `memory/query` 返回 `jump_target`
+- memory 命中结果可精确回跳到：
+  - paper workspace
+  - reproduction
+  - reflections
+  - brainstorm
+- `SearchPage` 支持 `paper_id + summary_id`
+- `Paper Workspace` 支持按 query 自动选中指定摘要
+- `Reflections` 页面支持 `reflection_id`
+- 指定 reflection 可被插入时间线并高亮显示
+- 新增统一页面状态组件，收敛：
+  - error
+  - warning
+  - success
+  - info
+- `search / paper workspace / reproduction / weekly-report / memory / reflection editor / brainstorm` 改为统一状态提示样式
+- memory 页面与心得模板进一步收敛为 Chinese-first
+- 前端零散直接 `fetch` 收回到 `lib/api.ts`
+- 补齐 memory jump target 后端测试，并通过全量回归与前端构建
+
+明确未做：
+
+- memory graph 真图谱化
+- profile 面板扩展
+- reflection 独立详情页
+- summary 独立详情页
+- 大范围 hooks / store 重构
+
 ---
 
 ## 当前产品主轴
@@ -182,8 +216,8 @@
 
 当前判断：
 
-- 现有 memory 仍偏“存得进去”，不够“跳得回来”
-- 现在可以继续 defer，不必抢在 reproduction 后面立即展开
+- 现有 memory 已补齐精确回跳，基本达到“能检索、能回到上下文”的可用状态
+- 下一阶段不该扩面做 graph，而应只补少量可解释性和列表体验
 
 ---
 
@@ -191,17 +225,16 @@
 
 ### Fix Soon
 
-- 补齐 memory 命中后的精确回跳
-- 继续统一 Chinese-first 文案与提示风格
-- 收敛页面层内分散的 notice / warning 处理
+- 当前这组 `Fix Soon` 已完成
+- 下一批直接进入 `Improve Next`
 - 继续保持每批完成后同步更新规划文档与清单
 
 ### Improve Next
 
-- 收敛前端页面层直接处理 API 细节的写法
-- 继续减少页面对内部字段语义的直接暴露
 - 周报编辑与历史草稿管理的小范围交互打磨
 - timeline / filters 的周节奏使用性微调
+- memory 面板的可解释性与上下文提示增强
+- 继续减少页面对内部字段语义的直接暴露
 
 ### Defer
 

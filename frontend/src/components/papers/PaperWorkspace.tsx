@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/common/Button';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
+import StatusStack from '@/components/common/StatusStack';
 import {
   createPaperReflection,
   deepSummary,
@@ -94,7 +95,13 @@ function buildDraftFromContext(workspace: PaperWorkspace, summaryId: Exclude<Sum
   };
 }
 
-export default function PaperWorkspaceView({ paperId }: { paperId: number | null }) {
+export default function PaperWorkspaceView({
+  paperId,
+  requestedSummaryId = null,
+}: {
+  paperId: number | null;
+  requestedSummaryId?: number | null;
+}) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState<PaperWorkspace | null>(null);
   const [loading, setLoading] = useState(false);
@@ -119,6 +126,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   const [selectedSummaryId, setSelectedSummaryId] = useState<SummarySelection>('auto');
   const [reflectionDirty, setReflectionDirty] = useState(false);
   const [lastPrefillKey, setLastPrefillKey] = useState('');
+  const [appliedRequestedSummaryKey, setAppliedRequestedSummaryKey] = useState('');
 
   const summaries = workspace?.summaries ?? [];
   const effectiveSummarySelection: Exclude<SummarySelection, 'auto'> =
@@ -179,6 +187,28 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
     setLastPrefillKey(prefillKey);
     setReflectionDirty(false);
   }, [effectiveSummarySelection, lastPrefillKey, reflectionDirty, workspace]);
+
+  useEffect(() => {
+    if (!requestedSummaryId) {
+      setAppliedRequestedSummaryKey('');
+      return;
+    }
+
+    if (!workspace) return;
+
+    const requestKey = `${workspace.paper.id}:${requestedSummaryId}`;
+    if (appliedRequestedSummaryKey === requestKey) return;
+
+    if (workspace.summaries.some((item) => item.id === requestedSummaryId)) {
+      setSelectedSummaryId(requestedSummaryId);
+      setReflectionDirty(false);
+      setAppliedRequestedSummaryKey(requestKey);
+      setNotice(`已定位到摘要 #${requestedSummaryId}。`);
+      return;
+    }
+
+    setAppliedRequestedSummaryKey(requestKey);
+  }, [appliedRequestedSummaryKey, requestedSummaryId, workspace]);
 
   function updateReflectionDraft(patch: Partial<ReflectionDraft>) {
     setReflectionDraft((previous) => ({ ...previous, ...patch }));
@@ -246,7 +276,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             onClick={() =>
               runAction('quick', async () => {
                 const result = await quickSummary(currentPaper.id);
-                setNotice(`快速总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
+                setNotice(`快速摘要已生成：#${result.id}。`);
               })
             }
           >
@@ -258,7 +288,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             onClick={() =>
               runAction('deep', async () => {
                 const result = await deepSummary(currentPaper.id);
-                setNotice(`深度总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
+                setNotice(`深度摘要已生成：#${result.id}。`);
               })
             }
           >
@@ -270,7 +300,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             onClick={() =>
               runAction('memory', async () => {
                 const result = await pushPaperToMemory(currentPaper.id);
-                setNotice(`已推送到长期记忆，memory_id=${result.memory_id}`);
+                setNotice('论文已推送到长期记忆。');
               })
             }
           >
@@ -306,14 +336,14 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             className="input"
             max={5}
             min={1}
-            placeholder="interest_level 1-5"
+            placeholder="兴趣分 1-5"
             type="number"
             value={interestLevel}
             onChange={(e) => setInterestLevel(Number(e.target.value))}
           />
           <input
             className="input"
-            placeholder="topic_cluster"
+            placeholder="主题分组"
             value={topicCluster}
             onChange={(e) => setTopicCluster(e.target.value)}
           />
@@ -350,8 +380,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         {selectedSummary ? (
           <>
             <p className="subtle">
-              当前摘要: #{selectedSummary.id} ({selectedSummary.summary_type}) · provider={selectedSummary.provider || 'heuristic'} ·
-              {' '}model={selectedSummary.model || 'local'}
+              当前摘要：#{selectedSummary.id}（{selectedSummary.summary_type}） · 生成方式：{selectedSummary.provider || 'heuristic'}/{selectedSummary.model || 'local'}
             </p>
             {selectedSummary.provider === 'heuristic' ? (
               <p className="subtle" style={{ color: '#b45309' }}>
@@ -492,8 +521,12 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
         ))}
       </div>
 
-      {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
-      {notice ? <p style={{ color: '#0f766e' }}>{notice}</p> : null}
+      <StatusStack
+        items={[
+          ...(error ? [{ variant: 'error' as const, message: error }] : []),
+          ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
+        ]}
+      />
     </div>
   );
 }

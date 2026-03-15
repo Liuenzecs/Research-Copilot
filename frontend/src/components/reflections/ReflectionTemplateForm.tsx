@@ -39,6 +39,22 @@ const REPRO_FIELDS = [
   'free_notes',
 ];
 
+const FIELD_LABELS: Record<string, string> = {
+  paper_in_my_words: '请用自己的话概括论文',
+  most_important_contribution: '最重要贡献',
+  what_i_learned: '我学到了什么',
+  what_i_do_not_understand: '我还没理解的部分',
+  worth_reproducing: '是否值得复现',
+  worth_reporting_to_professor: '是否值得向导师汇报',
+  one_sentence_report_summary: '一句话汇报摘要',
+  free_notes: '自由补充笔记',
+  what_i_did_today: '今天做了什么',
+  current_result: '当前结果',
+  issues_encountered: '遇到的问题',
+  suspected_causes: '怀疑原因',
+  next_step: '下一步计划',
+};
+
 export default function ReflectionTemplateForm({ onSubmit }: { onSubmit: (payload: ReflectionFormPayload) => Promise<void> }) {
   const [templateType, setTemplateType] = useState<'paper' | 'reproduction'>('paper');
   const [stage, setStage] = useState('initial');
@@ -107,7 +123,7 @@ export default function ReflectionTemplateForm({ onSubmit }: { onSubmit: (payloa
           <textarea
             key={field}
             className="textarea"
-            placeholder={field}
+            placeholder={FIELD_LABELS[field] || field}
             value={fields[field] ?? ''}
             onChange={(e) => setFields((prev) => ({ ...prev, [field]: e.target.value }))}
           />
