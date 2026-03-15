@@ -1,260 +1,156 @@
 # Research Copilot 产品审计与迭代纲要
 
-本文件用于沉淀当前仓库的产品判断、架构边界与阶段性完成情况。  
-产品定位保持不变：
+本文档用于记录当前仓库的产品定位、阶段判断、已完成批次与暂缓事项。
+
+## 产品定位
 
 - 本地优先
-- 单用户
+- 单用户研究工作台
 - 面向真实周节奏科研使用
-- 不是通用聊天机器人
-
----
+- 核心不是“通用聊天”，而是“论文—复现—心得—周报—记忆”的连续工作流
 
 ## 当前阶段判断
 
-当前项目处于“可持续迭代的早期研究工作台”阶段，已经明显超过纯原型，但仍然在集中打磨高频主链路。
+当前项目已经进入“可日常使用的单人研究工作台”阶段：
 
-当前最稳定的主轴：
+- `Paper Workspace` 已经是论文中心工作面
+- `paper -> summary -> reflection -> memory` 主链路可用
+- `paper -> repo candidates -> reproduction` 已经闭环
+- `reproduction` 已具备计划、步骤、日志、阻塞与心得回流
+- `weekly report` 已具备严格按周上下文、历史快照与精确回跳
+- `memory` 已具备精确回跳与列表内解释
 
-- `Paper Workspace` 已成为论文中心工作面
-- paper → summary → reflection → memory 主链路已可用
-- reproduction 已具备对象模型、步骤跟踪、安全边界与 reflection 接口
+当前不再优先扩展大功能面，而是继续保持：
 
-当前仍需持续盯住的风险：
+- 工作流闭环清晰
+- Chinese-first 体验一致
+- 页面状态提示自然
+- 回跳链路稳定
 
-- workflow 是否真的闭环，而不是“每个页面单独能用”
-- 页面之间是否还会丢失上下文
-- 数据对象是否能回跳到原上下文，而不只是“能存”
-- 前端是否持续保持 Chinese-first，而不是暴露内部字段语义
-
----
-
-## 已完成批次记录
+## 已完成批次
 
 ### 第一批：论文工作区到复现工作区的闭环修顺
 
 完成日期：2026-03-15
 
-本批已完成：
+已完成：
 
 - 修正 `Paper Workspace` 的摘要语义
-- 默认展示当前选中摘要，而不是总是展示最新摘要
-- 支持真实的“不绑定摘要”状态
-- 创建 paper reflection 时，paper-only 情况不再发送 `summary_id`
-- 从 `Paper Workspace` 跳转到 `/reproduction?paper_id=<id>`
-- reproduction 页面支持 `paper_id / reproduction_id` 上下文
-- 自动搜索 repo candidates
-- 自动查找并优先续做最近一条 reproduction
+- 支持真正的“当前查看摘要 / 不绑定摘要”
+- 从论文工作区进入 `/reproduction?paper_id=<id>`
+- 复现页自动搜索 repo candidates
+- 自动续接该论文最近一条 reproduction
 - 新增 `GET /reproduction`
-- `POST /repos/find` 改为应用层幂等复用
-
-明确未做：
-
-- 周报准确性修整
-- memory graph / memory 管理 UI
-- profile 面板
+- `POST /repos/find` 改为应用层复用，避免重复 repo 记录
 
 ### 第二批：复现工作区细化 + blocker/log 正式接入
 
 完成日期：2026-03-15
 
-本批已完成：
+已完成：
 
-- 补齐 reproduction 顶部上下文状态区
-  - 明确区分“继续最近一次复现 / 查看指定复现 / 准备新建复现”
-  - 展示当前论文上下文、复现状态、进度摘要、最后更新时间
-  - 明确展示 repo 语义或 paper-only 语义
-- 将 `ReproStepTracker` 从简表升级为步骤卡片视图
-  - 展示 `purpose`
-  - 展示 `risk_level`
-  - 展示 `expected_output`
-  - 展示 `requires_manual_confirm`
-  - 展示 `safe / safety_reason`
-  - 展示更完整的 `progress_note / blocker_reason`
+- 复现页顶部上下文状态区补齐
+- `ReproStepTracker` 升级为步骤卡片视图
 - 正式接入步骤级 `reproduction_logs`
-  - 新增步骤级日志写入接口
-  - `GET /reproduction/{id}` 返回日志列表
-  - 支持 `note / blocker` 两类日志
-  - blocker 日志会自动把步骤标记为 `blocked`
-- 扩展本地 `log_analyzer`
-  - 输出 `error_type`
-  - 输出 `next_step_suggestion`
-  - 默认使用本地启发式，不引入新模型依赖
-- 补齐复现页关键空态 / warning / notice 文案
-- 增加后端回归测试并通过前端构建验证
+- 支持 `note / blocker` 两类日志
+- blocker 日志自动将步骤切到 `blocked`
+- 本地 `log_analyzer` 输出 `error_type / next_step_suggestion`
+- 复现页 warning / empty / notice 文案收口
 
-明确未做：
-
-- 自动执行命令并自动采集日志
-- 文件型日志上传
-- reproduction 级全局日志页
-- 独立 blocker dashboard
-
-### 第三批：周报上下文修整 + 周报回跳闭环 + 复现页剩余提示收口
+### 第三批：周报上下文修整 + 周报回跳闭环
 
 完成日期：2026-03-15
 
-本批已完成：
+已完成：
 
-- `weekly report` 上下文改为严格按周过滤
-- 将周报上下文返回结构收紧为强类型对象
-- “最近论文”改为“本周有研究动作的论文”
-- 左侧周报面板补齐五段：
-  - 可汇报心得
-  - 最近论文
-  - 复现进展
-  - 当前阻塞
-  - 下周行动
-- 周报条目支持精确回跳：
-  - paper → `/search?paper_id=<id>`
-  - reproduction / blocker → `/reproduction?reproduction_id=<id>`
-- 打开历史草稿时，左侧改为显示该草稿生成时保存的 `source snapshot`
-- 周报草稿 markdown 与左侧上下文保持同一周、同一批对象来源
-- 复现页剩余 notice / warning / empty 文案继续收口
-- report-worthy reproduction reflection 创建后，明确提示其可进入周报上下文使用
-- 补齐周报后端集成测试，并通过前后端验证
+- `weekly report context` 改为严格按周过滤
+- 周报左侧面板补齐五段内容
+- paper / reproduction 条目支持精确回跳
+- 历史草稿打开时使用 `source_snapshot_json`
+- 周报 markdown 与左侧上下文对齐
+- reproduction 页面剩余提示与 reflection 回流文案收口
 
-明确未做：
-
-- reflection 精确回跳
-- memory / profile 扩展
-- 新的工作面或新的数据库迁移
-
-### 第四批：第二次收口批 —— Memory 精确回跳 + 页面状态统一 + Chinese-first 收敛
+### 第四批：Memory 精确回跳 + 页面状态统一 + Chinese-first 收敛
 
 完成日期：2026-03-15
 
-本批已完成：
+已完成：
 
 - `memory/query` 返回 `jump_target`
-- memory 命中结果可精确回跳到：
-  - paper workspace
-  - reproduction
-  - reflections
-  - brainstorm
+- memory 结果支持精确回跳到 `paper / reproduction / reflection / brainstorm`
 - `SearchPage` 支持 `paper_id + summary_id`
-- `Paper Workspace` 支持按 query 自动选中指定摘要
-- `Reflections` 页面支持 `reflection_id`
-- 指定 reflection 可被插入时间线并高亮显示
-- 新增统一页面状态组件，收敛：
-  - error
-  - warning
-  - success
-  - info
-- `search / paper workspace / reproduction / weekly-report / memory / reflection editor / brainstorm` 改为统一状态提示样式
-- memory 页面与心得模板进一步收敛为 Chinese-first
-- 前端零散直接 `fetch` 收回到 `lib/api.ts`
-- 补齐 memory jump target 后端测试，并通过全量回归与前端构建
+- `ReflectionsPage` 支持 `reflection_id`
+- 新增统一状态组件 `StatusBanner / StatusStack`
+- 多个主页面统一 notice / warning / error 呈现
+- memory 页面与部分表单继续收口为 Chinese-first
+- 页面零散 `fetch` 收回到 `frontend/src/lib/api.ts`
 
-明确未做：
+### 第五批：周报编辑收口 + 周节奏时间线 + Memory 可解释性补齐
+
+完成日期：2026-03-15
+
+已完成：
+
+- 周报页支持“当前周已有草稿”时的分流选择
+  - 继续最近草稿
+  - 新建一份草稿
+  - 取消
+- 新增最小 `ChoiceDialog` 组件
+- `ReportDraftEditor` 支持：
+  - 中文状态显示
+  - 草稿元信息展示
+  - dirty state 检测
+  - “恢复到已保存版本”
+- 历史草稿列表支持：
+  - 当前草稿高亮
+  - 本周草稿标记
+  - 周范围 / 更新时间展示
+- `GET /reflections` 新增 `is_report_worthy` 筛选
+- `reflections` 页面改为周节奏优先：
+  - 默认本周
+  - 今天 / 昨天 / 本周 / 上周 / 最近30天 / 全部
+  - 心得类型 / 生命周期 / 仅可汇报筛选
+  - 顶部 summary 行
+- `memory` 列表新增：
+  - `retrieval_mode`
+  - `match_reason`
+  - `context_hint`
+- `memory` 列表改为“类型 + 层级 + 摘要 + 解释 + 回跳”
+- `dashboard` 不再直接暴露 raw `task_type / status`
+- 新增共享 presentation helper，统一中文标签与时间展示
+
+## 当前结论
+
+本轮“三次做完剩余代办”的主目标已全部完成。
+
+当前仓库更适合继续做：
+
+- 小范围稳定性修补
+- 真实使用后的交互微调
+- 少量对象解释性增强
+
+不建议现在立即进入：
 
 - memory graph 真图谱化
 - profile 面板扩展
-- reflection 独立详情页
-- summary 独立详情页
-- 大范围 hooks / store 重构
+- 新增独立工作面
+- 大范围架构重写
 
----
+## 暂缓项
 
-## 当前产品主轴
-
-### 1. 论文工作流
-
-目标链路：
-
-- 搜索
-- 下载
-- 摘要
-- reflection
-- memory
-
-当前判断：
-
-- 主链路已经清晰
-- `Paper Workspace` 仍应保持为 canonical paper-centered UI
-- 下一阶段不宜再把论文页做成“大而全”，而应继续保证向下游工作面顺滑跳转
-
-### 2. 复现工作流
-
-目标链路：
-
-- 论文上下文进入
-- repo candidates
-- reproduction planning
-- step tracking
-- blocker/log handling
-- reproduction reflection
-
-当前判断：
-
-- 从论文进入复现的上游入口已经打通
-- 当前复现页已不再只是“生成计划页”，而更接近真实执行面
-- 下一阶段重点应转向更细的执行信息与后续回流，而不是继续扩张新页面
-
-### 3. 周报工作流
-
-目标链路：
-
-- reflections / tasks / reproduction progress 聚合
-- weekly draft 生成
-- 编辑与定稿
-
-当前判断：
-
-- 严格周过滤、历史快照与 paper / reproduction 回跳已经补齐
-- 周报已从“功能骨架”进入“可以真实每周使用”的阶段
-- 后续重点不再是新功能扩展，而是少量可用性收尾与文案统一
-
-### 4. Memory 工作流
-
-目标链路：
-
-- 存储
-- 检索
-- 链接
-- 回跳原上下文
-
-当前判断：
-
-- 现有 memory 已补齐精确回跳，基本达到“能检索、能回到上下文”的可用状态
-- 下一阶段不该扩面做 graph，而应只补少量可解释性和列表体验
-
----
-
-## 当前优先级判断
-
-### Fix Soon
-
-- 当前这组 `Fix Soon` 已完成
-- 下一批直接进入 `Improve Next`
-- 继续保持每批完成后同步更新规划文档与清单
-
-### Improve Next
-
-- 周报编辑与历史草稿管理的小范围交互打磨
-- timeline / filters 的周节奏使用性微调
-- memory 面板的可解释性与上下文提示增强
-- 继续减少页面对内部字段语义的直接暴露
-
-### Defer
+以下内容继续列为 `Defer`：
 
 - memory graph 真图谱化
 - researcher profile 面板
-- repo / task 独立工作面
-- 大规模架构整理
+- repo 独立工作面
+- task 独立工作面
+- 更大范围的 hooks / store / 路由重构
 
----
+## 维护规则
 
-## 文档维护约定
+每次完成一批计划后：
 
-以后每完成一批计划，都要同步更新：
-
-- `docs/product-audit-outline.md`
-- `docs/next-action-checklist.md`
-
-更新要求：
-
-- 写明本批完成内容
-- 标注未做范围
-- 调整下一批优先项
-- 保持文档与仓库状态一致
+1. 更新“已完成批次”
+2. 删去已完成的待办
+3. 仅保留真实仍未完成的 defer 项
+4. 保持文档与仓库代码状态一致

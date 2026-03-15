@@ -264,6 +264,9 @@ export type MemoryItem = {
   ref_table?: string;
   ref_id?: number | null;
   jump_target?: MemoryJumpTarget | null;
+  retrieval_mode: 'semantic' | 'fallback';
+  match_reason: string;
+  context_hint?: string | null;
 };
 
 export type BrainstormIdeaResult = {

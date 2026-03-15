@@ -140,11 +140,14 @@ export async function listLibrary() {
 export async function listReflections(params?: {
   reflection_type?: string;
   lifecycle_status?: string;
+  is_report_worthy?: boolean;
   date_from?: string;
   date_to?: string;
   related_paper_id?: number;
   related_summary_id?: number;
+  related_repo_id?: number;
   related_reproduction_id?: number;
+  related_task_id?: number;
 }) {
   return request<Reflection[]>(`/reflections${qs(params ?? {})}`);
 }

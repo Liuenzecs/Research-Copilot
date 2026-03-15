@@ -94,6 +94,7 @@ class ReflectionService:
         *,
         reflection_type: str | None = None,
         lifecycle_status: str | None = None,
+        is_report_worthy: bool | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
         related_paper_id: int | None = None,
@@ -107,6 +108,8 @@ class ReflectionService:
             stmt = stmt.where(ReflectionRecord.reflection_type == reflection_type)
         if lifecycle_status:
             stmt = stmt.where(ReflectionRecord.lifecycle_status == lifecycle_status)
+        if is_report_worthy is not None:
+            stmt = stmt.where(ReflectionRecord.is_report_worthy.is_(is_report_worthy))
         if date_from:
             stmt = stmt.where(ReflectionRecord.event_date >= date_from)
         if date_to:

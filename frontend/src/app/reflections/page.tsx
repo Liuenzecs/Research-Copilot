@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
@@ -10,21 +10,54 @@ import StatusStack from '@/components/common/StatusStack';
 import ReflectionEditor from '@/components/reflections/ReflectionEditor';
 import ReflectionTimeline from '@/components/reflections/ReflectionTimeline';
 import { getReflection, listReflections } from '@/lib/api';
+import { reflectionLifecycleLabel } from '@/lib/presentation';
 import { Reflection } from '@/lib/types';
 
-function daysAgo(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+type PresetKey = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'last_30_days' | 'all' | 'custom';
+
+function formatDate(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
-function startOfWeek() {
+function addDays(base: Date, days: number) {
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getWeekRange(offsetWeeks = 0) {
   const now = new Date();
   const day = now.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + mondayOffset);
-  return monday.toISOString().slice(0, 10);
+  const monday = addDays(now, mondayOffset + offsetWeeks * 7);
+  const sunday = addDays(monday, 6);
+  return { start: formatDate(monday), end: formatDate(sunday) };
+}
+
+function getPresetRange(preset: PresetKey) {
+  const today = new Date();
+  switch (preset) {
+    case 'today':
+      return { dateFrom: formatDate(today), dateTo: formatDate(today) };
+    case 'yesterday': {
+      const yesterday = addDays(today, -1);
+      return { dateFrom: formatDate(yesterday), dateTo: formatDate(yesterday) };
+    }
+    case 'this_week': {
+      const range = getWeekRange(0);
+      return { dateFrom: range.start, dateTo: range.end };
+    }
+    case 'last_week': {
+      const range = getWeekRange(-1);
+      return { dateFrom: range.start, dateTo: range.end };
+    }
+    case 'last_30_days':
+      return { dateFrom: formatDate(addDays(today, -29)), dateTo: formatDate(today) };
+    case 'all':
+      return { dateFrom: '', dateTo: '' };
+    default:
+      return { dateFrom: '', dateTo: '' };
+  }
 }
 
 function parsePositiveInt(value: string | null): number | null {
@@ -37,16 +70,37 @@ function parsePositiveInt(value: string | null): number | null {
 function ReflectionsPageContent() {
   const searchParams = useSearchParams();
   const requestedReflectionId = parsePositiveInt(searchParams.get('reflection_id'));
+  const initialWeek = useMemo(() => getPresetRange('this_week'), []);
 
   const [items, setItems] = useState<Reflection[]>([]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(initialWeek.dateFrom);
+  const [dateTo, setDateTo] = useState(initialWeek.dateTo);
+  const [preset, setPreset] = useState<PresetKey>('this_week');
+  const [reflectionType, setReflectionType] = useState('');
   const [status, setStatus] = useState('');
+  const [reportWorthyFilter, setReportWorthyFilter] = useState<'all' | 'only'>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [highlightedReflectionId, setHighlightedReflectionId] = useState<number | null>(null);
+
+  const summary = useMemo(
+    () => ({
+      total: items.length,
+      reportWorthy: items.filter((item) => item.is_report_worthy).length,
+      paper: items.filter((item) => item.reflection_type === 'paper').length,
+      reproduction: items.filter((item) => item.reflection_type === 'reproduction').length,
+    }),
+    [items],
+  );
+
+  function applyPreset(nextPreset: PresetKey) {
+    const range = getPresetRange(nextPreset);
+    setPreset(nextPreset);
+    setDateFrom(range.dateFrom);
+    setDateTo(range.dateTo);
+  }
 
   async function reload() {
     setLoading(true);
@@ -56,7 +110,9 @@ function ReflectionsPageContent() {
 
     try {
       const rows = await listReflections({
+        reflection_type: reflectionType || undefined,
         lifecycle_status: status || undefined,
+        is_report_worthy: reportWorthyFilter === 'only' ? true : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
       });
@@ -87,31 +143,80 @@ function ReflectionsPageContent() {
 
   useEffect(() => {
     void reload();
-  }, [dateFrom, dateTo, requestedReflectionId, status]);
+  }, [dateFrom, dateTo, reflectionType, reportWorthyFilter, requestedReflectionId, status]);
 
   return (
     <>
       <Card>
         <h2 className="title">研究心得</h2>
-        <p className="subtle">结构化模板 + 时间线，支持上下文链接与汇报摘要提炼。</p>
+        <p className="subtle">按周节奏查看论文心得和复现心得，保留时间线回顾与深链定位能力。</p>
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 8 }}>
-        <div className="grid-2">
-          <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        </div>
-        <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">全部状态</option>
-          <option value="draft">草稿</option>
-          <option value="finalized">已定稿</option>
-          <option value="archived">已归档</option>
-        </select>
+      <div className="card" style={{ display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Button className="secondary" onClick={() => { setDateFrom(daysAgo(7)); setDateTo(new Date().toISOString().slice(0, 10)); }}>最近7天</Button>
-          <Button className="secondary" onClick={() => { setDateFrom(daysAgo(30)); setDateTo(new Date().toISOString().slice(0, 10)); }}>最近30天</Button>
-          <Button className="secondary" onClick={() => { setDateFrom(startOfWeek()); setDateTo(new Date().toISOString().slice(0, 10)); }}>本周</Button>
-          <Button className="secondary" onClick={() => { setDateFrom(''); setDateTo(''); setStatus(''); }}>清空筛选</Button>
+          <Button className={preset === 'today' ? '' : 'secondary'} onClick={() => applyPreset('today')}>今天</Button>
+          <Button className={preset === 'yesterday' ? '' : 'secondary'} onClick={() => applyPreset('yesterday')}>昨天</Button>
+          <Button className={preset === 'this_week' ? '' : 'secondary'} onClick={() => applyPreset('this_week')}>本周</Button>
+          <Button className={preset === 'last_week' ? '' : 'secondary'} onClick={() => applyPreset('last_week')}>上周</Button>
+          <Button className={preset === 'last_30_days' ? '' : 'secondary'} onClick={() => applyPreset('last_30_days')}>最近30天</Button>
+          <Button className={preset === 'all' ? '' : 'secondary'} onClick={() => applyPreset('all')}>全部</Button>
+        </div>
+
+        <div className="grid-2">
+          <input
+            className="input"
+            type="date"
+            value={dateFrom}
+            onChange={(event) => {
+              setPreset('custom');
+              setDateFrom(event.target.value);
+            }}
+          />
+          <input
+            className="input"
+            type="date"
+            value={dateTo}
+            onChange={(event) => {
+              setPreset('custom');
+              setDateTo(event.target.value);
+            }}
+          />
+        </div>
+
+        <div className="grid-2">
+          <select className="select" value={reflectionType} onChange={(event) => setReflectionType(event.target.value)}>
+            <option value="">全部心得类型</option>
+            <option value="paper">论文心得</option>
+            <option value="reproduction">复现心得</option>
+          </select>
+          <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">全部生命周期</option>
+            <option value="draft">{reflectionLifecycleLabel('draft')}</option>
+            <option value="finalized">{reflectionLifecycleLabel('finalized')}</option>
+            <option value="archived">{reflectionLifecycleLabel('archived')}</option>
+          </select>
+        </div>
+
+        <select className="select" value={reportWorthyFilter} onChange={(event) => setReportWorthyFilter(event.target.value as 'all' | 'only')}>
+          <option value="all">全部汇报状态</option>
+          <option value="only">仅可汇报</option>
+        </select>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: 12,
+            borderRadius: 10,
+            background: '#f8fafc',
+            border: '1px solid rgba(15, 23, 42, 0.08)',
+          }}
+        >
+          <span className="subtle">当前结果：{summary.total}</span>
+          <span className="subtle">可汇报：{summary.reportWorthy}</span>
+          <span className="subtle">论文心得：{summary.paper}</span>
+          <span className="subtle">复现心得：{summary.reproduction}</span>
         </div>
       </div>
 

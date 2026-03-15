@@ -39,6 +39,8 @@ class MemoryRetriever:
                     'created_at': row.created_at,
                     'updated_at': row.updated_at,
                     'distance': float(hit.get('distance', 0.0)),
+                    'retrieval_mode': 'semantic',
+                    'match_reason': '与当前检索问题语义接近',
                 }
             )
 
@@ -57,6 +59,8 @@ class MemoryRetriever:
                     'created_at': row.created_at,
                     'updated_at': row.updated_at,
                     'distance': 0.0,
+                    'retrieval_mode': 'fallback',
+                    'match_reason': '当前语义召回不足，按记忆重要度与最近性回退展示',
                 }
                 for row in rows[:top_k]
             ]

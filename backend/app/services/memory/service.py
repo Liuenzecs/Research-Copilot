@@ -58,9 +58,35 @@ class MemoryService:
 
         return None
 
-    def _attach_jump_target(self, db: Session, row: dict) -> dict:
+    def _resolve_context_hint(self, ref_table: str, jump_target: dict | None) -> str | None:
+        if ref_table == 'papers':
+            return '关联论文，建议回到论文工作区继续阅读'
+        if ref_table == 'summaries':
+            return '关联摘要，建议回到所属论文工作区继续阅读'
+        if ref_table == 'reproductions':
+            return '关联复现记录，建议回到复现工作区继续推进'
+        if ref_table == 'reflections':
+            return '关联心得，建议回到心得页面继续整理'
+        if ref_table == 'repos':
+            if jump_target is None:
+                return None
+            return '关联代码仓对应的复现上下文，建议回到复现工作区继续推进'
+        if ref_table == 'ideas':
+            return '关联灵感记录，建议回到灵感页面继续扩展'
+        return None
+
+    def _attach_presentation_fields(self, db: Session, row: dict) -> dict:
         payload = dict(row)
-        payload['jump_target'] = self._resolve_jump_target(db, payload.get('ref_table', ''), payload.get('ref_id'))
+        jump_target = self._resolve_jump_target(db, payload.get('ref_table', ''), payload.get('ref_id'))
+        retrieval_mode = payload.get('retrieval_mode') or 'fallback'
+        payload['jump_target'] = jump_target
+        payload['retrieval_mode'] = retrieval_mode
+        payload['match_reason'] = payload.get('match_reason') or (
+            '与当前检索问题语义接近'
+            if retrieval_mode == 'semantic'
+            else '当前语义召回不足，按记忆重要度与最近性回退展示'
+        )
+        payload['context_hint'] = self._resolve_context_hint(payload.get('ref_table', ''), jump_target)
         return payload
 
     def create_memory(
@@ -92,7 +118,7 @@ class MemoryService:
     def query(self, db: Session, query: str, top_k: int, memory_types: list[str], layers: list[str]) -> list[dict]:
         rows = memory_retriever.retrieve(db, query, top_k=top_k, memory_types=memory_types, layers=layers)
         ranked_rows = rank_memories(rows)
-        return [self._attach_jump_target(db, row) for row in ranked_rows]
+        return [self._attach_presentation_fields(db, row) for row in ranked_rows]
 
     def link(self, db: Session, from_memory_id: int, to_memory_id: int, link_type: str, weight: float):
         return memory_linker.link(db, from_memory_id, to_memory_id, link_type, weight)

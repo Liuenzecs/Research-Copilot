@@ -167,13 +167,46 @@ def test_memory_query_returns_precise_jump_targets(client, monkeypatch):
     payload = {item['id']: item for item in response.json()}
 
     assert payload[paper_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/search?paper_id={paper_id}'}
+    assert payload[paper_memory_id]['retrieval_mode'] == 'fallback'
+    assert payload[paper_memory_id]['match_reason'] == '当前语义召回不足，按记忆重要度与最近性回退展示'
+    assert payload[paper_memory_id]['context_hint'] == '关联论文，建议回到论文工作区继续阅读'
     assert payload[summary_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/search?paper_id={paper_id}&summary_id={summary_id}'}
+    assert payload[summary_memory_id]['context_hint'] == '关联摘要，建议回到所属论文工作区继续阅读'
     assert payload[repro_memory_id]['jump_target'] == {'kind': 'reproduction', 'path': f'/reproduction?reproduction_id={reproduction_id}'}
+    assert payload[repro_memory_id]['context_hint'] == '关联复现记录，建议回到复现工作区继续推进'
     assert payload[reflection_memory_id]['jump_target'] == {'kind': 'reflection', 'path': f'/reflections?reflection_id={reflection_id}'}
+    assert payload[reflection_memory_id]['context_hint'] == '关联心得，建议回到心得页面继续整理'
     assert payload[repo_memory_id]['jump_target'] == {'kind': 'reproduction', 'path': f'/reproduction?paper_id={paper_id}'}
+    assert payload[repo_memory_id]['context_hint'] == '关联代码仓对应的复现上下文，建议回到复现工作区继续推进'
     assert payload[idea_memory_id]['jump_target'] == {'kind': 'brainstorm', 'path': '/brainstorm'}
+    assert payload[idea_memory_id]['context_hint'] == '关联灵感记录，建议回到灵感页面继续扩展'
     assert payload[repo_without_paper_memory_id]['jump_target'] is None
+    assert payload[repo_without_paper_memory_id]['context_hint'] is None
     assert payload[unknown_memory_id]['jump_target'] is None
+    assert payload[unknown_memory_id]['context_hint'] is None
+
+
+def test_memory_query_returns_semantic_explanations(client, monkeypatch):
+    with SessionLocal() as db:
+        paper = _create_paper(db, source_id='semantic-memory-paper', title='Semantic Memory Paper')
+        paper_memory = _create_memory(db, memory_type='PaperMemory', ref_table='papers', ref_id=paper.id, text_content='semantic paper memory')
+        db.commit()
+        paper_memory_id = paper_memory.id
+
+    monkeypatch.setattr(
+        'app.services.memory.retriever.semantic_query',
+        lambda query, top_k=10: [{'id': f'{paper_memory_id}:0', 'distance': 0.02}],
+    )
+
+    response = client.post('/memory/query', json={'query': 'semantic memory', 'memory_types': [], 'layers': [], 'top_k': 5})
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]['id'] == paper_memory_id
+    assert payload[0]['retrieval_mode'] == 'semantic'
+    assert payload[0]['match_reason'] == '与当前检索问题语义接近'
+    assert payload[0]['context_hint'] == '关联论文，建议回到论文工作区继续阅读'
+    assert payload[0]['jump_target']['kind'] == 'paper'
 
 
 def test_memory_query_keeps_existing_shape_when_no_records(client, monkeypatch):

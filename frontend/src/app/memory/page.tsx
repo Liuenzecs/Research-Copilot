@@ -41,9 +41,11 @@ export default function MemoryPage() {
       setItems(payload);
       if (payload.length > 0) {
         setNotice(`已返回 ${payload.length} 条记忆结果。`);
+      } else {
+        setInfo('当前没有命中记忆结果，可以换个问题再试。');
       }
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (searchError) {
+      setError((searchError as Error).message);
     }
   }
 
@@ -51,12 +53,17 @@ export default function MemoryPage() {
     <>
       <Card>
         <h2 className="title">长期记忆</h2>
-        <p className="subtle">支持按类型与层级过滤，并可精确回跳到论文、复现与心得上下文。</p>
+        <p className="subtle">按类型和层级检索历史研究内容，并精确回跳到论文、复现和心得上下文。</p>
       </Card>
       <div className="card" style={{ display: 'grid', gap: 8 }}>
-        <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="输入记忆检索问题" />
+        <input
+          className="input"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="输入你要检索的研究问题"
+        />
         <div className="grid-2">
-          <select className="select" value={memoryType} onChange={(e) => setMemoryType(e.target.value)}>
+          <select className="select" value={memoryType} onChange={(event) => setMemoryType(event.target.value)}>
             <option value="">全部记忆类型</option>
             <option value="PaperMemory">论文记忆</option>
             <option value="SummaryMemory">摘要记忆</option>
@@ -65,7 +72,7 @@ export default function MemoryPage() {
             <option value="IdeaMemory">灵感记忆</option>
             <option value="RepoMemory">代码仓记忆</option>
           </select>
-          <select className="select" value={layer} onChange={(e) => setLayer(e.target.value)}>
+          <select className="select" value={layer} onChange={(event) => setLayer(event.target.value)}>
             <option value="">全部层级</option>
             <option value="raw">原始层</option>
             <option value="structured">结构层</option>

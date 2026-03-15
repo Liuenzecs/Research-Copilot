@@ -28,6 +28,9 @@ class MemoryOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     jump_target: MemoryJumpTarget | None = None
+    retrieval_mode: str = 'fallback'
+    match_reason: str = ''
+    context_hint: str | None = None
 
 
 class MemoryLinkRequest(BaseModel):

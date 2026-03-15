@@ -102,6 +102,7 @@ def timeline(
 def list_reflections(
     reflection_type: str | None = None,
     lifecycle_status: str | None = None,
+    is_report_worthy: bool | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     related_paper_id: int | None = None,
@@ -115,6 +116,7 @@ def list_reflections(
         db,
         reflection_type=reflection_type,
         lifecycle_status=lifecycle_status,
+        is_report_worthy=is_report_worthy,
         date_from=date_from,
         date_to=date_to,
         related_paper_id=related_paper_id,
