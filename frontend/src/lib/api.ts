@@ -6,6 +6,9 @@ import {
   PaperWorkspace,
   Reflection,
   ReproductionDetail,
+  ReproductionListItem,
+  ReproductionPlanResult,
+  RepoFindResponse,
   Summary,
   Task,
   WeeklyReportContext,
@@ -71,6 +74,10 @@ export async function deepSummary(paperId: number, focus = '') {
     method: 'POST',
     body: JSON.stringify({ paper_id: paperId, focus: focus || null }),
   });
+}
+
+export async function getPaper(paperId: number) {
+  return request<Paper>(`/papers/${paperId}`);
 }
 
 export async function getPaperWorkspace(paperId: number) {
@@ -160,10 +167,27 @@ export async function providerSettings() {
   return request('/settings/providers');
 }
 
-export async function planReproduction(paperId: number) {
-  return request<ReproductionDetail>('/reproduction/plan', {
+export async function findRepos(payload: { paper_id?: number; query?: string }) {
+  return request<RepoFindResponse>('/repos/find', {
     method: 'POST',
-    body: JSON.stringify({ paper_id: paperId, repo_id: null }),
+    body: JSON.stringify({
+      paper_id: payload.paper_id ?? null,
+      query: payload.query ?? null,
+    }),
+  });
+}
+
+export async function listReproductions(params?: { paper_id?: number; repo_id?: number; limit?: number }) {
+  return request<ReproductionListItem[]>(`/reproduction${qs(params ?? {})}`);
+}
+
+export async function planReproduction(payload: { paper_id?: number; repo_id?: number | null }) {
+  return request<ReproductionPlanResult>('/reproduction/plan', {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_id: payload.paper_id ?? null,
+      repo_id: payload.repo_id ?? null,
+    }),
   });
 }
 

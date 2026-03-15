@@ -1,4 +1,4 @@
-﻿from datetime import date
+from datetime import date
 
 from app.services.paper_search.base import SearchPaper
 
@@ -47,6 +47,21 @@ def test_paper_workspace_flow(client, monkeypatch):
     )
     assert refl.status_code == 200
     assert refl.json()['related_summary_id'] == summary_id
+
+    paper_only_refl = client.post(
+        f'/papers/{paper_id}/reflections',
+        json={
+            'stage': 'skimmed',
+            'lifecycle_status': 'draft',
+            'content_structured_json': {'paper_in_my_words': 'paper-only test'},
+            'content_markdown': 'paper only note',
+            'is_report_worthy': False,
+            'report_summary': 'paper-only summary',
+            'event_date': date.today().isoformat(),
+        },
+    )
+    assert paper_only_refl.status_code == 200
+    assert paper_only_refl.json()['related_summary_id'] is None
 
     state = client.patch(
         f'/papers/{paper_id}/research-state',

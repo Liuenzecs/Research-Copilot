@@ -45,6 +45,16 @@ class ReproductionDetailResponse(ReproductionPlanResponse):
     updated_at: datetime
 
 
+class ReproductionListItemOut(BaseModel):
+    reproduction_id: int
+    paper_id: int | None = None
+    repo_id: int | None = None
+    status: str
+    progress_summary: str
+    progress_percent: float | None = None
+    updated_at: datetime
+
+
 class ReproductionUpdateRequest(BaseModel):
     status: str | None = None
     progress_summary: str | None = None

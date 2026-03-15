@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import Button from '@/components/common/Button';
 import EmptyState from '@/components/common/EmptyState';
@@ -24,6 +25,7 @@ import {
 import { PaperWorkspace } from '@/lib/types';
 
 type WorthReproducing = 'yes' | 'maybe' | 'no';
+type SummarySelection = number | 'none' | 'auto';
 
 type ReflectionDraft = {
   mostImportantContribution: string;
@@ -53,26 +55,30 @@ function summarizeText(text: string, max = 220): string {
   return normalized.length <= max ? normalized : `${normalized.slice(0, max)}...`;
 }
 
-function buildDraftFromContext(workspace: PaperWorkspace, summaryId: number | ''): ReflectionDraft {
-  const summary = summaryId
+function buildDraftFromContext(workspace: PaperWorkspace, summaryId: Exclude<SummarySelection, 'auto'>): ReflectionDraft {
+  const summary = typeof summaryId === 'number'
     ? workspace.summaries.find((item) => item.id === summaryId)
-    : workspace.summaries[0];
+    : undefined;
 
   const mostImportantContribution = firstNonEmpty(
     summary?.contributions_en,
     summary?.method_en,
     summary?.problem_en,
     summarizeText(summary?.content_en || ''),
+    summarizeText(workspace.paper.abstract_en || ''),
+    workspace.paper.title_en,
   );
 
   const whatILearned = firstNonEmpty(
     summarizeText(summary?.content_en || '', 360),
     summarizeText(workspace.paper.abstract_en || '', 360),
+    workspace.paper.title_en,
   );
 
   const reportSummary = summarizeText(
     firstNonEmpty(
       summary?.contributions_en,
+      summarizeText(workspace.paper.abstract_en || '', 120),
       `${workspace.paper.title_en}：${whatILearned}`,
       workspace.paper.title_en,
     ),
@@ -89,6 +95,7 @@ function buildDraftFromContext(workspace: PaperWorkspace, summaryId: number | ''
 }
 
 export default function PaperWorkspaceView({ paperId }: { paperId: number | null }) {
+  const router = useRouter();
   const [workspace, setWorkspace] = useState<PaperWorkspace | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -109,22 +116,25 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
     freeNotes: '',
   });
   const [reportWorthy, setReportWorthy] = useState(false);
-  const [selectedSummaryId, setSelectedSummaryId] = useState<number | ''>('');
+  const [selectedSummaryId, setSelectedSummaryId] = useState<SummarySelection>('auto');
   const [reflectionDirty, setReflectionDirty] = useState(false);
   const [lastPrefillKey, setLastPrefillKey] = useState('');
 
   const summaries = workspace?.summaries ?? [];
+  const effectiveSummarySelection: Exclude<SummarySelection, 'auto'> =
+    selectedSummaryId === 'auto' ? (summaries[0]?.id ?? 'none') : selectedSummaryId;
 
   const selectedSummary = useMemo(() => {
-    if (selectedSummaryId === '') return summaries[0];
-    return summaries.find((item) => item.id === selectedSummaryId) || summaries[0];
-  }, [summaries, selectedSummaryId]);
+    if (typeof effectiveSummarySelection !== 'number') return undefined;
+    return summaries.find((item) => item.id === effectiveSummarySelection);
+  }, [effectiveSummarySelection, summaries]);
 
   async function reload() {
     if (!paperId) {
       setWorkspace(null);
       return;
     }
+
     setLoading(true);
     setError('');
     try {
@@ -137,10 +147,10 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
       setTopicCluster(data.research_state.topic_cluster || '');
       setSelectedSummaryId((previous) => {
         const summaryIds = data.summaries.map((item) => item.id);
-        if (previous !== '' && summaryIds.includes(previous as number)) {
-          return previous;
-        }
-        return data.summaries[0]?.id ?? '';
+        if (previous === 'auto') return data.summaries[0]?.id ?? 'none';
+        if (previous === 'none') return 'none';
+        if (summaryIds.includes(previous)) return previous;
+        return data.summaries[0]?.id ?? 'none';
       });
     } catch (e) {
       setError((e as Error).message);
@@ -150,26 +160,25 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   }
 
   useEffect(() => {
-    reload();
+    void reload();
   }, [paperId]);
 
   useEffect(() => {
     if (!workspace) return;
-    const summaryKey = selectedSummaryId === '' ? (workspace.summaries[0]?.id ?? 'none') : selectedSummaryId;
+
     const prefillKey = [
       workspace.paper.id,
-      summaryKey,
+      String(effectiveSummarySelection),
       workspace.research_state.repro_interest || 'none',
       workspace.research_state.reading_status || 'unread',
     ].join(':');
 
     if (reflectionDirty && prefillKey === lastPrefillKey) return;
 
-    const draft = buildDraftFromContext(workspace, selectedSummaryId);
-    setReflectionDraft(draft);
+    setReflectionDraft(buildDraftFromContext(workspace, effectiveSummarySelection));
     setLastPrefillKey(prefillKey);
     setReflectionDirty(false);
-  }, [workspace, selectedSummaryId, reflectionDirty, lastPrefillKey]);
+  }, [effectiveSummarySelection, lastPrefillKey, reflectionDirty, workspace]);
 
   function updateReflectionDraft(patch: Partial<ReflectionDraft>) {
     setReflectionDraft((previous) => ({ ...previous, ...patch }));
@@ -191,7 +200,6 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
   }
 
   const currentPaper = workspace?.paper;
-  const latestSummary = summaries[0];
 
   if (!paperId) {
     return <EmptyState title="未选择论文" hint="请从左侧结果选择论文进入集中工作区。" />;
@@ -214,13 +222,13 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
           <Button
+            disabled={busy !== ''}
             onClick={() =>
               runAction('download', async () => {
                 const result = await downloadPaper(currentPaper.id);
                 setNotice(`PDF 已保存到：${result.pdf_local_path}`);
               })
             }
-            disabled={busy !== ''}
           >
             {busy === 'download' ? '下载中...' : '下载PDF'}
           </Button>
@@ -233,40 +241,47 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             打开PDF
           </Button>
           <Button
+            className="secondary"
+            disabled={busy !== ''}
             onClick={() =>
               runAction('quick', async () => {
                 const result = await quickSummary(currentPaper.id);
                 setNotice(`快速总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
               })
             }
-            disabled={busy !== ''}
-            className="secondary"
           >
             {busy === 'quick' ? '生成中...' : '快速总结'}
           </Button>
           <Button
+            className="secondary"
+            disabled={busy !== ''}
             onClick={() =>
               runAction('deep', async () => {
                 const result = await deepSummary(currentPaper.id);
                 setNotice(`深度总结已生成：#${result.id}（${result.provider || 'heuristic'}/${result.model || 'local'}）`);
               })
             }
-            disabled={busy !== ''}
-            className="secondary"
           >
             {busy === 'deep' ? '生成中...' : '深度总结'}
           </Button>
           <Button
+            className="secondary"
+            disabled={busy !== ''}
             onClick={() =>
               runAction('memory', async () => {
                 const result = await pushPaperToMemory(currentPaper.id);
                 setNotice(`已推送到长期记忆，memory_id=${result.memory_id}`);
               })
             }
-            disabled={busy !== ''}
-            className="secondary"
           >
             {busy === 'memory' ? '处理中...' : '推送到记忆'}
+          </Button>
+          <Button
+            className="secondary"
+            type="button"
+            onClick={() => router.push(`/reproduction?paper_id=${currentPaper.id}`)}
+          >
+            进入复现工作区
           </Button>
         </div>
       </div>
@@ -285,21 +300,29 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
             ))}
           </select>
         </div>
+
         <div className="grid-2" style={{ marginTop: 8 }}>
           <input
             className="input"
-            type="number"
-            min={1}
             max={5}
+            min={1}
+            placeholder="interest_level 1-5"
+            type="number"
             value={interestLevel}
             onChange={(e) => setInterestLevel(Number(e.target.value))}
-            placeholder="interest_level 1-5"
           />
-          <input className="input" value={topicCluster} onChange={(e) => setTopicCluster(e.target.value)} placeholder="topic_cluster" />
+          <input
+            className="input"
+            placeholder="topic_cluster"
+            value={topicCluster}
+            onChange={(e) => setTopicCluster(e.target.value)}
+          />
         </div>
+
         <label className="subtle" style={{ display: 'block', marginTop: 8 }}>
           <input type="checkbox" checked={isCorePaper} onChange={(e) => setIsCorePaper(e.target.checked)} /> 核心论文
         </label>
+
         <div style={{ marginTop: 10 }}>
           <Button
             className="secondary"
@@ -324,27 +347,31 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
 
       <div className="card">
         <h4 className="title" style={{ fontSize: 16 }}>论文摘要与结构化心得</h4>
-        {latestSummary ? (
+        {selectedSummary ? (
           <>
             <p className="subtle">
-              当前摘要: #{latestSummary.id} ({latestSummary.summary_type}) · provider={latestSummary.provider || 'heuristic'} ·
-              model={latestSummary.model || 'local'}
+              当前摘要: #{selectedSummary.id} ({selectedSummary.summary_type}) · provider={selectedSummary.provider || 'heuristic'} ·
+              {' '}model={selectedSummary.model || 'local'}
             </p>
-            {latestSummary.provider === 'heuristic' ? (
+            {selectedSummary.provider === 'heuristic' ? (
               <p className="subtle" style={{ color: '#b45309' }}>
                 当前是本地兜底摘要。若你已配置 DeepSeek，请重启后端使 .env 生效。
               </p>
             ) : null}
-            <p style={{ whiteSpace: 'pre-wrap' }}>{latestSummary.content_en}</p>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{selectedSummary.content_en}</p>
           </>
+        ) : summaries.length > 0 ? (
+          <p className="subtle">
+            当前选择为“不绑定摘要”。这里不显示任何 summary 内容；反思预填将回退到论文标题与 abstract。
+          </p>
         ) : (
           <p className="subtle">暂无摘要，请先执行快速或深度总结。</p>
         )}
 
-        <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+        <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
           <p className="subtle" style={{ margin: 0 }}>
             上下文：paper#{currentPaper.id}
-            {selectedSummary ? ` · summary#${selectedSummary.id}` : ''}
+            {selectedSummary ? ` · summary#${selectedSummary.id}` : ' · paper-only'}
             {' · 当前阅读阶段 '}
             {readingStatusLabel(readingStatus)}
             {' · 复现兴趣 '}
@@ -352,13 +379,13 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
           </p>
           <select
             className="select"
-            value={selectedSummaryId}
+            value={String(effectiveSummarySelection)}
             onChange={(e) => {
-              setSelectedSummaryId(e.target.value ? Number(e.target.value) : '');
+              setSelectedSummaryId(e.target.value === 'none' ? 'none' : Number(e.target.value));
               setReflectionDirty(false);
             }}
           >
-            <option value="">不绑定摘要</option>
+            <option value="none">不绑定摘要</option>
             {summaries.map((item) => (
               <option key={item.id} value={item.id}>摘要 #{item.id} ({item.summary_type})</option>
             ))}
@@ -402,11 +429,11 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
               className="secondary"
-              type="button"
               disabled={!workspace}
+              type="button"
               onClick={() => {
                 if (!workspace) return;
-                setReflectionDraft(buildDraftFromContext(workspace, selectedSummaryId));
+                setReflectionDraft(buildDraftFromContext(workspace, effectiveSummarySelection));
                 setReflectionDirty(false);
                 setNotice('已根据当前论文上下文重新预填。');
               }}
@@ -417,7 +444,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
               disabled={busy !== ''}
               onClick={() =>
                 runAction('reflection', async () => {
-                  const selectedSummaryValue = selectedSummaryId === '' ? selectedSummary?.id : selectedSummaryId;
+                  const selectedSummaryValue = typeof effectiveSummarySelection === 'number' ? effectiveSummarySelection : undefined;
                   const markdownSections = [
                     reflectionDraft.mostImportantContribution ? `## Most Important Contribution\n${reflectionDraft.mostImportantContribution}` : '',
                     reflectionDraft.whatILearned ? `## What I Learned\n${reflectionDraft.whatILearned}` : '',
@@ -425,7 +452,7 @@ export default function PaperWorkspaceView({ paperId }: { paperId: number | null
                   ].filter(Boolean);
 
                   await createPaperReflection(currentPaper.id, {
-                    summary_id: selectedSummaryValue || undefined,
+                    summary_id: selectedSummaryValue,
                     stage: readingStatus,
                     lifecycle_status: 'draft',
                     content_structured_json: {

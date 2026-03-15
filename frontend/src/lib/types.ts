@@ -108,17 +108,53 @@ export type ReproductionStep = {
   safety_reason: string;
 };
 
-export type ReproductionDetail = {
+export type ReproductionPlanResult = {
   reproduction_id: number;
-  paper_id?: number | null;
-  repo_id?: number | null;
   status: string;
   plan_markdown: string;
   progress_summary: string;
   progress_percent?: number | null;
   steps: ReproductionStep[];
+};
+
+export type ReproductionListItem = {
+  reproduction_id: number;
+  paper_id?: number | null;
+  repo_id?: number | null;
+  status: string;
+  progress_summary: string;
+  progress_percent?: number | null;
+  updated_at: string;
+};
+
+export type ReproductionDetail = ReproductionPlanResult & {
+  paper_id?: number | null;
+  repo_id?: number | null;
+  steps: ReproductionStep[];
   created_at: string;
   updated_at: string;
+};
+
+export type RepoCandidate = {
+  id: number;
+  paper_id?: number | null;
+  platform: string;
+  repo_url: string;
+  owner: string;
+  name: string;
+  stars: number;
+  forks: number;
+  readme_summary: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RepoFindResponse = {
+  items: RepoCandidate[];
+  rate_limited: boolean;
+  rate_limit_reset: string;
+  used_token: boolean;
+  paperswithcode: Array<Record<string, unknown>>;
 };
 
 export type WeeklyReportContext = {

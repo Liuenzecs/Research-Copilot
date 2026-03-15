@@ -1,19 +1,22 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.models.db.paper_record import PaperRecord
+from app.models.db.repo_record import RepoRecord
 from app.models.db.reproduction_record import ReproductionRecord, ReproductionStepRecord
 from app.models.db.task_artifact_record import TaskArtifactRecord
 from app.models.schemas.reproduction import (
     ReproductionDetailResponse,
     ReproductionExecuteRequest,
     ReproductionExecuteResponse,
+    ReproductionListItemOut,
     ReproductionPlanRequest,
     ReproductionPlanResponse,
     ReproductionStepOut,
@@ -68,16 +71,109 @@ def _load_steps(db: Session, reproduction_id: int) -> list[ReproductionStepRecor
     )
 
 
+def _reproduction_list_item(repro: ReproductionRecord) -> ReproductionListItemOut:
+    return ReproductionListItemOut(
+        reproduction_id=repro.id,
+        paper_id=repro.paper_id,
+        repo_id=repro.repo_id,
+        status=repro.status,
+        progress_summary=repro.progress_summary,
+        progress_percent=repro.progress_percent,
+        updated_at=repro.updated_at,
+    )
+
+
+def _reproduction_detail(db: Session, repro: ReproductionRecord) -> ReproductionDetailResponse:
+    steps = _load_steps(db, repro.id)
+    assessments = assess_commands([step.command for step in steps])
+    out_steps = [_step_out(step, safe=assessments[idx]['allowed'], safety_reason=assessments[idx]['reason']) for idx, step in enumerate(steps)]
+
+    return ReproductionDetailResponse(
+        reproduction_id=repro.id,
+        paper_id=repro.paper_id,
+        repo_id=repro.repo_id,
+        status=repro.status,
+        plan_markdown=repro.plan_markdown,
+        progress_summary=repro.progress_summary,
+        progress_percent=repro.progress_percent,
+        steps=out_steps,
+        created_at=repro.created_at,
+        updated_at=repro.updated_at,
+    )
+
+
+def _resolve_reproduction_context(
+    db: Session,
+    payload: ReproductionPlanRequest,
+) -> tuple[int | None, PaperRecord | None, RepoRecord | None]:
+    if payload.paper_id is None and payload.repo_id is None:
+        raise HTTPException(status_code=400, detail='paper_id or repo_id is required')
+
+    paper = db.get(PaperRecord, payload.paper_id) if payload.paper_id is not None else None
+    if payload.paper_id is not None and paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    repo = db.get(RepoRecord, payload.repo_id) if payload.repo_id is not None else None
+    if payload.repo_id is not None and repo is None:
+        raise HTTPException(status_code=404, detail='Repo not found')
+
+    if repo is not None and paper is not None and repo.paper_id is not None and repo.paper_id != paper.id:
+        raise HTTPException(status_code=400, detail='repo_id does not belong to paper_id')
+
+    effective_paper_id = payload.paper_id
+    if effective_paper_id is None and repo is not None and repo.paper_id is not None:
+        effective_paper_id = repo.paper_id
+        paper = db.get(PaperRecord, repo.paper_id)
+
+    return effective_paper_id, paper, repo
+
+
+def _build_plan_context(paper: PaperRecord | None, repo: RepoRecord | None) -> str:
+    parts = [
+        f'paper_id={paper.id if paper is not None else "null"}',
+        f'paper_title={paper.title_en if paper is not None else ""}',
+        f'repo_id={repo.id if repo is not None else "null"}',
+        f'repo_url={repo.repo_url if repo is not None else ""}',
+    ]
+    if repo is not None:
+        repo_name = '/'.join(part for part in [repo.owner, repo.name] if part)
+        if repo_name:
+            parts.append(f'repo_name={repo_name}')
+    return ', '.join(parts)
+
+
+@router.get('', response_model=list[ReproductionListItemOut])
+def list_reproductions(
+    paper_id: int | None = None,
+    repo_id: int | None = None,
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> list[ReproductionListItemOut]:
+    stmt = select(ReproductionRecord)
+    if paper_id is not None:
+        stmt = stmt.where(ReproductionRecord.paper_id == paper_id)
+    if repo_id is not None:
+        stmt = stmt.where(ReproductionRecord.repo_id == repo_id)
+
+    rows = (
+        db.execute(stmt.order_by(ReproductionRecord.updated_at.desc(), ReproductionRecord.id.desc()).limit(limit))
+        .scalars()
+        .all()
+    )
+    return [_reproduction_list_item(row) for row in rows]
+
+
 @router.post('/plan', response_model=ReproductionPlanResponse)
 async def plan_reproduction(payload: ReproductionPlanRequest, db: Session = Depends(get_db)) -> ReproductionPlanResponse:
+    effective_paper_id, paper, repo = _resolve_reproduction_context(db, payload)
     task = workflow_service.create_task(db, task_type='reproduction_plan', input_json=payload.model_dump(), status='running')
 
-    context = f'paper_id={payload.paper_id}, repo_id={payload.repo_id}'
+    context = _build_plan_context(paper, repo)
     markdown, steps = await reproduction_planner.plan(context)
 
     repro = ReproductionRecord(
-        paper_id=payload.paper_id,
-        repo_id=payload.repo_id,
+        paper_id=effective_paper_id,
+        repo_id=repo.id if repo is not None else payload.repo_id,
         plan_markdown=markdown,
         progress_summary='已生成初始复现计划。',
         progress_percent=0,
@@ -87,7 +183,7 @@ async def plan_reproduction(payload: ReproductionPlanRequest, db: Session = Depe
     db.commit()
     db.refresh(repro)
 
-    commands = [s['command'] for s in steps]
+    commands = [step['command'] for step in steps]
     assessments = assess_commands(commands)
     final_steps: list[ReproductionStepOut] = []
     for idx, step in enumerate(steps):
@@ -142,22 +238,7 @@ async def plan_reproduction(payload: ReproductionPlanRequest, db: Session = Depe
 @router.get('/{reproduction_id}', response_model=ReproductionDetailResponse)
 def get_reproduction_detail(reproduction_id: int, db: Session = Depends(get_db)) -> ReproductionDetailResponse:
     repro = _repro_or_404(db, reproduction_id)
-    steps = _load_steps(db, reproduction_id)
-    assessments = assess_commands([s.command for s in steps])
-    out_steps = [_step_out(step, safe=assessments[idx]['allowed'], safety_reason=assessments[idx]['reason']) for idx, step in enumerate(steps)]
-
-    return ReproductionDetailResponse(
-        reproduction_id=repro.id,
-        paper_id=repro.paper_id,
-        repo_id=repro.repo_id,
-        status=repro.status,
-        plan_markdown=repro.plan_markdown,
-        progress_summary=repro.progress_summary,
-        progress_percent=repro.progress_percent,
-        steps=out_steps,
-        created_at=repro.created_at,
-        updated_at=repro.updated_at,
-    )
+    return _reproduction_detail(db, repro)
 
 
 @router.patch('/{reproduction_id}', response_model=ReproductionDetailResponse)
@@ -193,22 +274,7 @@ def update_reproduction(
         snapshot_json=payload.model_dump(exclude_none=True),
     )
 
-    steps = _load_steps(db, repro.id)
-    assessments = assess_commands([s.command for s in steps])
-    out_steps = [_step_out(step, safe=assessments[idx]['allowed'], safety_reason=assessments[idx]['reason']) for idx, step in enumerate(steps)]
-
-    return ReproductionDetailResponse(
-        reproduction_id=repro.id,
-        paper_id=repro.paper_id,
-        repo_id=repro.repo_id,
-        status=repro.status,
-        plan_markdown=repro.plan_markdown,
-        progress_summary=repro.progress_summary,
-        progress_percent=repro.progress_percent,
-        steps=out_steps,
-        created_at=repro.created_at,
-        updated_at=repro.updated_at,
-    )
+    return _reproduction_detail(db, repro)
 
 
 @router.patch('/{reproduction_id}/steps/{step_id}', response_model=ReproductionStepOut)
@@ -218,7 +284,7 @@ def update_reproduction_step(
     payload: ReproductionStepUpdateRequest,
     db: Session = Depends(get_db),
 ) -> ReproductionStepOut:
-    _repro_or_404(db, reproduction_id)
+    repro = _repro_or_404(db, reproduction_id)
     step = db.get(ReproductionStepRecord, step_id)
     if step is None or step.reproduction_id != reproduction_id:
         raise HTTPException(status_code=404, detail='Reproduction step not found')
@@ -237,7 +303,9 @@ def update_reproduction_step(
     if payload.blocker_reason is not None:
         step.blocker_reason = payload.blocker_reason
 
+    repro.updated_at = now
     db.add(step)
+    db.add(repro)
     db.commit()
     db.refresh(step)
 
@@ -322,6 +390,11 @@ def create_reproduction_reflection(
         report_summary=report_summary,
         event_date=date.fromisoformat(payload.get('event_date')) if payload.get('event_date') else date.today(),
     )
+
+    repro.updated_at = datetime.now(timezone.utc)
+    db.add(repro)
+    db.commit()
+    db.refresh(repro)
 
     workflow_service.add_artifact(
         db,
