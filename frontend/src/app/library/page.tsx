@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
+import StatusStack from '@/components/common/StatusStack';
 import { listLibrary } from '@/lib/api';
 import { readingStatusLabel, READING_STATUS_OPTIONS, reproInterestLabel, REPRO_INTEREST_OPTIONS } from '@/lib/researchState';
 import { LibraryItem } from '@/lib/types';
@@ -13,6 +14,7 @@ import { LibraryItem } from '@/lib/types';
 export default function LibraryPage() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const [readingStatus, setReadingStatus] = useState('');
   const [reproInterest, setReproInterest] = useState('');
@@ -23,6 +25,9 @@ export default function LibraryPage() {
   useEffect(() => {
     listLibrary()
       .then((res) => setItems(res.items))
+      .catch((loadError) => {
+        setError((loadError as Error).message || '文献库加载失败，请稍后重试。');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -65,6 +70,8 @@ export default function LibraryPage() {
           <label className="subtle"><input type="checkbox" checked={hasReflection} onChange={(e) => setHasReflection(e.target.checked)} /> 仅有心得</label>
         </div>
       </div>
+
+      <StatusStack items={error ? [{ variant: 'error' as const, message: error }] : []} />
 
       <Card>
         {loading ? <Loading /> : null}

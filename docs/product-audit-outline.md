@@ -119,6 +119,17 @@
 - `dashboard` 不再直接暴露 raw `task_type / status`
 - 新增共享 presentation helper，统一中文标签与时间展示
 
+### 第六次稳定性修补：首屏 API 不可达兜底
+
+完成日期：2026-03-16
+
+已完成：
+
+- `dashboard` 首屏加载失败时改为页面内错误提示，不再抛出未捕获运行时异常
+- `library` 首屏加载失败时改为页面内错误提示
+- `weekly-report` 历史草稿首屏加载失败时改为页面内错误提示
+- `frontend/src/lib/api.ts` 将原始 `Failed to fetch` 收口为更明确的中文网络错误说明
+
 ## 当前结论
 
 本轮“三次做完剩余代办”的主目标已全部完成。

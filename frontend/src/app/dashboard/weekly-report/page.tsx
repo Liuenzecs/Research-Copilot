@@ -70,9 +70,14 @@ export default function WeeklyReportPage() {
   const latestCurrentRangeDraft = currentRangeDrafts[0] ?? null;
 
   async function reloadHistory() {
-    const rows = await listWeeklyReportDrafts();
-    setHistory(rows);
-    return rows;
+    try {
+      const rows = await listWeeklyReportDrafts();
+      setHistory(rows);
+      return rows;
+    } catch (reloadError) {
+      setError((reloadError as Error).message || '历史草稿加载失败。');
+      return [];
+    }
   }
 
   function pushNotice(message: string, variant: 'success' | 'info' = 'success') {

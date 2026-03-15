@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
+import StatusStack from '@/components/common/StatusStack';
 import { listReflections, listTasks } from '@/lib/api';
 import { formatDateTime, reflectionTypeLabel, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
 import { Reflection, Task } from '@/lib/types';
@@ -14,15 +15,19 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([
+    void Promise.all([
       listTasks({ include_archived: false }),
       listReflections({ lifecycle_status: 'draft' }),
     ])
       .then(([taskRows, reflectionRows]) => {
         setTasks(taskRows as Task[]);
         setReflections(reflectionRows as Reflection[]);
+      })
+      .catch((loadError) => {
+        setError((loadError as Error).message || '仪表盘加载失败，请稍后重试。');
       })
       .finally(() => setLoading(false));
   }, []);
@@ -40,6 +45,8 @@ export default function DashboardPage() {
         <h2 className="title">仪表盘</h2>
         <p className="subtle">继续研究、阻塞排查和周报整理都从这里进入。</p>
       </Card>
+
+      <StatusStack items={error ? [{ variant: 'error' as const, message: error }] : []} />
 
       <div className="grid-2">
         <Card>

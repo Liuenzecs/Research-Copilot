@@ -1,0 +1,352 @@
+# Research Copilot 验收清单
+
+本文档用于当前版本的手工验收，重点面向：
+
+- 单人研究者的真实周使用节奏
+- 论文工作区 -> 复现工作区 -> 心得 -> 周报 -> Memory 的闭环
+- 功能是否可用
+- 上下文是否连贯
+- UI / 文案是否自然
+
+---
+
+## 建议验收顺序
+
+建议按下面顺序验收，最接近真实使用链路：
+
+1. 论文工作区
+2. 论文到复现闭环
+3. 复现执行与日志阻塞
+4. 心得页
+5. 周报工作区
+6. Memory
+7. 仪表盘与全局状态
+
+---
+
+## A. 论文工作区
+
+### 1. 基础进入
+
+- [ ] 在 `/search` 能搜索到论文并打开 `Paper Workspace`
+- [ ] 打开论文后，论文元信息、摘要、研究状态能正常显示
+
+### 2. 摘要语义
+
+- [ ] 摘要选择器切换后，页面展示内容跟随当前选中的摘要变化
+- [ ] 页面不再总是显示“最新摘要”
+- [ ] 默认会选中第一条摘要
+- [ ] 选择“`不绑定摘要`”后，摘要区显示 paper-only 提示，而不是继续显示某条 summary
+
+### 3. Reflection 绑定
+
+- [ ] 选择具体摘要后，新建 paper reflection 会写入对应 `summary_id`
+- [ ] 选择“`不绑定摘要`”后，新建 paper reflection 不会写入 `summary_id`
+- [ ] 无摘要绑定时，reflection 预填会回退到 paper abstract / paper metadata 语义
+
+### 4. 进入复现
+
+- [ ] 点击“进入复现工作区 / 继续复现”后，跳转到 `/reproduction?paper_id=<id>`
+- [ ] 即使论文还没下载 PDF、还没有摘要，也不阻塞进入复现页
+
+---
+
+## B. 论文到复现闭环
+
+### 1. Paper Context 带入
+
+- [ ] 进入 `/reproduction?paper_id=<id>` 后，页面能自动识别当前论文上下文
+- [ ] 顶部能显示当前 paper title 与 `paper_id`
+
+### 2. 历史 reproduction 续接
+
+- [ ] 如果当前论文已有历史 reproduction，会自动打开最近一条
+- [ ] 页面明确显示“继续最近一次复现”
+- [ ] 页面仍保留“新建新的复现记录”入口
+
+### 3. 新建 reproduction
+
+- [ ] 如果当前论文没有历史 reproduction，页面会进入“准备新建复现”状态
+- [ ] 自动 repo 搜索会触发
+- [ ] 不选 repo 也能按 paper-only 成功创建 reproduction plan
+
+### 4. Repo Candidates
+
+- [ ] repo candidates 会按论文标题自动搜索
+- [ ] 选中 repo 后能按 `paper_id + repo_id` 创建计划
+- [ ] 不选 repo 时按 `paper_id` 创建计划仍成功
+- [ ] repo 自动搜索失败时，只出现 warning，不阻塞新建流程
+
+---
+
+## C. 复现执行面
+
+### 1. 顶部上下文区
+
+- [ ] 顶部明确区分：
+  - [ ] 继续最近一次复现
+  - [ ] 查看指定复现
+  - [ ] 准备新建复现
+- [ ] 顶部能看到：
+  - [ ] `paper_id`
+  - [ ] paper title
+  - [ ] `reproduction_id`
+  - [ ] `status`
+  - [ ] `progress_percent`
+  - [ ] `progress_summary`
+  - [ ] repo 语义或 `paper-only reproduction`
+
+### 2. Step Tracker
+
+- [ ] 每个步骤卡片都能看到：
+  - [ ] `command`
+  - [ ] `purpose`
+  - [ ] `risk_level`
+  - [ ] `expected_output`
+  - [ ] `step_status`
+  - [ ] `progress_note`
+  - [ ] `blocker_reason`
+  - [ ] `requires_manual_confirm`
+  - [ ] `safe`
+  - [ ] `safety_reason`（当 `safe=false` 时）
+
+### 3. 普通日志
+
+- [ ] 记录“普通日志”后：
+  - [ ] 日志会出现在该步骤下
+  - [ ] 自动出现 `error_type`
+  - [ ] 自动出现 `next_step_suggestion`
+  - [ ] 步骤状态不会被自动改动
+
+### 4. 阻塞日志
+
+- [ ] 记录“阻塞日志”后：
+  - [ ] 步骤会自动切换为 `blocked`
+  - [ ] `blocked_at` 会写入
+  - [ ] `blocker_reason` 会自动生成或保留
+  - [ ] 日志区能看到下一步建议
+
+### 5. 复现心得回流
+
+- [ ] 创建 reproduction reflection 成功后提示为自然中文
+- [ ] 若 `is_report_worthy=true`，提示明确说明“可进入周报上下文使用”
+
+---
+
+## D. 心得页
+
+### 1. 默认视角
+
+- [ ] 打开 `/reflections` 时，默认时间范围为“本周”
+- [ ] 顶部快捷筛选能正常切换：
+  - [ ] 今天
+  - [ ] 昨天
+  - [ ] 本周
+  - [ ] 上周
+  - [ ] 最近30天
+  - [ ] 全部
+
+### 2. 筛选能力
+
+- [ ] `reflection_type` 支持：
+  - [ ] 全部
+  - [ ] 论文心得
+  - [ ] 复现心得
+- [ ] `lifecycle_status` 支持：
+  - [ ] 全部
+  - [ ] 草稿
+  - [ ] 已定稿
+  - [ ] 已归档
+- [ ] `is_report_worthy` 支持：
+  - [ ] 全部
+  - [ ] 仅可汇报
+
+### 3. 顶部 summary 行
+
+- [ ] 顶部 summary 行会显示：
+  - [ ] 当前筛选结果条数
+  - [ ] 可汇报条数
+  - [ ] 论文心得条数
+  - [ ] 复现心得条数
+
+### 4. 深链定位
+
+- [ ] 访问 `/reflections?reflection_id=<id>` 时：
+  - [ ] 若对象在当前筛选结果中，会高亮目标卡片
+  - [ ] 若对象不在当前筛选结果中，也会插入时间线顶部
+  - [ ] 顶部显示“已定位到指定心得”
+
+---
+
+## E. 周报工作区
+
+### 1. 默认加载
+
+- [ ] 打开 `/dashboard/weekly-report` 时，会自动加载当前周 live context
+- [ ] 同时会加载历史草稿列表
+
+### 2. 生成草稿分流
+
+- [ ] 当前周没有草稿时，点击“生成周报草稿”会直接创建新 draft
+- [ ] 当前周已有草稿时，点击“生成周报草稿”会弹出选择框：
+  - [ ] 继续最近草稿
+  - [ ] 新建一份草稿
+  - [ ] 取消
+
+### 3. 继续最近草稿
+
+- [ ] 点击“继续最近草稿”后：
+  - [ ] 不重新生成 markdown
+  - [ ] 右侧打开该周最近一条草稿
+  - [ ] 左侧显示该 draft 保存时的 snapshot context
+  - [ ] 页面提示“正在继续编辑该周最近草稿”
+
+### 4. 新建一份草稿
+
+- [ ] 点击“新建一份草稿”后：
+  - [ ] 创建新的 draft
+  - [ ] 右侧打开新 draft
+  - [ ] 左侧保持 live context
+
+### 5. 编辑器
+
+- [ ] 编辑器顶部能显示：
+  - [ ] 标题
+  - [ ] 周范围
+  - [ ] 中文状态
+  - [ ] 最后更新时间
+- [ ] 状态显示为中文：
+  - [ ] 草稿
+  - [ ] 已定稿
+  - [ ] 已归档
+- [ ] 修改 title / markdown / status 后，会出现“未保存修改”提示
+- [ ] 点击“恢复到已保存版本”后，只回退本地内容，不写后端
+- [ ] 点击保存后，草稿内容和更新时间会刷新
+
+### 6. 历史草稿列表
+
+- [ ] 历史草稿列表能显示：
+  - [ ] 标题
+  - [ ] 周范围
+  - [ ] 中文状态
+  - [ ] 更新时间
+- [ ] 当前打开的 draft 会高亮
+- [ ] 当前周的 draft 会显示“本周”标记
+
+### 7. 左侧上下文面板
+
+- [ ] 左侧完整显示五段：
+  - [ ] 可汇报心得
+  - [ ] 最近论文
+  - [ ] 复现进展
+  - [ ] 当前阻塞
+  - [ ] 下周行动
+- [ ] 每段都有空态文案与数量提示
+
+### 8. 精确回跳
+
+- [ ] 论文条目能跳到 `/search?paper_id=<paper_id>`
+- [ ] 复现条目能跳到 `/reproduction?reproduction_id=<reproduction_id>`
+- [ ] blocker 条目能跳到 `/reproduction?reproduction_id=<reproduction_id>`
+
+---
+
+## F. Memory
+
+### 1. 结果展示
+
+- [ ] 每条 memory 结果都显示：
+  - [ ] 中文记忆类型
+  - [ ] 中文层级
+  - [ ] 内容摘要
+  - [ ] `context_hint`
+  - [ ] `match_reason`
+  - [ ] 创建时间
+
+### 2. 精确回跳
+
+- [ ] 命中 `PaperMemory` 时，可跳到 `/search?paper_id=...`
+- [ ] 命中 `SummaryMemory` 时，可跳到 `/search?paper_id=...&summary_id=...`
+- [ ] 命中 `ReproMemory` 时，可跳到 `/reproduction?reproduction_id=...`
+- [ ] 命中 `ReflectionMemory` 时，可跳到 `/reflections?reflection_id=...`
+- [ ] 命中 `IdeaMemory` 时，可跳到 `/brainstorm`
+
+### 3. 无跳转目标
+
+- [ ] 若 `jump_target=null`：
+  - [ ] 不显示跳转按钮
+  - [ ] 显示“当前记忆暂无可回跳上下文”
+
+### 4. 检索解释
+
+- [ ] 语义召回结果能看到：
+  - [ ] `retrieval_mode = semantic`
+  - [ ] 自然中文解释
+- [ ] fallback 结果能看到：
+  - [ ] `retrieval_mode = fallback`
+  - [ ] 自然中文解释
+
+---
+
+## G. 仪表盘与全局状态
+
+### 1. 仪表盘
+
+- [ ] `/dashboard` 不再直接裸显示 raw `task_type / status`
+- [ ] 常见任务类型会显示成中文
+- [ ] 常见任务状态会显示成中文
+
+### 2. 统一状态提示
+
+- [ ] 主页面的 `error / warning / success / info` 风格一致
+- [ ] 空态由 `EmptyState` 负责，不混在状态提示里
+- [ ] Loading 文案为自然中文
+
+---
+
+## UI / 产品层面后续可完善点
+
+下面这些不属于“当前版本验收失败项”，而是下一轮可继续打磨的方向。
+
+### 1. 周报编辑器防误操作
+
+- 切换草稿前增加未保存提醒
+- 离开页面前增加轻量确认
+
+### 2. 周报历史管理
+
+- 历史草稿列表增加轻量筛选
+  - 仅看本周
+  - 仅看草稿
+  - 仅看已定稿
+
+### 3. 心得页 URL 状态保持
+
+- 将时间范围与筛选条件同步到 URL
+- 方便下次打开时恢复同样视角
+
+### 4. Memory 可解释性继续增强
+
+- 在 `context_hint` 之外增加更具体的关联对象标题
+- 例如论文标题、复现摘要、心得摘要
+
+### 5. 复现页历史切换
+
+- 在当前论文上下文下，补一个“历史 reproduction 快速切换”小区域
+
+### 6. 统一 badge / 状态视觉
+
+- 草稿 / 已定稿 / 阻塞 / 进行中 / paper-only 等标签样式可进一步统一
+
+---
+
+## 验收结论记录
+
+可在每次手工验收后补充：
+
+- 验收日期：
+- 验收版本：
+- 主要通过项：
+- 主要问题项：
+- 是否可进入下一轮日常使用：
+

@@ -18,14 +18,20 @@ import {
 } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+      cache: 'no-store',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知网络错误';
+    throw new Error(`无法连接后端服务：${API_BASE}。请确认后端已启动，且 NEXT_PUBLIC_API_BASE 配置正确。原始错误：${message}`);
+  }
   if (!response.ok) {
     const message = await response.text();
     throw new Error(`API error ${response.status}: ${message}`);
