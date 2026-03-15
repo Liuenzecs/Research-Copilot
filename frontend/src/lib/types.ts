@@ -172,10 +172,64 @@ export type RepoFindResponse = {
 export type WeeklyReportContext = {
   week_start: string;
   week_end: string;
-  report_worthy_reflections: Array<Record<string, unknown>>;
-  recent_papers: Array<Record<string, unknown>>;
-  reproduction_progress: Array<Record<string, unknown>>;
-  blockers: Array<Record<string, unknown>>;
+  report_worthy_reflections: WeeklyReportReflectionItem[];
+  recent_papers: WeeklyReportPaperActivityItem[];
+  reproduction_progress: WeeklyReportReproductionItem[];
+  blockers: WeeklyReportBlockerItem[];
+  next_actions: string[];
+};
+
+export type WeeklyReportReflectionItem = {
+  id: number;
+  event_date: string;
+  reflection_type: string;
+  report_summary: string;
+  related_paper_id?: number | null;
+  related_paper_title?: string | null;
+  related_reproduction_id?: number | null;
+  related_task_id?: number | null;
+};
+
+export type WeeklyReportPaperActivityItem = {
+  paper_id: number;
+  title_en: string;
+  source: string;
+  year?: number | null;
+  last_activity_at: string;
+  activity_type: string;
+  activity_summary: string;
+};
+
+export type WeeklyReportReproductionItem = {
+  reproduction_id: number;
+  paper_id?: number | null;
+  paper_title?: string | null;
+  repo_id?: number | null;
+  repo_label: string;
+  status: string;
+  progress_percent?: number | null;
+  progress_summary: string;
+  updated_at: string;
+};
+
+export type WeeklyReportBlockerItem = {
+  reproduction_id: number;
+  paper_id?: number | null;
+  paper_title?: string | null;
+  step_id: number;
+  step_no: number;
+  command: string;
+  blocker_reason: string;
+  blocked_at?: string | null;
+};
+
+export type WeeklyReportContextSnapshot = {
+  week_start: string;
+  week_end: string;
+  report_worthy_reflections: WeeklyReportReflectionItem[];
+  recent_papers: WeeklyReportPaperActivityItem[];
+  reproduction_progress: WeeklyReportReproductionItem[];
+  blockers: WeeklyReportBlockerItem[];
   next_actions: string[];
 };
 
@@ -186,7 +240,7 @@ export type WeeklyReportDraft = {
   title: string;
   draft_markdown: string;
   status: 'draft' | 'finalized' | 'archived';
-  source_snapshot_json: Record<string, unknown>;
+  source_snapshot_json: Record<string, unknown> | WeeklyReportContextSnapshot;
   generated_task_id?: number | null;
   created_at: string;
   updated_at: string;

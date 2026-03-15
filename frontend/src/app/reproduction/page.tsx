@@ -523,13 +523,13 @@ function ReproductionPageContent() {
               if (!currentReproductionId) return;
               await updateReproductionStep(currentReproductionId, stepId, payload);
               await refreshDetail();
-              setNotice('步骤状态已更新。');
+              setNotice(payload.step_status === 'blocked' ? '步骤已标记为阻塞。' : '步骤信息已保存。');
             }}
             onCreateLog={async (stepId, payload) => {
               if (!currentReproductionId) return;
               await createReproductionStepLog(currentReproductionId, stepId, payload);
               await refreshDetail();
-              setNotice(payload.log_kind === 'blocker' ? '阻塞日志已保存，并已自动标记该步骤为 blocked。' : '步骤日志已保存，并已生成下一步建议。');
+              setNotice(payload.log_kind === 'blocker' ? '阻塞日志已保存，并已自动将该步骤标记为阻塞。' : '步骤日志已保存，并已给出下一步建议。');
             }}
           />
 
@@ -566,7 +566,7 @@ function ReproductionPageContent() {
                   setReportSummary('');
                   setReportWorthy(false);
                   await refreshDetail();
-                  setNotice('复现心得已创建。');
+                  setNotice(reportWorthy ? '复现心得已创建，并可进入周报上下文使用。' : '复现心得已创建。');
                 })
               }
             >

@@ -1,16 +1,34 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.db.paper_record import PaperRecord
+from app.models.db.paper_record import PaperRecord, PaperResearchStateRecord
 from app.models.db.reflection_record import ReflectionRecord
+from app.models.db.repo_record import RepoRecord
 from app.models.db.reproduction_record import ReproductionRecord, ReproductionStepRecord
-from app.models.db.task_record import TaskRecord
+from app.models.db.summary_record import SummaryRecord
 from app.models.db.weekly_report_record import WeeklyReportRecord
+from app.models.schemas.report import WeeklyReportContextResponse
+
+
+def _week_bounds(week_start: date, week_end: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(week_start, time.min, tzinfo=timezone.utc)
+    end = datetime.combine(week_end, time.max, tzinfo=timezone.utc)
+    return start, end
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _iso_datetime(value: datetime) -> str:
+    return _as_utc(value).isoformat()
 
 
 class ReportingService:
@@ -21,40 +39,217 @@ class ReportingService:
         week_end = week_start + timedelta(days=6)
         return week_start, week_end
 
+    def _load_paper_map(self, db: Session, paper_ids: set[int]) -> dict[int, PaperRecord]:
+        if not paper_ids:
+            return {}
+        rows = db.execute(select(PaperRecord).where(PaperRecord.id.in_(paper_ids))).scalars().all()
+        return {row.id: row for row in rows}
+
+    def _load_repo_map(self, db: Session, repo_ids: set[int]) -> dict[int, RepoRecord]:
+        if not repo_ids:
+            return {}
+        rows = db.execute(select(RepoRecord).where(RepoRecord.id.in_(repo_ids))).scalars().all()
+        return {row.id: row for row in rows}
+
+    def _snapshot_payload(self, context: dict) -> dict:
+        return WeeklyReportContextResponse(**context).model_dump(mode='json')
+
+    def _paper_activity_items(self, db: Session, week_start: date, week_end: date) -> list[dict]:
+        start_dt, end_dt = _week_bounds(week_start, week_end)
+        activity_candidates: list[dict] = []
+
+        created_papers = (
+            db.execute(
+                select(PaperRecord)
+                .where(PaperRecord.created_at >= start_dt)
+                .where(PaperRecord.created_at <= end_dt)
+            )
+            .scalars()
+            .all()
+        )
+        for paper in created_papers:
+            activity_candidates.append(
+                {
+                    'paper_id': paper.id,
+                    'last_activity_at': _as_utc(paper.created_at),
+                    'activity_type': 'added',
+                    'activity_summary': '本周新加入系统。',
+                }
+            )
+
+        summaries = (
+            db.execute(
+                select(SummaryRecord)
+                .where(SummaryRecord.created_at >= start_dt)
+                .where(SummaryRecord.created_at <= end_dt)
+                .order_by(SummaryRecord.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for summary in summaries:
+            activity_candidates.append(
+                {
+                    'paper_id': summary.paper_id,
+                    'last_activity_at': _as_utc(summary.created_at),
+                    'activity_type': 'summary',
+                    'activity_summary': f"本周生成了{summary.summary_type}摘要。",
+                }
+            )
+
+        reflections = (
+            db.execute(
+                select(ReflectionRecord)
+                .where(ReflectionRecord.event_date >= week_start)
+                .where(ReflectionRecord.event_date <= week_end)
+                .where(ReflectionRecord.related_paper_id.is_not(None))
+                .order_by(ReflectionRecord.event_date.desc(), ReflectionRecord.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for reflection in reflections:
+            activity_candidates.append(
+                {
+                    'paper_id': reflection.related_paper_id,
+                    'last_activity_at': datetime.combine(reflection.event_date, time.max, tzinfo=timezone.utc),
+                    'activity_type': 'reflection',
+                    'activity_summary': reflection.report_summary or '本周新增了论文心得。',
+                }
+            )
+
+        state_updates = (
+            db.execute(
+                select(PaperResearchStateRecord)
+                .where(PaperResearchStateRecord.updated_at >= start_dt)
+                .where(PaperResearchStateRecord.updated_at <= end_dt)
+                .order_by(PaperResearchStateRecord.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for state in state_updates:
+            activity_candidates.append(
+                {
+                    'paper_id': state.paper_id,
+                    'last_activity_at': _as_utc(state.updated_at),
+                    'activity_type': 'state_update',
+                    'activity_summary': f"本周更新了阅读状态：{state.reading_status}。",
+                }
+            )
+
+        reproductions = (
+            db.execute(
+                select(ReproductionRecord)
+                .where(ReproductionRecord.updated_at >= start_dt)
+                .where(ReproductionRecord.updated_at <= end_dt)
+                .where(ReproductionRecord.paper_id.is_not(None))
+                .order_by(ReproductionRecord.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for reproduction in reproductions:
+            activity_candidates.append(
+                {
+                    'paper_id': reproduction.paper_id,
+                    'last_activity_at': _as_utc(reproduction.updated_at),
+                    'activity_type': 'reproduction',
+                    'activity_summary': reproduction.progress_summary or f"本周推进了复现，状态为 {reproduction.status}。",
+                }
+            )
+
+        latest_by_paper: dict[int, dict] = {}
+        for item in activity_candidates:
+            paper_id = item['paper_id']
+            if paper_id is None:
+                continue
+            existing = latest_by_paper.get(paper_id)
+            if existing is None or item['last_activity_at'] > existing['last_activity_at']:
+                latest_by_paper[paper_id] = item
+
+        paper_map = self._load_paper_map(db, set(latest_by_paper.keys()))
+        result = []
+        for paper_id, item in latest_by_paper.items():
+            paper = paper_map.get(paper_id)
+            if paper is None:
+                continue
+            result.append(
+                {
+                    'paper_id': paper.id,
+                    'title_en': paper.title_en,
+                    'source': paper.source,
+                    'year': paper.year,
+                    'last_activity_at': _iso_datetime(item['last_activity_at']),
+                    'activity_type': item['activity_type'],
+                    'activity_summary': item['activity_summary'],
+                }
+            )
+
+        result.sort(key=lambda item: item['last_activity_at'], reverse=True)
+        return result[:20]
+
     def get_context(self, db: Session, week_start: date, week_end: date) -> dict:
+        start_dt, end_dt = _week_bounds(week_start, week_end)
+
         report_worthy_reflections = (
             db.execute(
                 select(ReflectionRecord)
                 .where(ReflectionRecord.event_date >= week_start)
                 .where(ReflectionRecord.event_date <= week_end)
                 .where(ReflectionRecord.is_report_worthy.is_(True))
-                .order_by(ReflectionRecord.event_date.desc())
+                .order_by(ReflectionRecord.event_date.desc(), ReflectionRecord.created_at.desc())
             )
             .scalars()
             .all()
         )
 
-        recent_papers = (
-            db.execute(select(PaperRecord).order_by(PaperRecord.created_at.desc()).limit(20))
-            .scalars()
-            .all()
-        )
+        reflection_paper_ids = {row.related_paper_id for row in report_worthy_reflections if row.related_paper_id is not None}
+        recent_papers = self._paper_activity_items(db, week_start, week_end)
 
         reproductions = (
-            db.execute(select(ReproductionRecord).order_by(ReproductionRecord.updated_at.desc()).limit(20))
+            db.execute(
+                select(ReproductionRecord)
+                .where(ReproductionRecord.updated_at >= start_dt)
+                .where(ReproductionRecord.updated_at <= end_dt)
+                .order_by(ReproductionRecord.updated_at.desc(), ReproductionRecord.id.desc())
+            )
             .scalars()
             .all()
         )
+        reproduction_paper_ids = {row.paper_id for row in reproductions if row.paper_id is not None}
+        reproduction_repo_ids = {row.repo_id for row in reproductions if row.repo_id is not None}
 
         blocker_steps = (
             db.execute(
                 select(ReproductionStepRecord)
                 .where(ReproductionStepRecord.step_status == 'blocked')
-                .order_by(ReproductionStepRecord.updated_at.desc())
+                .where(
+                    or_(
+                        and_(ReproductionStepRecord.blocked_at.is_not(None), ReproductionStepRecord.blocked_at >= start_dt, ReproductionStepRecord.blocked_at <= end_dt),
+                        and_(ReproductionStepRecord.updated_at >= start_dt, ReproductionStepRecord.updated_at <= end_dt),
+                    )
+                )
+                .order_by(ReproductionStepRecord.blocked_at.desc(), ReproductionStepRecord.updated_at.desc(), ReproductionStepRecord.id.desc())
             )
             .scalars()
             .all()
         )
+
+        blocker_reproduction_ids = {row.reproduction_id for row in blocker_steps}
+        blocker_reproduction_map: dict[int, ReproductionRecord] = {}
+        if blocker_reproduction_ids:
+            blocker_reproduction_rows = (
+                db.execute(select(ReproductionRecord).where(ReproductionRecord.id.in_(blocker_reproduction_ids)))
+                .scalars()
+                .all()
+            )
+            blocker_reproduction_map = {row.id: row for row in blocker_reproduction_rows}
+            reproduction_paper_ids.update({row.paper_id for row in blocker_reproduction_rows if row.paper_id is not None})
+            reproduction_repo_ids.update({row.repo_id for row in blocker_reproduction_rows if row.repo_id is not None})
+
+        paper_map = self._load_paper_map(db, reflection_paper_ids | reproduction_paper_ids)
+        repo_map = self._load_repo_map(db, reproduction_repo_ids)
 
         next_actions: list[str] = []
         for step in blocker_steps[:5]:
@@ -72,48 +267,53 @@ class ReportingService:
             'week_end': week_end,
             'report_worthy_reflections': [
                 {
-                    'id': x.id,
-                    'event_date': x.event_date.isoformat(),
-                    'reflection_type': x.reflection_type,
-                    'report_summary': x.report_summary,
-                    'related_paper_id': x.related_paper_id,
-                    'related_reproduction_id': x.related_reproduction_id,
-                    'related_task_id': x.related_task_id,
+                    'id': row.id,
+                    'event_date': row.event_date.isoformat(),
+                    'reflection_type': row.reflection_type,
+                    'report_summary': row.report_summary,
+                    'related_paper_id': row.related_paper_id,
+                    'related_paper_title': paper_map[row.related_paper_id].title_en if row.related_paper_id in paper_map else None,
+                    'related_reproduction_id': row.related_reproduction_id,
+                    'related_task_id': row.related_task_id,
                 }
-                for x in report_worthy_reflections
+                for row in report_worthy_reflections
             ],
-            'recent_papers': [
-                {
-                    'id': p.id,
-                    'title_en': p.title_en,
-                    'source': p.source,
-                    'year': p.year,
-                    'created_at': p.created_at.isoformat(),
-                }
-                for p in recent_papers
-            ],
+            'recent_papers': recent_papers,
             'reproduction_progress': [
                 {
-                    'id': r.id,
-                    'paper_id': r.paper_id,
-                    'repo_id': r.repo_id,
-                    'status': r.status,
-                    'progress_percent': r.progress_percent,
-                    'progress_summary': r.progress_summary,
-                    'updated_at': r.updated_at.isoformat(),
+                    'reproduction_id': row.id,
+                    'paper_id': row.paper_id,
+                    'paper_title': paper_map[row.paper_id].title_en if row.paper_id in paper_map else None,
+                    'repo_id': row.repo_id,
+                    'repo_label': (
+                        f"{repo_map[row.repo_id].owner}/{repo_map[row.repo_id].name}"
+                        if row.repo_id in repo_map and (repo_map[row.repo_id].owner or repo_map[row.repo_id].name)
+                        else 'paper-only'
+                    ),
+                    'status': row.status,
+                    'progress_percent': row.progress_percent,
+                    'progress_summary': row.progress_summary,
+                    'updated_at': _iso_datetime(row.updated_at),
                 }
-                for r in reproductions
+                for row in reproductions
             ],
             'blockers': [
                 {
-                    'reproduction_id': s.reproduction_id,
-                    'step_id': s.id,
-                    'step_no': s.step_no,
-                    'command': s.command,
-                    'blocker_reason': s.blocker_reason,
-                    'blocked_at': s.blocked_at.isoformat() if s.blocked_at else None,
+                    'reproduction_id': step.reproduction_id,
+                    'paper_id': blocker_reproduction_map[step.reproduction_id].paper_id if step.reproduction_id in blocker_reproduction_map else None,
+                    'paper_title': (
+                        paper_map[blocker_reproduction_map[step.reproduction_id].paper_id].title_en
+                        if step.reproduction_id in blocker_reproduction_map
+                        and blocker_reproduction_map[step.reproduction_id].paper_id in paper_map
+                        else None
+                    ),
+                    'step_id': step.id,
+                    'step_no': step.step_no,
+                    'command': step.command,
+                    'blocker_reason': step.blocker_reason,
+                    'blocked_at': _iso_datetime(step.blocked_at) if step.blocked_at else None,
                 }
-                for s in blocker_steps
+                for step in blocker_steps
             ],
             'next_actions': next_actions[:10],
         }
@@ -138,27 +338,32 @@ class ReportingService:
         lines.append('## 近期论文进展')
         papers = context['recent_papers']
         if not papers:
-            lines.append('- 本周暂无新增论文记录。')
+            lines.append('- 本周暂无论文活动记录。')
         else:
             for item in papers[:8]:
-                lines.append(f"- [{item['id']}] {item['title_en']} ({item['source']})")
+                lines.append(f"- [{item['paper_id']}] {item['title_en']} · {item['activity_summary']}")
 
         lines.append('')
         lines.append('## 复现进展与阻塞')
-        repro = context['reproduction_progress']
+        reproduction_progress = context['reproduction_progress']
         blockers = context['blockers']
-        if not repro:
+        if not reproduction_progress:
             lines.append('- 本周暂无复现进展记录。')
         else:
-            for item in repro[:8]:
+            for item in reproduction_progress[:8]:
                 percent = f"{item['progress_percent']}%" if item['progress_percent'] is not None else '未设置'
-                lines.append(f"- 复现#{item['id']} 状态={item['status']} 进度={percent}")
+                repo_label = item['repo_label'] or 'paper-only'
+                lines.append(
+                    f"- 复现#{item['reproduction_id']} · {item['paper_title'] or '未关联论文'} · {repo_label} · 状态={item['status']} · 进度={percent} · {item['progress_summary'] or '无摘要'}"
+                )
 
         if blockers:
             lines.append('')
             lines.append('### 主要阻塞')
             for item in blockers[:8]:
-                lines.append(f"- 复现#{item['reproduction_id']} 步骤{item['step_no']}: {item['blocker_reason'] or '待补充'}")
+                lines.append(
+                    f"- 复现#{item['reproduction_id']} 步骤{item['step_no']} · {item['paper_title'] or '未关联论文'}: {item['blocker_reason'] or '待补充'}"
+                )
 
         lines.append('')
         lines.append('## 下周行动')
@@ -174,6 +379,7 @@ class ReportingService:
     def create_draft(self, db: Session, week_start: date, week_end: date, title: str, generated_task_id: int | None = None) -> WeeklyReportRecord:
         context = self.get_context(db, week_start, week_end)
         markdown = self.build_markdown(context, title)
+        snapshot_payload = self._snapshot_payload(context)
 
         row = WeeklyReportRecord(
             week_start=week_start,
@@ -181,7 +387,7 @@ class ReportingService:
             title=title,
             draft_markdown=markdown,
             status='draft',
-            source_snapshot_json=json.dumps(context, ensure_ascii=False, default=str),
+            source_snapshot_json=json.dumps(snapshot_payload, ensure_ascii=False),
             generated_task_id=generated_task_id,
         )
         db.add(row)

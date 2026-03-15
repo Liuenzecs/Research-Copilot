@@ -90,6 +90,36 @@
 - reproduction 级全局日志页
 - 独立 blocker dashboard
 
+### 第三批：周报上下文修整 + 周报回跳闭环 + 复现页剩余提示收口
+
+完成日期：2026-03-15
+
+本批已完成：
+
+- `weekly report` 上下文改为严格按周过滤
+- 将周报上下文返回结构收紧为强类型对象
+- “最近论文”改为“本周有研究动作的论文”
+- 左侧周报面板补齐五段：
+  - 可汇报心得
+  - 最近论文
+  - 复现进展
+  - 当前阻塞
+  - 下周行动
+- 周报条目支持精确回跳：
+  - paper → `/search?paper_id=<id>`
+  - reproduction / blocker → `/reproduction?reproduction_id=<id>`
+- 打开历史草稿时，左侧改为显示该草稿生成时保存的 `source snapshot`
+- 周报草稿 markdown 与左侧上下文保持同一周、同一批对象来源
+- 复现页剩余 notice / warning / empty 文案继续收口
+- report-worthy reproduction reflection 创建后，明确提示其可进入周报上下文使用
+- 补齐周报后端集成测试，并通过前后端验证
+
+明确未做：
+
+- reflection 精确回跳
+- memory / profile 扩展
+- 新的工作面或新的数据库迁移
+
 ---
 
 ## 当前产品主轴
@@ -137,8 +167,9 @@
 
 当前判断：
 
-- 功能骨架已在，但产品可信度还不如 paper / reproduction 主链路
-- 目前仍不应插队到最高优先级
+- 严格周过滤、历史快照与 paper / reproduction 回跳已经补齐
+- 周报已从“功能骨架”进入“可以真实每周使用”的阶段
+- 后续重点不再是新功能扩展，而是少量可用性收尾与文案统一
 
 ### 4. Memory 工作流
 
@@ -160,16 +191,17 @@
 
 ### Fix Soon
 
-- 继续打磨 reproduction 细节中的结果回流与后续操作提示
-- 让周报上下文更真实反映最近 paper / reproduction 进展
+- 补齐 memory 命中后的精确回跳
+- 继续统一 Chinese-first 文案与提示风格
+- 收敛页面层内分散的 notice / warning 处理
 - 继续保持每批完成后同步更新规划文档与清单
 
 ### Improve Next
 
-- weekly report 上下文展示修整
-- memory 命中后的精确回跳
-- Chinese-first 文案统一
-- 前端 API 调用风格继续收敛
+- 收敛前端页面层直接处理 API 细节的写法
+- 继续减少页面对内部字段语义的直接暴露
+- 周报编辑与历史草稿管理的小范围交互打磨
+- timeline / filters 的周节奏使用性微调
 
 ### Defer
 

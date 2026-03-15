@@ -59,25 +59,52 @@
 - [ ] memory graph / memory 管理 UI
 - [ ] profile 面板
 
+### 第三批：周报上下文修整 + 周报回跳闭环 + 复现页剩余提示收口
+
+完成日期：2026-03-15
+
+已完成：
+
+- [x] `weekly report` 上下文改为严格按周过滤
+- [x] 周报上下文改为强类型对象返回
+- [x] “最近论文”改为“本周有研究动作的论文”
+- [x] 周报左侧面板补齐五段内容
+- [x] 论文条目支持回跳到 `/search?paper_id=...`
+- [x] 复现进展与 blocker 条目支持回跳到 `/reproduction?reproduction_id=...`
+- [x] 打开历史草稿时显示该 draft 的历史快照
+- [x] 点击“加载上下文”后可切回 live context
+- [x] 周报 markdown 与严格周过滤上下文对齐
+- [x] 复现页剩余 warning / empty / loading / notice 文案继续收口
+- [x] report-worthy reproduction reflection 创建后提示其可进入周报上下文
+- [x] 新增周报后端集成测试
+- [x] 后端回归测试全部通过
+- [x] 前端通过 `npm run build`
+
+本批明确未做：
+
+- [ ] reflection 精确回跳
+- [ ] memory / profile 扩展
+- [ ] 新工作面扩展
+- [ ] 数据库迁移扩展
+
 ---
 
 ## Fix Soon
 
 这部分代表“高价值、低到中等成本、建议下一批直接做”。
 
-- [ ] 修正 weekly report 上下文展示
-- [ ] 在 weekly report 中明确展示最近论文与复现进展
-- [ ] 优化 weekly report 到 paper / reproduction 的回跳
-- [ ] 复查 reproduction 页剩余 warning / empty / loading 文案一致性
-- [ ] 继续收敛复现记录与 reflection 回流提示
+- [ ] 改善 memory 检索结果到 paper / reproduction / reflection 的精确回跳
+- [ ] 统一页面级 notice / warning / empty 状态的呈现方式
+- [ ] 继续统一 Chinese-first 文案，减少内部字段语义外露
+- [ ] 收敛页面层里分散的 API 调用与状态拼装逻辑
 
 ---
 
 ## Improve Next
 
-- [ ] 改善 memory 检索结果的精确回跳
-- [ ] 统一前端 Chinese-first 文案
-- [ ] 收敛前端页面层直接处理 API 细节的写法
+- [ ] 周报编辑器与历史草稿管理的小范围交互打磨
+- [ ] timeline / filters 更贴近单人周节奏研究使用
+- [ ] memory 面板的可解释性与上下文提示增强
 - [ ] 继续减少页面层对内部字段名的直接暴露
 
 ---
