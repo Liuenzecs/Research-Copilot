@@ -310,5 +310,9 @@ export type ProviderSettings = {
   semantic_scholar_api_key_configured: boolean;
   github_token_configured: boolean;
   llm_mode: string;
+  runtime_db_url: string;
+  runtime_db_path: string;
+  runtime_data_dir: string;
+  runtime_vector_dir: string;
   notes: string[];
 };

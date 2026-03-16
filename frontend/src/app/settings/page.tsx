@@ -22,7 +22,7 @@ export default function SettingsPage() {
     <>
       <Card>
         <h2 className="title">设置</h2>
-        <p className="subtle">查看当前模型、搜索和公共翻译接口的配置状态。</p>
+        <p className="subtle">查看当前模型、搜索、翻译接口以及实际运行时数据路径。</p>
       </Card>
 
       <StatusStack items={error ? [{ variant: 'error' as const, message: error }] : []} />
@@ -52,6 +52,13 @@ export default function SettingsPage() {
                 Semantic Scholar API：{settings.semantic_scholar_api_key_configured ? '已配置' : '未配置'} · GitHub Token：
                 {settings.github_token_configured ? '已配置' : '未配置'}
               </div>
+            </div>
+            <div className="reader-meta-card">
+              <strong>当前实际运行路径</strong>
+              <div className="subtle">数据库 URL：{settings.runtime_db_url}</div>
+              <div className="subtle">数据库文件：{settings.runtime_db_path || '当前不是文件型 SQLite'}</div>
+              <div className="subtle">数据目录：{settings.runtime_data_dir}</div>
+              <div className="subtle">向量目录：{settings.runtime_vector_dir}</div>
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
               <strong>当前说明</strong>

@@ -17,12 +17,14 @@ import {
   getReproductionDetail,
   listReproductions,
   planReproduction,
+  searchPapers,
   updateReproduction,
   updateReproductionStep,
 } from '@/lib/api';
-import { Paper, ReproductionDetail, RepoCandidate } from '@/lib/types';
+import { Paper, ReproductionDetail, ReproductionListItem, RepoCandidate } from '@/lib/types';
 
 type ContextMode = 'idle' | 'ready_new' | 'continuing_recent' | 'detail';
+type RecentReproductionItem = ReproductionListItem & { paperTitle?: string };
 
 function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;
@@ -85,8 +87,11 @@ function ReproductionPageContent() {
   const queryPaperId = parsePositiveInt(searchParams.get('paper_id'));
   const queryReproductionId = parsePositiveInt(searchParams.get('reproduction_id'));
 
-  const [manualPaperId, setManualPaperId] = useState('');
-  const [manualReproductionId, setManualReproductionId] = useState('');
+  const [paperLookupQuery, setPaperLookupQuery] = useState('');
+  const [paperLookupResults, setPaperLookupResults] = useState<Paper[]>([]);
+  const [paperLookupLoading, setPaperLookupLoading] = useState(false);
+  const [recentReproductions, setRecentReproductions] = useState<RecentReproductionItem[]>([]);
+  const [info, setInfo] = useState('');
 
   const [contextMode, setContextMode] = useState<ContextMode>('idle');
   const [contextMessage, setContextMessage] = useState('');
@@ -130,9 +135,8 @@ function ReproductionPageContent() {
       setBusy('');
       setError('');
       setNotice('');
+      setInfo('');
       setWarnings([]);
-      setManualPaperId(queryPaperId ? String(queryPaperId) : '');
-      setManualReproductionId(queryReproductionId ? String(queryReproductionId) : '');
 
       if (queryReproductionId) {
         setContextMode('detail');
@@ -250,6 +254,55 @@ function ReproductionPageContent() {
     };
   }, [queryPaperId, queryReproductionId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRecentReproductions() {
+      try {
+        const rows = await listReproductions({ limit: 8 });
+        if (cancelled) return;
+
+        const paperIds = Array.from(
+          new Set(
+            rows
+              .map((item) => item.paper_id)
+              .filter((value): value is number => typeof value === 'number' && value > 0),
+          ),
+        );
+
+        const titleEntries = await Promise.all(
+          paperIds.map(async (paperId) => {
+            try {
+              const paper = await getPaper(paperId);
+              return [paperId, paper.title_en] as const;
+            } catch {
+              return [paperId, '未能加载论文标题'] as const;
+            }
+          }),
+        );
+
+        if (cancelled) return;
+
+        const paperTitleMap = new Map<number, string>(titleEntries);
+        setRecentReproductions(
+          rows.map((item) => ({
+            ...item,
+            paperTitle: item.paper_id ? paperTitleMap.get(item.paper_id) ?? '未命名论文' : '未绑定论文',
+          })),
+        );
+      } catch {
+        if (!cancelled) {
+          setRecentReproductions([]);
+        }
+      }
+    }
+
+    void loadRecentReproductions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function refreshDetail() {
     if (!detail) return;
     const latest = await loadDetail(detail.reproduction_id);
@@ -270,12 +323,39 @@ function ReproductionPageContent() {
     setBusy(action);
     setError('');
     setNotice('');
+    setInfo('');
     try {
       await fn();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy('');
+    }
+  }
+
+  async function searchPaperContext() {
+    if (!paperLookupQuery.trim()) {
+      setError('请输入论文标题或关键词。');
+      return;
+    }
+
+    setPaperLookupLoading(true);
+    setError('');
+    setNotice('');
+    setInfo('');
+    try {
+      const payload = await searchPapers(paperLookupQuery.trim(), 6);
+      const items = payload.items ?? [];
+      setPaperLookupResults(items);
+      if (items.length > 0) {
+        setNotice(`已找到 ${items.length} 篇候选论文，请直接选择进入复现工作区。`);
+      } else {
+        setInfo('没有找到匹配论文。你可以换一个标题关键词重试。');
+      }
+    } catch (searchError) {
+      setError((searchError as Error).message || '论文搜索失败，请稍后重试。');
+    } finally {
+      setPaperLookupLoading(false);
     }
   }
 
@@ -315,51 +395,60 @@ function ReproductionPageContent() {
         <p className="subtle">流程：paper 上下文 → repo 候选 → 计划生成 → 步骤跟踪 → blocker/log 记录 → 复现心得。</p>
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 8 }}>
-        <h3 className="title" style={{ fontSize: 16, margin: 0 }}>手工入口（次要）</h3>
-        <div className="grid-2">
-          <input
-            className="input"
-            placeholder="输入 paper_id 后载入论文上下文"
-            value={manualPaperId}
-            onChange={(event) => setManualPaperId(event.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="输入 reproduction_id 直接打开"
-            value={manualReproductionId}
-            onChange={(event) => setManualReproductionId(event.target.value)}
-          />
-        </div>
+      <div className="card" style={{ display: 'grid', gap: 12 }}>
+        <h3 className="title" style={{ fontSize: 16, margin: 0 }}>手工入口（按论文标题选择）</h3>
+        <p className="subtle" style={{ margin: 0 }}>
+          不需要记住任何 `paper_id` 或 `reproduction_id`。直接按论文标题搜索，或从最近复现记录中继续即可。
+        </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Button
-            className="secondary"
-            disabled={busy !== ''}
-            onClick={() => {
-              const parsed = parsePositiveInt(manualPaperId);
-              if (!parsed) {
-                setError('请输入有效的 paper_id。');
-                return;
-              }
-              router.push(buildReproductionUrl({ paperId: parsed }));
-            }}
-          >
-            载入论文上下文
+          <input
+            className="input"
+            placeholder="输入论文标题或关键词，例如 diffusion reproducibility"
+            value={paperLookupQuery}
+            onChange={(event) => setPaperLookupQuery(event.target.value)}
+            style={{ flex: '1 1 320px' }}
+          />
+          <Button className="secondary" disabled={paperLookupLoading || busy !== ''} onClick={() => void searchPaperContext()}>
+            {paperLookupLoading ? '搜索中...' : '搜索论文并进入复现'}
           </Button>
-          <Button
-            className="secondary"
-            disabled={busy !== ''}
-            onClick={() => {
-              const parsed = parsePositiveInt(manualReproductionId);
-              if (!parsed) {
-                setError('请输入有效的 reproduction_id。');
-                return;
-              }
-              router.push(buildReproductionUrl({ reproductionId: parsed }));
-            }}
-          >
-            打开指定复现
-          </Button>
+        </div>
+        {paperLookupResults.length > 0 ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {paperLookupResults.map((paper) => (
+              <button
+                key={paper.id}
+                type="button"
+                className="reader-meta-card"
+                style={{ textAlign: 'left', cursor: 'pointer' }}
+                onClick={() => router.push(buildReproductionUrl({ paperId: paper.id }))}
+              >
+                <strong>{paper.title_en}</strong>
+                <div className="subtle">{paper.source} · {paper.year ?? 'N/A'}</div>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div style={{ display: 'grid', gap: 8 }}>
+          <strong>最近复现记录</strong>
+          {recentReproductions.length > 0 ? (
+            recentReproductions.map((item) => (
+              <button
+                key={item.reproduction_id}
+                type="button"
+                className="reader-meta-card"
+                style={{ textAlign: 'left', cursor: 'pointer' }}
+                onClick={() => router.push(buildReproductionUrl({ reproductionId: item.reproduction_id }))}
+              >
+                <strong>{item.paperTitle || '未绑定论文'}</strong>
+                <div className="subtle">
+                  {statusLabel(item.status)} · {item.progress_percent ?? 0}% · {item.progress_summary || '暂无进度摘要'}
+                </div>
+                <div className="subtle">最后更新：{formatDateTime(item.updated_at)}</div>
+              </button>
+            ))
+          ) : (
+            <p className="subtle" style={{ margin: 0 }}>当前还没有最近复现记录。你可以先按论文标题搜索进入复现上下文。</p>
+          )}
         </div>
       </div>
 
@@ -369,6 +458,7 @@ function ReproductionPageContent() {
         items={[
           ...(error ? [{ variant: 'error' as const, message: error }] : []),
           ...warnings.map((message) => ({ variant: 'warning' as const, message })),
+          ...(info ? [{ variant: 'info' as const, message: info }] : []),
           ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
         ]}
       />
@@ -580,7 +670,7 @@ function ReproductionPageContent() {
       ) : null}
 
       {!loading && !activePaper && !detail && !error ? (
-        <EmptyState title="等待复现上下文" hint="请从论文工作区进入，或在上方手工输入 paper_id / reproduction_id。" />
+        <EmptyState title="等待复现上下文" hint="请从论文阅读页进入，或在上方按论文标题搜索/从最近复现记录中选择。" />
       ) : null}
     </>
   );

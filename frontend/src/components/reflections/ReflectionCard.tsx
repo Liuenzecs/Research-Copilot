@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { reflectionLifecycleLabel, reflectionStageLabel, reflectionTypeLabel } from '@/lib/presentation';
+import { paperReaderPath } from '@/lib/routes';
 import { Reflection } from '@/lib/types';
 
 function chip(label: string) {
@@ -34,26 +35,26 @@ export default function ReflectionCard({
       </p>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
         {reflection.related_paper_id ? (
-          <Link href={`/search?paper_id=${reflection.related_paper_id}`} style={{ textDecoration: 'none' }}>
-            {chip(`论文#${reflection.related_paper_id}`)}
+          <Link href={paperReaderPath(reflection.related_paper_id)} style={{ textDecoration: 'none' }}>
+            {chip('打开论文工作区')}
           </Link>
         ) : null}
         {reflection.related_summary_id && reflection.related_paper_id ? (
           <Link
-            href={`/search?paper_id=${reflection.related_paper_id}&summary_id=${reflection.related_summary_id}`}
+            href={paperReaderPath(reflection.related_paper_id, reflection.related_summary_id)}
             style={{ textDecoration: 'none' }}
           >
-            {chip(`摘要#${reflection.related_summary_id}`)}
+            {chip('定位到关联摘要')}
           </Link>
         ) : reflection.related_summary_id ? (
-          chip(`摘要#${reflection.related_summary_id}`)
+          chip('已关联摘要')
         ) : null}
         {reflection.related_reproduction_id ? (
           <Link href={`/reproduction?reproduction_id=${reflection.related_reproduction_id}`} style={{ textDecoration: 'none' }}>
-            {chip(`复现#${reflection.related_reproduction_id}`)}
+            {chip('打开复现工作区')}
           </Link>
         ) : null}
-        {reflection.related_task_id ? chip(`任务#${reflection.related_task_id}`) : null}
+        {reflection.related_task_id ? chip('已关联任务') : null}
       </div>
       <p>{reflection.report_summary || reflection.content_markdown?.slice(0, 120) || '暂无摘要'}</p>
       {reflection.is_report_worthy ? <p className="subtle">建议汇报给导师</p> : null}
