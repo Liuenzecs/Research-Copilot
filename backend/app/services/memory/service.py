@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.models.db.idea_record import IdeaRecord
@@ -119,6 +120,38 @@ class MemoryService:
         rows = memory_retriever.retrieve(db, query, top_k=top_k, memory_types=memory_types, layers=layers)
         ranked_rows = rank_memories(rows)
         return [self._attach_presentation_fields(db, row) for row in ranked_rows]
+
+    def list_recent(self, db: Session, limit: int, memory_types: list[str], layers: list[str]) -> list[dict]:
+        stmt = select(MemoryItemRecord).where(MemoryItemRecord.archived.is_(False))
+        if memory_types:
+            stmt = stmt.where(MemoryItemRecord.memory_type.in_(memory_types))
+        if layers:
+            stmt = stmt.where(MemoryItemRecord.layer.in_(layers))
+
+        stmt = stmt.order_by(desc(MemoryItemRecord.updated_at), desc(MemoryItemRecord.id)).limit(limit)
+        rows = db.execute(stmt).scalars().all()
+
+        payloads: list[dict] = []
+        for row in rows:
+            payloads.append(
+                {
+                    'id': row.id,
+                    'memory_type': row.memory_type,
+                    'layer': row.layer,
+                    'ref_table': row.ref_table,
+                    'ref_id': row.ref_id,
+                    'text_content': row.text_content,
+                    'importance': row.importance,
+                    'pinned': row.pinned,
+                    'archived': row.archived,
+                    'created_at': row.created_at,
+                    'updated_at': row.updated_at,
+                    'distance': 0.0,
+                    'retrieval_mode': 'fallback',
+                    'match_reason': '当前展示的是最近写入的长期记忆，方便你快速确认记忆是否已保存。',
+                }
+            )
+        return [self._attach_presentation_fields(db, row) for row in payloads]
 
     def link(self, db: Session, from_memory_id: int, to_memory_id: int, link_type: str, weight: float):
         return memory_linker.link(db, from_memory_id, to_memory_id, link_type, weight)

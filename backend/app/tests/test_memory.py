@@ -215,3 +215,22 @@ def test_memory_query_keeps_existing_shape_when_no_records(client, monkeypatch):
     payload = client.post('/memory/query', json={'query': 'anything', 'memory_types': [], 'layers': [], 'top_k': 5})
     assert payload.status_code == 200
     assert isinstance(payload.json(), list)
+
+
+def test_memory_recent_list_returns_persisted_rows(client):
+    with SessionLocal() as db:
+        paper = _create_paper(db, source_id='recent-memory-paper', title='Recent Memory Paper')
+        first = _create_memory(db, memory_type='PaperMemory', ref_table='papers', ref_id=paper.id, text_content='first recent memory')
+        second = _create_memory(db, memory_type='PaperMemory', ref_table='papers', ref_id=paper.id, text_content='second recent memory')
+        db.commit()
+        first_id = first.id
+        second_id = second.id
+
+    response = client.get('/memory?limit=10')
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) >= 2
+    ids = [item['id'] for item in payload]
+    assert ids.index(second_id) < ids.index(first_id)
+    assert payload[0]['match_reason']
+    assert payload[0]['retrieval_mode'] == 'fallback'

@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
+import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import MemoryGraph from '@/components/memory/MemoryGraph';
 import MemoryList from '@/components/memory/MemoryList';
 import ProfilePanel from '@/components/memory/ProfilePanel';
-import { queryMemory } from '@/lib/api';
+import { listMemories, queryMemory } from '@/lib/api';
 import { MemoryItem } from '@/lib/types';
 
 export default function MemoryPage() {
@@ -19,33 +20,68 @@ export default function MemoryPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [notice, setNotice] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'recent' | 'search'>('recent');
+
+  async function loadRecentMemories() {
+    setLoading(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const payload = await listMemories({
+        limit: 12,
+        memory_types: memoryType ? [memoryType] : [],
+        layers: layer ? [layer] : [],
+      });
+      setItems(payload);
+      setViewMode('recent');
+      setInfo('当前显示最近写入的长期记忆。即使你刚刚重启前后端，也可以先在这里确认记忆是否已保存。');
+      if (payload.length > 0) {
+        setNotice(`已加载 ${payload.length} 条最近记忆。`);
+      } else {
+        setNotice('');
+      }
+    } catch (loadError) {
+      setError((loadError as Error).message || '最近记忆加载失败，请稍后重试。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRecentMemories();
+  }, []);
 
   async function searchMemory() {
     if (!query.trim()) {
-      setError('');
-      setNotice('');
-      setInfo('请输入记忆检索问题。');
+      setInfo('未输入检索问题，已切回最近记忆列表。');
+      await loadRecentMemories();
       return;
     }
 
+    setLoading(true);
     setError('');
     setInfo('');
     setNotice('');
     try {
       const payload = await queryMemory({
-        query,
+        query: query.trim(),
         top_k: 10,
         memory_types: memoryType ? [memoryType] : [],
         layers: layer ? [layer] : [],
       });
       setItems(payload);
+      setViewMode('search');
       if (payload.length > 0) {
         setNotice(`已返回 ${payload.length} 条记忆结果。`);
       } else {
-        setInfo('当前没有命中记忆结果，可以换个问题再试。');
+        setInfo('当前没有命中记忆结果。你可以换个问题重试，或先查看最近记忆。');
       }
     } catch (searchError) {
-      setError((searchError as Error).message);
+      setError((searchError as Error).message || '记忆检索失败，请稍后重试。');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -53,14 +89,15 @@ export default function MemoryPage() {
     <>
       <Card>
         <h2 className="title">长期记忆</h2>
-        <p className="subtle">按类型和层级检索历史研究内容，并精确回跳到论文、复现和心得上下文。</p>
+        <p className="subtle">先看最近写入的记忆，再按问题检索历史研究内容，并精确回跳到论文、复现或心得上下文。</p>
       </Card>
+
       <div className="card" style={{ display: 'grid', gap: 8 }}>
         <input
           className="input"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="输入你要检索的研究问题"
+          placeholder="输入你要检索的研究问题，例如：哪篇论文最适合先复现？"
         />
         <div className="grid-2">
           <select className="select" value={memoryType} onChange={(event) => setMemoryType(event.target.value)}>
@@ -80,10 +117,14 @@ export default function MemoryPage() {
             <option value="profile">画像层</option>
           </select>
         </div>
-        <div style={{ marginTop: 10 }}>
-          <Button onClick={searchMemory}>检索记忆</Button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <Button onClick={() => void searchMemory()}>检索记忆</Button>
+          <Button className="secondary" onClick={() => void loadRecentMemories()}>
+            查看最近记忆
+          </Button>
         </div>
       </div>
+
       <StatusStack
         items={[
           ...(error ? [{ variant: 'error' as const, message: error }] : []),
@@ -91,7 +132,22 @@ export default function MemoryPage() {
           ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
         ]}
       />
-      <MemoryList items={items} />
+
+      {loading ? (
+        <Loading text={viewMode === 'recent' ? '加载最近记忆...' : '检索记忆中...'} />
+      ) : (
+        <MemoryList
+          items={items}
+          title={viewMode === 'recent' ? '最近写入的长期记忆' : '记忆检索结果'}
+          emptyTitle={viewMode === 'recent' ? '当前还没有已保存的长期记忆' : '当前没有命中记忆结果'}
+          emptyHint={
+            viewMode === 'recent'
+              ? '当你在论文页点击“推送到记忆”或创建会写入记忆的对象后，这里会显示最近保存的记录。'
+              : '可以换个问题重新检索，或点击“查看最近记忆”确认已有记忆是否存在。'
+          }
+        />
+      )}
+
       <MemoryGraph />
       <ProfilePanel />
     </>

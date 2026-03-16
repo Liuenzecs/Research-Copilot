@@ -319,6 +319,21 @@ export async function queryMemory(params: { query: string; top_k?: number; memor
   });
 }
 
+export async function listMemories(params?: { limit?: number; memory_types?: string[]; layers?: string[] }) {
+  const search = new URLSearchParams();
+  if (params?.limit) {
+    search.set('limit', String(params.limit));
+  }
+  for (const memoryType of params?.memory_types ?? []) {
+    search.append('memory_types', memoryType);
+  }
+  for (const layer of params?.layers ?? []) {
+    search.append('layers', layer);
+  }
+  const query = search.toString();
+  return request<MemoryItem[]>(`/memory${query ? `?${query}` : ''}`);
+}
+
 export async function generateBrainstormIdeas(topic: string, paperIds: number[] = []) {
   return request<BrainstormIdeaResult>('/brainstorm/ideas', {
     method: 'POST',

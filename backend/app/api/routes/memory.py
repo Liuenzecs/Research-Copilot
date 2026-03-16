@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -8,6 +8,22 @@ from app.models.schemas.memory import MemoryArchiveRequest, MemoryLinkRequest, M
 from app.services.memory.service import memory_service
 
 router = APIRouter(prefix='/memory', tags=['memory'])
+
+
+@router.get('', response_model=list[MemoryOut])
+def list_memory(
+    limit: int = Query(default=12, ge=1, le=100),
+    memory_types: list[str] | None = Query(default=None),
+    layers: list[str] | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[MemoryOut]:
+    rows = memory_service.list_recent(
+        db,
+        limit=limit,
+        memory_types=memory_types or [],
+        layers=layers or [],
+    )
+    return [MemoryOut(**row) for row in rows]
 
 
 @router.post('/query', response_model=list[MemoryOut])

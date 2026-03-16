@@ -11,17 +11,27 @@ import {
 import { MemoryItem } from '@/lib/types';
 import { truncate } from '@/lib/utils';
 
-export default function MemoryList({ items }: { items: MemoryItem[] }) {
+export default function MemoryList({
+  items,
+  title = '记忆结果',
+  emptyTitle = '暂无记忆结果',
+  emptyHint = '先执行一次记忆检索，这里会展示可回跳的上下文线索。',
+}: {
+  items: MemoryItem[];
+  title?: string;
+  emptyTitle?: string;
+  emptyHint?: string;
+}) {
   if (items.length === 0) {
-    return <EmptyState title="暂无记忆结果" hint="先执行一次记忆检索，这里会展示可回跳的上下文线索。" />;
+    return <EmptyState title={emptyTitle} hint={emptyHint} />;
   }
 
   return (
     <div className="card">
       <h3 className="title" style={{ fontSize: 16 }}>
-        记忆检索结果
+        {title}
       </h3>
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         {items.map((item) => (
           <article
             key={item.id}
@@ -39,7 +49,9 @@ export default function MemoryList({ items }: { items: MemoryItem[] }) {
               <span> · {truncate(item.text_content, 120)}</span>
             </div>
             <div className="subtle">{item.context_hint || '当前记忆暂无可回跳上下文。'}</div>
-            <div className="subtle">{memoryRetrievalModeLabel(item.retrieval_mode)} · {item.match_reason}</div>
+            <div className="subtle">
+              {memoryRetrievalModeLabel(item.retrieval_mode)} · {item.match_reason}
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span className="subtle">记录时间：{formatDateTime(item.created_at)}</span>
               {item.jump_target ? (
