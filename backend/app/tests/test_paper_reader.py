@@ -38,6 +38,46 @@ def _write_pdf(path, text: str):
     document.close()
 
 
+def _make_png_bytes(width: int = 180, height: int = 120, color: int = 0xCC8844) -> bytes:
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, width, height), False)
+    pix.clear_with(color)
+    return pix.tobytes('png')
+
+
+def _write_pdf_with_image(path):
+    document = fitz.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_textbox(
+        fitz.Rect(48, 70, 250, 220),
+        'Baseline setup paragraph. This paragraph should stay near the inserted figure for reader anchoring.',
+        fontsize=12,
+    )
+    page.insert_textbox(
+        fitz.Rect(320, 72, 540, 220),
+        'Right column context paragraph. The structured reader should not put this before the left column block.',
+        fontsize=12,
+    )
+    page.insert_image(fitz.Rect(60, 250, 260, 390), stream=_make_png_bytes())
+    page.insert_textbox(
+        fitz.Rect(60, 400, 290, 460),
+        'Figure 1. Sample architecture overview used for testing figure extraction.',
+        fontsize=12,
+    )
+    document.save(path)
+    document.close()
+
+
+def _write_two_column_pdf(path):
+    document = fitz.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_textbox(fitz.Rect(40, 60, 250, 180), 'Left column first block.', fontsize=12)
+    page.insert_textbox(fitz.Rect(40, 220, 250, 360), 'Left column second block.', fontsize=12)
+    page.insert_textbox(fitz.Rect(320, 70, 540, 190), 'Right column first block.', fontsize=12)
+    page.insert_textbox(fitz.Rect(320, 230, 540, 360), 'Right column second block.', fontsize=12)
+    document.save(path)
+    document.close()
+
+
 def test_paper_reader_without_downloaded_pdf_returns_empty_reader(client):
     with SessionLocal() as db:
         paper = _create_paper(db, title='Reader Without PDF')
@@ -50,6 +90,8 @@ def test_paper_reader_without_downloaded_pdf_returns_empty_reader(client):
     assert payload['pdf_downloaded'] is False
     assert payload['reader_ready'] is False
     assert payload['paragraphs'] == []
+    assert payload['pages'] == []
+    assert payload['figures'] == []
 
 
 def test_paper_reader_returns_paragraphs_for_downloaded_pdf(client, tmp_path):
@@ -68,7 +110,60 @@ def test_paper_reader_returns_paragraphs_for_downloaded_pdf(client, tmp_path):
     assert payload['reader_ready'] is True
     assert len(payload['paragraphs']) >= 1
     assert payload['paragraphs'][0]['paragraph_id'] == 1
+    assert payload['paragraphs'][0]['page_no'] == 1
     assert 'paragraph' in payload['paragraphs'][0]['text'].lower()
+
+
+def test_paper_reader_two_column_order_is_more_natural(client, tmp_path):
+    pdf_path = tmp_path / 'reader-two-column.pdf'
+    _write_two_column_pdf(pdf_path)
+
+    with SessionLocal() as db:
+        paper = _create_paper(db, title='Reader Two Column', pdf_local_path=str(pdf_path))
+        paper_id = paper.id
+
+    response = client.get(f'/papers/{paper_id}/reader')
+    assert response.status_code == 200
+    payload = response.json()
+    texts = [item['text'] for item in payload['paragraphs']]
+    assert any('Left column first block' in text for text in texts[:2])
+    assert any('Left column second block' in text for text in texts[:3])
+    right_index = next(index for index, text in enumerate(texts) if 'Right column first block' in text)
+    left_second_index = next(index for index, text in enumerate(texts) if 'Left column second block' in text)
+    assert left_second_index < right_index
+
+
+def test_paper_reader_returns_pages_and_figures_with_controlled_urls(client, tmp_path):
+    pdf_path = tmp_path / 'reader-image.pdf'
+    _write_pdf_with_image(pdf_path)
+
+    with SessionLocal() as db:
+        paper = _create_paper(db, title='Reader Image Paper', pdf_local_path=str(pdf_path))
+        paper_id = paper.id
+
+    response = client.get(f'/papers/{paper_id}/reader')
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['reader_ready'] is True
+    assert len(payload['pages']) == 1
+    assert payload['pages'][0]['page_no'] == 1
+    assert payload['pages'][0]['image_url'] == f'/papers/{paper_id}/reader/pages/1'
+
+    assert len(payload['figures']) >= 1
+    figure = payload['figures'][0]
+    assert figure['page_no'] == 1
+    assert figure['image_url'] == f"/papers/{paper_id}/reader/figures/{figure['figure_id']}"
+    assert 'Figure 1' in figure['caption_text']
+    assert figure['match_mode'] == 'caption'
+    assert figure['anchor_paragraph_id'] is not None
+
+    page_image_response = client.get(payload['pages'][0]['image_url'])
+    assert page_image_response.status_code == 200
+    assert page_image_response.headers['content-type'].startswith('image/png')
+
+    figure_image_response = client.get(figure['image_url'])
+    assert figure_image_response.status_code == 200
+    assert figure_image_response.headers['content-type'].startswith('image/png')
 
 
 def test_create_paper_annotation_and_reader_returns_annotations(client, tmp_path):

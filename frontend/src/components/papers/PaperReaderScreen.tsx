@@ -9,11 +9,23 @@ import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
 import PaperWorkspaceView from "@/components/papers/PaperWorkspace";
-import { createPaperAnnotation, downloadPaper, getPaperPdfUrl, getPaperReader, translateSegment } from "@/lib/api";
+import {
+  createPaperAnnotation,
+  downloadPaper,
+  getPaperPdfUrl,
+  getPaperReader,
+  resolveApiAssetUrl,
+  translateSegment,
+} from "@/lib/api";
 import { formatDateTime } from "@/lib/presentation";
 import { paperReaderPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
-import { PaperReader, TranslationResult } from "@/lib/types";
+import {
+  PaperReader,
+  PaperReaderFigure,
+  PaperReaderPagePreview,
+  TranslationResult,
+} from "@/lib/types";
 
 type SelectionContext = {
   text: string;
@@ -26,6 +38,47 @@ type FocusParagraphOptions = {
   behavior?: ScrollBehavior;
   updateUrl?: boolean;
 };
+
+type LightboxState = {
+  src: string;
+  title: string;
+  caption?: string;
+};
+
+function FigureCard({
+  figure,
+  onOpen,
+}: {
+  figure: PaperReaderFigure;
+  onOpen: (figure: PaperReaderFigure) => void;
+}) {
+  return (
+    <div className="reader-figure-card">
+      <button
+        type="button"
+        className="reader-figure-image-button"
+        onClick={() => onOpen(figure)}
+      >
+        <img
+          src={resolveApiAssetUrl(figure.image_url)}
+          alt={figure.caption_text || `论文图像 ${figure.figure_id}`}
+          className="reader-figure-image"
+        />
+      </button>
+      <div className="reader-figure-meta">
+        <strong>图像 · 第 {figure.page_no} 页</strong>
+        {figure.caption_text ? (
+          <div style={{ whiteSpace: "pre-wrap" }}>{figure.caption_text}</div>
+        ) : (
+          <div className="subtle">当前图片暂无可提取 caption。</div>
+        )}
+        {figure.match_mode === "approximate" ? (
+          <div className="subtle">位置为近似匹配，已尽量插入到相关正文附近。</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 export default function PaperReaderScreen({
   paperId,
@@ -43,7 +96,6 @@ export default function PaperReaderScreen({
   const [reader, setReader] = useState<PaperReader | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
   const [notice, setNotice] = useState("");
   const [selection, setSelection] = useState<SelectionContext | null>(null);
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
@@ -55,15 +107,14 @@ export default function PaperReaderScreen({
   const [locatorError, setLocatorError] = useState("");
   const [annotationDraft, setAnnotationDraft] = useState("");
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
   const loadReader = useCallback(async () => {
     setLoading(true);
     setError("");
-
     try {
       const payload = await getPaperReader(paperId);
       setReader(payload);
-      setWarning(payload.text_notice || "");
     } catch (loadError) {
       setError((loadError as Error).message || "论文阅读页加载失败，请稍后重试。");
     } finally {
@@ -92,20 +143,46 @@ export default function PaperReaderScreen({
     return indexMap;
   }, [reader?.paragraphs]);
 
+  const pageFirstParagraphMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (reader?.paragraphs ?? []).forEach((paragraph) => {
+      if (!map.has(paragraph.page_no)) {
+        map.set(paragraph.page_no, paragraph.paragraph_id);
+      }
+    });
+    return map;
+  }, [reader?.paragraphs]);
+
   const matchedParagraphIds = useMemo(() => {
     const query = locatorQuery.trim().toLowerCase();
     if (!query || !reader) return [];
-
     return reader.paragraphs
       .filter((paragraph) => paragraph.text.toLowerCase().includes(query))
       .map((paragraph) => paragraph.paragraph_id);
   }, [locatorQuery, reader]);
 
-  const activeParagraphIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? -1) : -1;
-  const activeParagraphNumber = activeParagraphIndex >= 0 ? activeParagraphIndex + 1 : null;
+  const figuresByParagraph = useMemo(() => {
+    const map = new Map<number, PaperReaderFigure[]>();
+    (reader?.figures ?? []).forEach((figure) => {
+      if (!figure.anchor_paragraph_id) return;
+      const current = map.get(figure.anchor_paragraph_id) ?? [];
+      current.push(figure);
+      map.set(figure.anchor_paragraph_id, current);
+    });
+    return map;
+  }, [reader?.figures]);
+
+  const unanchoredFigures = useMemo(
+    () => (reader?.figures ?? []).filter((figure) => !figure.anchor_paragraph_id),
+    [reader?.figures],
+  );
+
   const activeParagraph = activeParagraphId
     ? (reader?.paragraphs.find((paragraph) => paragraph.paragraph_id === activeParagraphId) ?? null)
     : null;
+  const activePageNo = activeParagraph?.page_no ?? reader?.pages[0]?.page_no ?? 1;
+  const activeParagraphIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? -1) : -1;
+  const activeParagraphNumber = activeParagraphIndex >= 0 ? activeParagraphIndex + 1 : null;
   const activeParagraphAnnotations = useMemo(() => {
     if (!reader || !activeParagraphId) return [];
     return reader.annotations.filter((item) => item.paragraph_id === activeParagraphId);
@@ -121,13 +198,11 @@ export default function PaperReaderScreen({
   const focusParagraph = useCallback((paragraphId: number, options?: FocusParagraphOptions) => {
     const element = paragraphRefs.current[paragraphId];
     if (!element) return false;
-
     setActiveParagraphId(paragraphId);
     element.scrollIntoView({
       behavior: options?.behavior ?? "smooth",
       block: "center",
     });
-
     if (options?.updateUrl !== false) {
       updateReaderUrl(paragraphId);
     }
@@ -135,8 +210,7 @@ export default function PaperReaderScreen({
   }, [updateReaderUrl]);
 
   useEffect(() => {
-    if (!reader?.reader_ready || reader.paragraphs.length === 0) return;
-
+    if (!reader?.paragraphs.length) return;
     if (requestedParagraphId && paragraphIndexMap.has(requestedParagraphId)) {
       const frame = window.requestAnimationFrame(() => {
         focusParagraph(requestedParagraphId, { behavior: "auto", updateUrl: false });
@@ -145,7 +219,6 @@ export default function PaperReaderScreen({
       });
       return () => window.cancelAnimationFrame(frame);
     }
-
     if (!activeParagraphId) {
       setActiveParagraphId(reader.paragraphs[0]?.paragraph_id ?? null);
     }
@@ -162,7 +235,6 @@ export default function PaperReaderScreen({
       clearSelection();
       return;
     }
-
     const text = currentSelection.toString().trim();
     if (!text) {
       clearSelection();
@@ -173,7 +245,6 @@ export default function PaperReaderScreen({
     const range = currentSelection.getRangeAt(0);
     const commonNode = range.commonAncestorContainer;
     const sourceElement = commonNode instanceof Element ? commonNode : commonNode.parentElement;
-
     if (!article || !sourceElement || !article.contains(sourceElement)) {
       clearSelection();
       return;
@@ -193,7 +264,6 @@ export default function PaperReaderScreen({
 
     const rect = range.getBoundingClientRect();
     const left = Math.min(rect.left, window.innerWidth - 220);
-
     setActiveParagraphId(paragraphId);
     updateReaderUrl(paragraphId);
     setSelection({
@@ -209,10 +279,9 @@ export default function PaperReaderScreen({
     setDownloading(true);
     setError("");
     setNotice("");
-
     try {
       const result = await downloadPaper(paperId);
-      setNotice(`PDF 已下载到本地：${result.pdf_local_path}。正在刷新正文阅读内容。`);
+      setNotice(`PDF 已下载到本地：${result.pdf_local_path}。正在刷新阅读数据。`);
       await loadReader();
     } catch (downloadError) {
       setError((downloadError as Error).message || "PDF 下载失败，请稍后重试。");
@@ -223,10 +292,8 @@ export default function PaperReaderScreen({
 
   async function handleTranslateSelection() {
     if (!selection) return;
-
     setTranslationLoading(true);
     setTranslationError("");
-
     try {
       const result = await translateSegment({
         text: selection.text,
@@ -240,7 +307,7 @@ export default function PaperReaderScreen({
       setTranslation(result);
       focusParagraph(selection.paragraphId);
       const paragraphNumber = (paragraphIndexMap.get(selection.paragraphId) ?? 0) + 1;
-      setNotice(`已完成选词翻译，并定位到正文第 ${paragraphNumber} 段。`);
+      setNotice(`已完成选词翻译，并回到正文第 ${paragraphNumber} 段。`);
     } catch (translateError) {
       setTranslationError((translateError as Error).message || "选词翻译失败，请稍后重试。");
     } finally {
@@ -286,7 +353,9 @@ export default function PaperReaderScreen({
     }
     if (!reader) return;
 
-    const target = reader.paragraphs.find((paragraph) => paragraph.text.toLowerCase().includes(query.toLowerCase()));
+    const target = reader.paragraphs.find((paragraph) =>
+      paragraph.text.toLowerCase().includes(query.toLowerCase()),
+    );
     if (!target) {
       setLocatorError(`正文中暂未找到“${query}”。`);
       return;
@@ -300,20 +369,41 @@ export default function PaperReaderScreen({
 
   function handleStepParagraph(offset: -1 | 1) {
     if (!reader || reader.paragraphs.length === 0) return;
-
     const fallbackIndex = offset > 0 ? 0 : reader.paragraphs.length - 1;
     const currentIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? fallbackIndex) : fallbackIndex;
     const nextIndex = Math.max(0, Math.min(reader.paragraphs.length - 1, currentIndex + offset));
     const target = reader.paragraphs[nextIndex];
     if (!target) return;
-
     setLocatorError("");
     focusParagraph(target.paragraph_id);
     setNotice(`已切换到正文第 ${nextIndex + 1} 段。`);
   }
 
-  function handleOpenReproduction() {
-    router.push(`/reproduction?paper_id=${paperId}`);
+  function handleFocusPage(pageNo: number) {
+    const firstParagraphId = pageFirstParagraphMap.get(pageNo);
+    if (!firstParagraphId) {
+      setLocatorError(`第 ${pageNo} 页当前没有可定位的正文段落。`);
+      return;
+    }
+    setLocatorError("");
+    focusParagraph(firstParagraphId);
+    setNotice(`已跳转到第 ${pageNo} 页的正文位置。`);
+  }
+
+  function openPagePreview(page: PaperReaderPagePreview) {
+    handleFocusPage(page.page_no);
+    setLightbox({
+      src: resolveApiAssetUrl(page.image_url),
+      title: `第 ${page.page_no} 页预览`,
+    });
+  }
+
+  function openFigurePreview(figure: PaperReaderFigure) {
+    setLightbox({
+      src: resolveApiAssetUrl(figure.image_url),
+      title: `图像 · 第 ${figure.page_no} 页`,
+      caption: figure.caption_text,
+    });
   }
 
   if (loading) {
@@ -342,17 +432,18 @@ export default function PaperReaderScreen({
                 {reproInterestLabel(reader.research_state.repro_interest)}
               </span>
             </div>
-
             <div className="reader-chip-row" style={{ marginTop: 12 }}>
               <span className="reader-chip">摘要 {summaryStats?.summaryCount ?? 0}</span>
               <span className="reader-chip">心得 {summaryStats?.reflectionCount ?? 0}</span>
               <span className="reader-chip">近期任务 {summaryStats?.taskCount ?? 0}</span>
+              <span className="reader-chip">页面预览 {reader.pages.length}</span>
+              <span className="reader-chip">图像 {reader.figures.length}</span>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button type="button" disabled={downloading} onClick={handleDownload}>
-              {downloading ? "下载中..." : reader.pdf_downloaded ? "重新加载 PDF 与正文" : "下载 PDF 并生成阅读文本"}
+              {downloading ? "下载中..." : reader.pdf_downloaded ? "重新加载 PDF 与阅读缓存" : "下载 PDF 并生成阅读内容"}
             </Button>
             <Button
               className="secondary"
@@ -362,7 +453,7 @@ export default function PaperReaderScreen({
             >
               打开原始 PDF
             </Button>
-            <Button className="secondary" type="button" onClick={handleOpenReproduction}>
+            <Button className="secondary" type="button" onClick={() => router.push(`/reproduction?paper_id=${paperId}`)}>
               进入复现工作区
             </Button>
           </div>
@@ -381,7 +472,10 @@ export default function PaperReaderScreen({
       <StatusStack
         items={[
           ...(error ? [{ variant: "error" as const, message: error }] : []),
-          ...(warning ? [{ variant: reader.reader_ready ? "info" as const : "warning" as const, message: warning }] : []),
+          ...(reader.text_notice
+            ? [{ variant: reader.reader_ready ? "info" as const : "warning" as const, message: reader.text_notice }]
+            : []),
+          ...reader.reader_notices.map((message) => ({ variant: "warning" as const, message })),
           ...(notice ? [{ variant: "success" as const, message: notice }] : []),
           ...(translationError ? [{ variant: "warning" as const, message: translationError }] : []),
           ...(locatorError ? [{ variant: "warning" as const, message: locatorError }] : []),
@@ -391,15 +485,54 @@ export default function PaperReaderScreen({
       {!reader.pdf_downloaded ? (
         <EmptyState
           title="当前尚未下载 PDF"
-          hint="你仍可先查看 abstract 和研究状态；下载 PDF 后即可进入正文阅读与选词翻译。"
+          hint="你仍可先查看 abstract 和研究状态；下载 PDF 后即可进入结构化正文阅读、页面预览和图片辅助。"
         />
       ) : null}
 
-      {reader.pdf_downloaded && !reader.reader_ready ? (
-        <EmptyState
-          title="正文暂不可读"
-          hint="PDF 已下载，但当前尚未解析出可阅读段落。你仍可继续使用摘要、心得与复现入口。"
-        />
+      {reader.pages.length > 0 ? (
+        <Card>
+          <div className="paper-reader-header" style={{ alignItems: "center" }}>
+            <div>
+              <h3 className="title" style={{ fontSize: 18 }}>
+                页面预览
+              </h3>
+              <p className="subtle" style={{ margin: "4px 0 0" }}>
+                用页面缩略图快速确认原始版面、图表位置和当前阅读页。
+              </p>
+            </div>
+            <div className="subtle">当前正文对应第 {activePageNo} 页</div>
+          </div>
+          <div className="page-preview-strip">
+            {reader.pages.map((page) => (
+              <div
+                key={page.page_no}
+                className={`page-preview-card${page.page_no === activePageNo ? " active" : ""}`}
+              >
+                <button type="button" className="page-preview-image-button" onClick={() => openPagePreview(page)}>
+                  <img
+                    src={resolveApiAssetUrl(page.image_url)}
+                    alt={`第 ${page.page_no} 页预览`}
+                    className="page-preview-image"
+                  />
+                </button>
+                <div className="page-preview-footer">
+                  <strong>第 {page.page_no} 页</strong>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <Button className="secondary" type="button" onClick={() => handleFocusPage(page.page_no)}>
+                      跳到本页
+                    </Button>
+                    <Button className="secondary" type="button" onClick={() => setLightbox({
+                      src: resolveApiAssetUrl(page.image_url),
+                      title: `第 ${page.page_no} 页预览`,
+                    })}>
+                      放大查看
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       ) : null}
 
       {reader.reader_ready ? (
@@ -410,7 +543,7 @@ export default function PaperReaderScreen({
                 论文正文阅读
               </h3>
               <p className="subtle" style={{ margin: "4px 0 0" }}>
-                你可以按关键词定位正文、点击段落高亮，或选中文本后直接翻译。中文翻译仅用于辅助理解。
+                正文已按结构化块重建。你可以定位段落、写批注、回看图像，并在需要时查看原页面。
               </p>
             </div>
             <Button className="secondary" type="button" onClick={() => setTranslation(null)}>
@@ -423,9 +556,8 @@ export default function PaperReaderScreen({
               <strong>正文定位</strong>
               <span className="subtle">共 {reader.paragraphs.length} 段</span>
               {activeParagraphNumber ? <span className="subtle">当前第 {activeParagraphNumber} 段</span> : null}
-              {matchedParagraphIds.length > 0 ? (
-                <span className="subtle">关键词命中 {matchedParagraphIds.length} 段</span>
-              ) : null}
+              {matchedParagraphIds.length > 0 ? <span className="subtle">关键词命中 {matchedParagraphIds.length} 段</span> : null}
+              <span className="subtle">当前页 {activePageNo}</span>
             </div>
 
             <div className="paper-reader-locator-row">
@@ -468,8 +600,8 @@ export default function PaperReaderScreen({
               {activeParagraph ? (
                 <>
                   <p className="subtle" style={{ margin: 0 }}>
-                    当前段落片段：{activeParagraph.text.slice(0, 160)}
-                    {activeParagraph.text.length > 160 ? "..." : ""}
+                    当前段落片段：{activeParagraph.text.slice(0, 180)}
+                    {activeParagraph.text.length > 180 ? "..." : ""}
                   </p>
                   {selectedQuoteForAnnotation ? (
                     <div className="reader-annotation-quote">
@@ -556,35 +688,61 @@ export default function PaperReaderScreen({
               {reader.paragraphs.map((paragraph, index) => {
                 const isActive = activeParagraphId === paragraph.paragraph_id;
                 const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
+                const attachedFigures = figuresByParagraph.get(paragraph.paragraph_id) ?? [];
                 const className = [
                   "reader-paragraph",
                   isActive ? "reader-paragraph-active" : "",
                   isMatched ? "reader-paragraph-match" : "",
-                ].filter(Boolean).join(" ");
+                ]
+                  .filter(Boolean)
+                  .join(" ");
 
                 return (
-                  <p
-                    key={paragraph.paragraph_id}
-                    ref={(element) => {
-                      paragraphRefs.current[paragraph.paragraph_id] = element;
-                    }}
-                    data-paragraph-id={paragraph.paragraph_id}
-                    className={className}
-                    onClick={() => {
-                      setLocatorError("");
-                      focusParagraph(paragraph.paragraph_id);
-                    }}
-                  >
-                    <span className="reader-paragraph-meta">
-                      <span className="reader-paragraph-badge">第 {index + 1} 段</span>
-                      <span className="reader-paragraph-action">点击可高亮并保持定位</span>
-                    </span>
-                    {paragraph.text}
-                  </p>
+                  <div key={paragraph.paragraph_id} className="reader-paragraph-block">
+                    <p
+                      ref={(element) => {
+                        paragraphRefs.current[paragraph.paragraph_id] = element;
+                      }}
+                      data-paragraph-id={paragraph.paragraph_id}
+                      className={className}
+                      onClick={() => {
+                        setLocatorError("");
+                        focusParagraph(paragraph.paragraph_id);
+                      }}
+                    >
+                      <span className="reader-paragraph-meta">
+                        <span className="reader-paragraph-badge">第 {index + 1} 段 · 第 {paragraph.page_no} 页</span>
+                        <span className="reader-paragraph-action">点击可高亮并保持定位</span>
+                      </span>
+                      {paragraph.text}
+                    </p>
+
+                    {attachedFigures.length > 0 ? (
+                      <div className="reader-figure-list">
+                        {attachedFigures.map((figure) => (
+                          <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </article>
           </div>
+
+          {unanchoredFigures.length > 0 ? (
+            <div className="reader-supplemental-figures">
+              <div className="paper-reader-locator-row">
+                <strong>补充图片区</strong>
+                <span className="subtle">以下图片未能稳定锚定到具体正文段落，但仍保留供参考。</span>
+              </div>
+              <div className="reader-figure-list">
+                {unanchoredFigures.map((figure) => (
+                  <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </Card>
       ) : null}
 
@@ -597,6 +755,23 @@ export default function PaperReaderScreen({
         >
           {translationLoading ? "翻译中..." : "翻译选中内容"}
         </button>
+      ) : null}
+
+      {lightbox ? (
+        <div className="reader-lightbox-overlay" onClick={() => setLightbox(null)}>
+          <div className="reader-lightbox" onClick={(event) => event.stopPropagation()}>
+            <div className="paper-reader-header" style={{ alignItems: "center" }}>
+              <div>
+                <h4 className="title" style={{ fontSize: 18, margin: 0 }}>{lightbox.title}</h4>
+                {lightbox.caption ? <p className="subtle" style={{ margin: "6px 0 0" }}>{lightbox.caption}</p> : null}
+              </div>
+              <Button className="secondary" type="button" onClick={() => setLightbox(null)}>
+                关闭
+              </Button>
+            </div>
+            <img src={lightbox.src} alt={lightbox.title} className="reader-lightbox-image" />
+          </div>
+        </div>
       ) : null}
 
       <PaperWorkspaceView

@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import json
-import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -37,7 +36,7 @@ from app.services.paper_search.openalex import OpenAlexSearchService
 from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
 from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
-from app.services.pdf.parser import pdf_parser
+from app.services.pdf.reader import paper_reader_service
 from app.services.reflection.service import reflection_service
 from app.services.workflow.service import workflow_service
 
@@ -196,72 +195,7 @@ def build_workspace_payload(db: Session, paper: PaperRecord) -> dict:
 
 
 def build_reader_payload(paper: PaperRecord) -> dict:
-    if not paper.pdf_local_path:
-        return {
-            'pdf_downloaded': False,
-            'reader_ready': False,
-            'paragraphs': [],
-            'text_notice': '当前尚未下载 PDF，请先下载论文后再进入正文阅读。',
-        }
-
-    path = Path(paper.pdf_local_path)
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-
-    if not path.exists() or not path.is_file():
-        return {
-            'pdf_downloaded': True,
-            'reader_ready': False,
-            'paragraphs': [],
-            'text_notice': f'已记录 PDF 路径，但本地文件缺失：{path}',
-        }
-
-    raw_text = pdf_parser.extract_text(str(path))
-    if not raw_text.strip():
-        return {
-            'pdf_downloaded': True,
-            'reader_ready': False,
-            'paragraphs': [],
-            'text_notice': 'PDF 已下载，但暂未解析出可阅读正文。你仍可继续使用摘要、心得和研究状态。',
-        }
-
-    paragraphs: list[dict] = []
-    current_lines: list[str] = []
-
-    def flush() -> None:
-        nonlocal current_lines
-        if not current_lines:
-            return
-        merged = ' '.join(line.strip() for line in current_lines if line.strip())
-        normalized = re.sub(r'\s+', ' ', merged).strip()
-        if normalized:
-            paragraphs.append({'paragraph_id': len(paragraphs) + 1, 'text': normalized})
-        current_lines = []
-
-    for line in raw_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            flush()
-            continue
-        current_lines.append(stripped)
-        if len(' '.join(current_lines)) >= 600:
-            flush()
-    flush()
-
-    if not paragraphs:
-        return {
-            'pdf_downloaded': True,
-            'reader_ready': False,
-            'paragraphs': [],
-            'text_notice': 'PDF 已下载，但暂未整理出可阅读段落。你仍可继续使用摘要、心得和研究状态。',
-        }
-
-    return {
-        'pdf_downloaded': True,
-        'reader_ready': True,
-        'paragraphs': paragraphs,
-        'text_notice': '当前为本地 PDF 抽取文本，可能存在格式误差；英文原文始终保持 canonical。',
-    }
+    return paper_reader_service.get_reader_payload(paper.id, paper.pdf_local_path)
 
 
 def ensure_research_state(db: Session, paper_id: int) -> PaperResearchStateRecord:
@@ -480,6 +414,38 @@ def get_paper_reader(paper_id: int, db: Session = Depends(get_db)) -> PaperReade
         **reader_payload,
         annotations=[annotation_to_out(item) for item in annotations],
     )
+
+
+@router.get('/{paper_id}/reader/pages/{page_no}')
+def get_paper_reader_page_preview(
+    paper_id: int,
+    page_no: int,
+    db: Session = Depends(get_db),
+):
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    path = paper_reader_service.get_page_preview_path(paper_id, paper.pdf_local_path, page_no)
+    if path is None:
+        raise HTTPException(status_code=404, detail='Page preview not found')
+    return FileResponse(path=str(path), media_type='image/png')
+
+
+@router.get('/{paper_id}/reader/figures/{figure_id}')
+def get_paper_reader_figure(
+    paper_id: int,
+    figure_id: int,
+    db: Session = Depends(get_db),
+):
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    path = paper_reader_service.get_figure_path(paper_id, paper.pdf_local_path, figure_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail='Figure not found')
+    return FileResponse(path=str(path), media_type='image/png')
 
 
 @router.post('/{paper_id}/annotations', response_model=PaperAnnotationOut)

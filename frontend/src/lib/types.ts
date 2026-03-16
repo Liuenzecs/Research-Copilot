@@ -82,6 +82,23 @@ export type PaperWorkspace = {
 export type PaperReaderParagraph = {
   paragraph_id: number;
   text: string;
+  page_no: number;
+};
+
+export type PaperReaderPagePreview = {
+  page_no: number;
+  image_url: string;
+  width: number;
+  height: number;
+};
+
+export type PaperReaderFigure = {
+  figure_id: number;
+  page_no: number;
+  image_url: string;
+  caption_text: string;
+  anchor_paragraph_id?: number | null;
+  match_mode: 'caption' | 'approximate';
 };
 
 export type PaperAnnotation = {
@@ -98,7 +115,10 @@ export type PaperReader = PaperWorkspace & {
   pdf_downloaded: boolean;
   reader_ready: boolean;
   paragraphs: PaperReaderParagraph[];
+  pages: PaperReaderPagePreview[];
+  figures: PaperReaderFigure[];
   annotations: PaperAnnotation[];
+  reader_notices: string[];
   text_notice: string;
 };
 

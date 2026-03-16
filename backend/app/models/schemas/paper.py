@@ -63,6 +63,23 @@ class PaperWorkspaceResponse(BaseModel):
 class PaperReaderParagraph(BaseModel):
     paragraph_id: int
     text: str
+    page_no: int
+
+
+class PaperReaderPagePreview(BaseModel):
+    page_no: int
+    image_url: str
+    width: int
+    height: int
+
+
+class PaperReaderFigure(BaseModel):
+    figure_id: int
+    page_no: int
+    image_url: str
+    caption_text: str = ''
+    anchor_paragraph_id: int | None = None
+    match_mode: str = 'approximate'
 
 
 class PaperAnnotationOut(BaseModel):
@@ -90,7 +107,10 @@ class PaperReaderResponse(BaseModel):
     pdf_downloaded: bool
     reader_ready: bool
     paragraphs: list[PaperReaderParagraph]
+    pages: list[PaperReaderPagePreview] = Field(default_factory=list)
+    figures: list[PaperReaderFigure] = Field(default_factory=list)
     annotations: list[PaperAnnotationOut] = Field(default_factory=list)
+    reader_notices: list[str] = Field(default_factory=list)
     text_notice: str = ''
 
 

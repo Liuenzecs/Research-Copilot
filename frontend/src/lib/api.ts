@@ -58,6 +58,12 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
   return query ? `?${query}` : '';
 }
 
+export function resolveApiAssetUrl(path: string): string {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}${path}`;
+}
+
 export async function health() {
   return request('/health');
 }
