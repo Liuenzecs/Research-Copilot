@@ -236,6 +236,24 @@ textarea {
   position: relative;
 }
 
+.paper-reader-locator {
+  max-width: 1080px;
+  margin: 0 auto 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.paper-reader-locator-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .paper-reader-article {
   max-width: 1080px;
   margin: 0 auto;
@@ -256,10 +274,39 @@ textarea {
   white-space: pre-wrap;
 }
 
+.reader-paragraph-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.reader-paragraph-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f766e;
+}
+
+.reader-paragraph-action {
+  font-size: 12px;
+  color: #64748b;
+}
+
 .reader-paragraph:hover {
   border-color: #bfdbfe;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(59, 130, 246, 0.08);
+}
+
+.reader-paragraph-match {
+  border-color: #c7d2fe;
+  background: #f8fbff;
+}
+
+.reader-paragraph-active {
+  border-color: #14b8a6;
+  background: #f0fdfa;
+  box-shadow: 0 12px 28px rgba(20, 184, 166, 0.18);
 }
 
 .reader-selection-toolbar {
@@ -396,6 +443,10 @@ textarea {
 
   .paper-reader-header {
     flex-direction: column;
+  }
+
+  .paper-reader-locator-row {
+    align-items: stretch;
   }
 
   .paper-reader-article {

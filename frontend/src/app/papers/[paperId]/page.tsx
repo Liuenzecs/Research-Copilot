@@ -12,17 +12,18 @@ export default async function PaperReaderPage({
   searchParams,
 }: {
   params: Promise<{ paperId: string }>;
-  searchParams?: Promise<{ summary_id?: string | string[] }>;
+  searchParams?: Promise<{ summary_id?: string | string[]; paragraph_id?: string | string[] }>;
 }) {
   const resolvedParams = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
   const paperId = parseNumber(resolvedParams.paperId);
   const summaryId = parseNumber(resolvedSearchParams?.summary_id ?? null);
+  const paragraphId = parseNumber(resolvedSearchParams?.paragraph_id ?? null);
 
   if (!paperId) {
     return null;
   }
 
-  return <PaperReaderScreen paperId={paperId} requestedSummaryId={summaryId} />;
+  return <PaperReaderScreen paperId={paperId} requestedSummaryId={summaryId} requestedParagraphId={paragraphId} />;
 }
