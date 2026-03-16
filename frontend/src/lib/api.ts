@@ -48,6 +48,86 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestStream<T>(
+  path: string,
+  init: RequestInit,
+  options: {
+    onDelta?: (delta: string) => void;
+    pickComplete: (event: Record<string, unknown>) => T | undefined;
+  },
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+      ...init,
+      cache: 'no-store',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知网络错误';
+    throw new Error(`无法连接后端服务：${API_BASE}。请确认后端已启动。原始错误：${message}`);
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`API error ${response.status}: ${message}`);
+  }
+
+  if (!response.body) {
+    throw new Error('当前浏览器未返回可读取的流式响应。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completed: T | undefined;
+
+  const processLine = (line: string) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as Record<string, unknown>;
+    if (event.type === 'error') {
+      throw new Error(typeof event.message === 'string' ? event.message : '流式请求失败');
+    }
+    if (event.type === 'delta' && typeof event.delta === 'string') {
+      options.onDelta?.(event.delta);
+    }
+    const maybeCompleted = options.pickComplete(event);
+    if (maybeCompleted !== undefined) {
+      completed = maybeCompleted;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let newlineIndex = buffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      processLine(line);
+      newlineIndex = buffer.indexOf('\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    processLine(buffer);
+  }
+
+  if (completed === undefined) {
+    throw new Error('流式响应已结束，但未收到完成结果。');
+  }
+
+  return completed;
+}
+
 function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const sp = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -89,11 +169,50 @@ export async function quickSummary(paperId: number) {
   });
 }
 
+export async function quickSummaryStream(
+  paperId: number,
+  options?: {
+    onDelta?: (delta: string) => void;
+  },
+) {
+  return requestStream<Summary>(
+    '/summaries/quick/stream',
+    {
+      method: 'POST',
+      body: JSON.stringify({ paper_id: paperId }),
+    },
+    {
+      onDelta: options?.onDelta,
+      pickComplete: (event) => (event.type === 'complete' ? (event.summary as Summary) : undefined),
+    },
+  );
+}
+
 export async function deepSummary(paperId: number, focus = '') {
   return request<Summary>('/summaries/deep', {
     method: 'POST',
     body: JSON.stringify({ paper_id: paperId, focus: focus || null }),
   });
+}
+
+export async function deepSummaryStream(
+  paperId: number,
+  focus = '',
+  options?: {
+    onDelta?: (delta: string) => void;
+  },
+) {
+  return requestStream<Summary>(
+    '/summaries/deep/stream',
+    {
+      method: 'POST',
+      body: JSON.stringify({ paper_id: paperId, focus: focus || null }),
+    },
+    {
+      onDelta: options?.onDelta,
+      pickComplete: (event) => (event.type === 'complete' ? (event.summary as Summary) : undefined),
+    },
+  );
 }
 
 export async function getPaper(paperId: number) {
@@ -186,6 +305,33 @@ export async function translateSegment(payload: {
       locator: payload.locator ?? {},
     }),
   });
+}
+
+export async function translateSegmentStream(
+  payload: {
+    text: string;
+    mode?: 'paragraph' | 'selection';
+    locator?: Record<string, unknown>;
+  },
+  options?: {
+    onDelta?: (delta: string) => void;
+  },
+) {
+  return requestStream<TranslationResult>(
+    '/translation/segment/stream',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        text: payload.text,
+        mode: payload.mode ?? 'paragraph',
+        locator: payload.locator ?? {},
+      }),
+    },
+    {
+      onDelta: options?.onDelta,
+      pickComplete: (event) => (event.type === 'complete' ? (event.translation as TranslationResult) : undefined),
+    },
+  );
 }
 
 export async function listLibrary() {

@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from typing import AsyncIterator
+
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
@@ -35,3 +37,8 @@ class OpenAIProvider(LLMProvider):
             return response.output_text.strip()
         except Exception:
             return f'[local-fallback] {prompt[:1500]}'
+
+    async def stream_complete(self, prompt: str, system_prompt: str = '') -> AsyncIterator[str]:
+        text = await self.complete(prompt, system_prompt)
+        if text:
+            yield text

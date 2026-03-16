@@ -9,12 +9,12 @@ import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import {
   createPaperReflection,
-  deepSummary,
+  deepSummaryStream,
   downloadPaper,
   getPaperPdfUrl,
   getPaperWorkspace,
   pushPaperToMemory,
-  quickSummary,
+  quickSummaryStream,
   updatePaperResearchState,
 } from '@/lib/api';
 import { formatDateTime, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
@@ -134,6 +134,7 @@ export default function PaperWorkspaceView({
   const [reflectionDirty, setReflectionDirty] = useState(false);
   const [lastPrefillKey, setLastPrefillKey] = useState('');
   const [appliedRequestedSummaryKey, setAppliedRequestedSummaryKey] = useState('');
+  const [streamingSummary, setStreamingSummary] = useState<{ type: 'quick' | 'deep'; content: string } | null>(null);
 
   const summaries = workspace?.summaries ?? [];
   const effectiveSummarySelection: Exclude<SummarySelection, 'auto'> =
@@ -254,6 +255,47 @@ export default function PaperWorkspaceView({
     }
   }
 
+  async function handleStreamingSummary(summaryType: 'quick' | 'deep') {
+    if (!currentPaper) return;
+
+    setBusy(summaryType);
+    setError('');
+    setNotice('');
+    setStreamingSummary({ type: summaryType, content: '' });
+
+    try {
+      const result =
+        summaryType === 'quick'
+          ? await quickSummaryStream(currentPaper.id, {
+              onDelta: (delta) =>
+                setStreamingSummary((previous) =>
+                  previous && previous.type === 'quick'
+                    ? { ...previous, content: `${previous.content}${delta}` }
+                    : { type: 'quick', content: delta },
+                ),
+            })
+          : await deepSummaryStream(currentPaper.id, '', {
+              onDelta: (delta) =>
+                setStreamingSummary((previous) =>
+                  previous && previous.type === 'deep'
+                    ? { ...previous, content: `${previous.content}${delta}` }
+                    : { type: 'deep', content: delta },
+                ),
+            });
+
+      await reload();
+      setSelectedSummaryId(result.id);
+      setReflectionDirty(false);
+      await onWorkspaceChanged?.();
+      setNotice(summaryType === 'quick' ? '快速总结已生成，并已保存到当前摘要列表。' : '深度总结已生成，并已保存到当前摘要列表。');
+    } catch (actionError) {
+      setError((actionError as Error).message);
+    } finally {
+      setStreamingSummary(null);
+      setBusy('');
+    }
+  }
+
   const currentPaper = workspace?.paper;
 
   if (!paperId) {
@@ -292,24 +334,14 @@ export default function PaperWorkspaceView({
       <Button
         className="secondary"
         disabled={busy !== ''}
-        onClick={() =>
-          runAction('quick', async () => {
-            const result = await quickSummary(currentPaper.id);
-            setNotice('快速摘要已生成，并已加入当前摘要列表。');
-          })
-        }
+        onClick={() => void handleStreamingSummary('quick')}
       >
         {busy === 'quick' ? '生成中...' : '快速总结'}
       </Button>
       <Button
         className="secondary"
         disabled={busy !== ''}
-        onClick={() =>
-          runAction('deep', async () => {
-            const result = await deepSummary(currentPaper.id);
-            setNotice('深度摘要已生成，并已加入当前摘要列表。');
-          })
-        }
+        onClick={() => void handleStreamingSummary('deep')}
       >
         {busy === 'deep' ? '生成中...' : '深度总结'}
       </Button>
@@ -433,7 +465,15 @@ export default function PaperWorkspaceView({
           当前摘要与论文心得
         </h4>
 
-        {selectedSummary ? (
+        {streamingSummary ? (
+          <>
+            <p className="subtle">正在流式生成：{streamingSummary.type === 'quick' ? '快速总结' : '深度总结'}</p>
+            <p className="subtle" style={{ color: '#2563eb' }}>
+              模型输出会实时追加；完成后会自动保存为新的摘要记录。
+            </p>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{streamingSummary.content || '正在连接模型并开始生成...'}</p>
+          </>
+        ) : selectedSummary ? (
           <>
             <p className="subtle">
               当前摘要：{selectedSummary.summary_type} · 生成方式：

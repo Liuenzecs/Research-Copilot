@@ -15,7 +15,7 @@ import {
   getPaperPdfUrl,
   getPaperReader,
   resolveApiAssetUrl,
-  translateSegment,
+  translateSegmentStream,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/presentation";
 import { paperReaderPath } from "@/lib/routes";
@@ -95,6 +95,7 @@ export default function PaperReaderScreen({
   const [notice, setNotice] = useState("");
   const [selection, setSelection] = useState<SelectionContext | null>(null);
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
+  const [streamingTranslationText, setStreamingTranslationText] = useState("");
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState("");
   const [downloading, setDownloading] = useState(false);
@@ -351,8 +352,11 @@ export default function PaperReaderScreen({
     if (!selection) return;
     setTranslationLoading(true);
     setTranslationError("");
+    setStreamingTranslationText("");
+    setTranslation(null);
     try {
-      const result = await translateSegment({
+      const result = await translateSegmentStream(
+        {
         text: selection.text,
         mode: "selection",
         locator: {
@@ -360,8 +364,13 @@ export default function PaperReaderScreen({
           paragraph_id: selection.paragraphId,
           selected_text: selection.text,
         },
-      });
+        },
+        {
+          onDelta: (delta) => setStreamingTranslationText((previous) => `${previous}${delta}`),
+        },
+      );
       setTranslation(result);
+      setStreamingTranslationText(result.content_zh);
       focusParagraph(selection.paragraphId, { behavior: "auto" });
       const paragraphNumber = (paragraphIndexMap.get(selection.paragraphId) ?? 0) + 1;
       setNotice(`已完成英译中辅助翻译，并回到当前页的第 ${paragraphNumber} 段。`);
@@ -628,17 +637,23 @@ export default function PaperReaderScreen({
             </div>
           ) : null}
 
-          {translation ? (
+          {translation || translationLoading || streamingTranslationText ? (
             <div className="reader-translation-card">
               <div>
                 <div className="subtle">选中原文</div>
-                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{translation.content_en_snapshot}</p>
+                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {translation?.content_en_snapshot || selection?.text || "正在准备翻译内容..."}
+                </p>
               </div>
               <div>
                 <div className="subtle">中文翻译</div>
-                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{translation.content_zh}</p>
+                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {translation?.content_zh || streamingTranslationText || "正在通过模型流式生成中文译文..."}
+                </p>
               </div>
-              <div className="subtle">{translation.disclaimer}</div>
+              <div className="subtle">
+                {translation?.disclaimer || "当前正在流式生成翻译结果，英文原文始终保留。"}
+              </div>
             </div>
           ) : null}
 
