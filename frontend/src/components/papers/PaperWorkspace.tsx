@@ -227,7 +227,7 @@ export default function PaperWorkspaceView({
       setSelectedSummaryId(requestedSummaryId);
       setReflectionDirty(false);
       setAppliedRequestedSummaryKey(requestKey);
-      setNotice(`已定位到摘要 #${requestedSummaryId}。`);
+      setNotice('已定位到你指定的摘要。');
       return;
     }
 
@@ -295,7 +295,7 @@ export default function PaperWorkspaceView({
         onClick={() =>
           runAction('quick', async () => {
             const result = await quickSummary(currentPaper.id);
-            setNotice(`快速摘要已生成：#${result.id}。`);
+            setNotice('快速摘要已生成，并已加入当前摘要列表。');
           })
         }
       >
@@ -307,7 +307,7 @@ export default function PaperWorkspaceView({
         onClick={() =>
           runAction('deep', async () => {
             const result = await deepSummary(currentPaper.id);
-            setNotice(`深度摘要已生成：#${result.id}。`);
+            setNotice('深度摘要已生成，并已加入当前摘要列表。');
           })
         }
       >
@@ -436,7 +436,7 @@ export default function PaperWorkspaceView({
         {selectedSummary ? (
           <>
             <p className="subtle">
-              当前摘要：#{selectedSummary.id}（{selectedSummary.summary_type}） · 生成方式：
+              当前摘要：{selectedSummary.summary_type} · 生成方式：
               {selectedSummary.provider || 'heuristic'}/{selectedSummary.model || 'local'}
             </p>
             {selectedSummary.provider === 'heuristic' ? (
@@ -454,8 +454,8 @@ export default function PaperWorkspaceView({
 
         <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
           <p className="subtle" style={{ margin: 0 }}>
-            上下文：paper#{currentPaper.id}
-            {selectedSummary ? ` · summary#${selectedSummary.id}` : ' · paper-only'}
+            上下文：当前论文
+            {selectedSummary ? ' · 已绑定当前摘要' : ' · 仅论文上下文'}
             {' · 当前阅读阶段 '}
             {readingStatusLabel(readingStatus)}
             {' · 复现兴趣 '}
@@ -472,7 +472,7 @@ export default function PaperWorkspaceView({
             <option value="none">不绑定摘要</option>
             {summaries.map((item) => (
               <option key={item.id} value={item.id}>
-                摘要 #{item.id}（{item.summary_type}）
+                {item.summary_type} 摘要
               </option>
             ))}
           </select>
@@ -577,7 +577,7 @@ export default function PaperWorkspaceView({
         <div style={{ display: 'grid', gap: 8 }}>
           {workspace.reflections.slice(0, 5).map((item) => (
             <div key={item.id} className="reader-meta-card">
-              <strong>心得 #{item.id}</strong>
+              <strong>论文心得</strong>
               <div className="subtle">
                 {readingStatusLabel(item.stage)} · {item.report_summary || '暂无汇报摘要'}
               </div>

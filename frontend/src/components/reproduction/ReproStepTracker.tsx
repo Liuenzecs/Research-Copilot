@@ -181,12 +181,12 @@ export default function ReproStepTracker({
 
             {isEditing ? (
               <div style={{ display: 'grid', gap: 8 }}>
-                <h4 style={{ margin: 0 }}>编辑步骤 #{step.id}</h4>
+                <h4 style={{ margin: 0 }}>编辑当前步骤</h4>
                 <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}>
-                  <option value="pending">pending</option>
-                  <option value="in_progress">in_progress</option>
-                  <option value="done">done</option>
-                  <option value="blocked">blocked</option>
+                  <option value="pending">待开始</option>
+                  <option value="in_progress">进行中</option>
+                  <option value="done">已完成</option>
+                  <option value="blocked">已阻塞</option>
                   <option value="skipped">skipped</option>
                 </select>
                 <textarea className="textarea" placeholder="进展记录" value={note} onChange={(event) => setNote(event.target.value)} />
@@ -251,7 +251,7 @@ export default function ReproStepTracker({
 
               {isLogging ? (
                 <div style={{ display: 'grid', gap: 8 }}>
-                  <h4 style={{ margin: 0 }}>记录步骤日志 #{step.id}</h4>
+                  <h4 style={{ margin: 0 }}>记录当前步骤日志</h4>
                   <select
                     className="select"
                     value={logKind}

@@ -78,7 +78,7 @@ export default function WeeklyReportPanel({
                 {item.related_paper_id ? (
                   <>
                     {' '}
-                    <Link href={`/search?paper_id=${item.related_paper_id}`} className="button secondary">
+                    <Link href={`/papers/${item.related_paper_id}`} className="button secondary">
                       打开论文工作区
                     </Link>
                   </>
@@ -104,7 +104,7 @@ export default function WeeklyReportPanel({
                 <div className="subtle">最近活动：{formatDateTime(item.last_activity_at)} · {activityTypeLabel(item.activity_type)}</div>
                 <div className="subtle">{item.activity_summary}</div>
                 <div style={{ marginTop: 4 }}>
-                  <Link href={`/search?paper_id=${item.paper_id}`} className="button secondary">
+                  <Link href={`/papers/${item.paper_id}`} className="button secondary">
                     打开论文工作区
                   </Link>
                 </div>
@@ -123,8 +123,8 @@ export default function WeeklyReportPanel({
             {context.reproduction_progress.slice(0, 8).map((item) => (
               <li key={item.reproduction_id} style={{ marginBottom: 8 }}>
                 <div>
-                  <strong>{item.paper_title || `复现 #${item.reproduction_id}`}</strong>
-                  <span className="subtle"> · {item.repo_label || 'paper-only'}</span>
+                  <strong>{item.paper_title || '未命名复现记录'}</strong>
+                  <span className="subtle"> · {item.repo_label || '仅论文上下文'}</span>
                 </div>
                 <div className="subtle">
                   状态：{reproductionStatusLabel(item.status)} · 进度：
@@ -153,7 +153,7 @@ export default function WeeklyReportPanel({
             {context.blockers.slice(0, 8).map((item) => (
               <li key={`${item.reproduction_id}-${item.step_id}`} style={{ marginBottom: 8 }}>
                 <div>
-                  <strong>{item.paper_title || `复现 #${item.reproduction_id}`}</strong>
+                  <strong>{item.paper_title || '未命名复现记录'}</strong>
                   <span className="subtle"> · 步骤 {item.step_no}</span>
                 </div>
                 <div className="subtle">{item.blocker_reason || '待补充阻塞说明。'}</div>

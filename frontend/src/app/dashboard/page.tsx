@@ -79,7 +79,7 @@ export default function DashboardPage() {
           <ul>
             {reportWorthy.slice(0, 10).map((item) => (
               <li key={item.id}>
-                #{item.id} {item.report_summary || '暂无摘要'} · {reflectionTypeLabel(item.reflection_type)}
+                {item.report_summary || '暂无摘要'} · {reflectionTypeLabel(item.reflection_type)}
               </li>
             ))}
           </ul>
@@ -100,7 +100,7 @@ export default function DashboardPage() {
                 <ul>
                   {blockedReproTasks.slice(0, 8).map((task) => (
                     <li key={task.id}>
-                      #{task.id} {taskTypeLabel(task.task_type)} · {taskStatusLabel(task.status)} · {formatDateTime(task.updated_at || task.created_at)}
+                      {taskTypeLabel(task.task_type)} · {taskStatusLabel(task.status)} · {formatDateTime(task.updated_at || task.created_at)}
                     </li>
                   ))}
                 </ul>
@@ -112,7 +112,7 @@ export default function DashboardPage() {
             <ul>
               {tasks.slice(0, 12).map((task) => (
                 <li key={task.id}>
-                  #{task.id} {taskTypeLabel(task.task_type)} · {taskStatusLabel(task.status)} · {formatDateTime(task.updated_at || task.created_at)}
+                  {taskTypeLabel(task.task_type)} · {taskStatusLabel(task.status)} · {formatDateTime(task.updated_at || task.created_at)}
                 </li>
               ))}
             </ul>

@@ -196,7 +196,7 @@ function ReproductionPageContent() {
             setRepoCandidates(repoResult.value.items);
           } else {
             setRepoCandidates([]);
-            nextWarnings.push(`Repo 自动搜索失败：${(repoResult.reason as Error).message}。你仍可按 paper-only 继续。`);
+            nextWarnings.push(`Repo 自动搜索失败：${(repoResult.reason as Error).message}。你仍可按仅论文上下文继续。`);
           }
 
           if (reproductionResult.status === 'fulfilled' && reproductionResult.value.length > 0) {
@@ -369,13 +369,13 @@ function ReproductionPageContent() {
       return `当前计划绑定 repo：${detail.repo.owner}/${detail.repo.name}`;
     }
     if (detail) {
-      return '当前计划未绑定 repo，按 paper-only 推进。';
+      return '当前计划未绑定代码仓，按仅论文上下文推进。';
     }
     if (selectedRepo) {
       return `当前准备使用 repo：${selectedRepo.owner}/${selectedRepo.name}`;
     }
     if (activePaper) {
-      return '当前尚未选择 repo，你仍可直接按 paper-only 新建复现。';
+      return '当前尚未选择代码仓，你仍可直接按仅论文上下文新建复现。';
     }
     return '';
   }, [activePaper, detail, selectedRepo]);
@@ -383,10 +383,10 @@ function ReproductionPageContent() {
   const planButtonLabel = detail && contextMode === 'continuing_recent'
     ? selectedRepo
       ? '新建新的复现记录（使用选中 Repo）'
-      : '新建新的复现记录（paper-only）'
+      : '新建新的复现记录（仅论文上下文）'
     : selectedRepo
       ? '用选中 Repo 生成复现计划'
-      : '按 paper-only 生成复现计划';
+      : '按仅论文上下文生成复现计划';
 
   return (
     <>
@@ -398,7 +398,7 @@ function ReproductionPageContent() {
       <div className="card" style={{ display: 'grid', gap: 12 }}>
         <h3 className="title" style={{ fontSize: 16, margin: 0 }}>手工入口（按论文标题选择）</h3>
         <p className="subtle" style={{ margin: 0 }}>
-          不需要记住任何 `paper_id` 或 `reproduction_id`。直接按论文标题搜索，或从最近复现记录中继续即可。
+          不需要记住任何论文编号或复现编号。直接按论文标题搜索，或从最近复现记录中继续即可。
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
@@ -472,7 +472,7 @@ function ReproductionPageContent() {
           {contextMessage ? <p className="subtle" style={{ marginTop: 0 }}>{contextMessage}</p> : null}
           {activePaper ? (
             <p className="subtle" style={{ margin: 0 }}>
-              论文：paper#{activePaper.id} · {activePaper.title_en}
+              论文：{activePaper.title_en}
             </p>
           ) : (
             <p className="subtle" style={{ margin: 0 }}>当前未加载到论文上下文。</p>
@@ -480,7 +480,7 @@ function ReproductionPageContent() {
           {detail ? (
             <>
               <p className="subtle" style={{ margin: '6px 0 0 0' }}>
-                复现：#{detail.reproduction_id} · 状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}%
+                当前复现记录 · 状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}%
               </p>
               <p className="subtle" style={{ margin: '6px 0 0 0' }}>
                 进度摘要：{detail.progress_summary || '尚未填写'}
@@ -498,7 +498,7 @@ function ReproductionPageContent() {
               Repo：{currentRepo.owner}/{currentRepo.name} · <a href={currentRepo.repo_url} target="_blank" rel="noopener noreferrer">{currentRepo.repo_url}</a>
             </p>
           ) : detail ? (
-            <p className="subtle" style={{ margin: '6px 0 0 0' }}>Repo：当前计划未绑定 repo，按 paper-only 推进。</p>
+            <p className="subtle" style={{ margin: '6px 0 0 0' }}>代码仓：当前计划未绑定代码仓，按仅论文上下文推进。</p>
           ) : null}
         </Card>
       ) : null}
@@ -507,7 +507,7 @@ function ReproductionPageContent() {
         <Card>
           <h3 className="title" style={{ fontSize: 16 }}>Repo 候选与新建复现</h3>
           <p className="subtle">
-            默认使用当前论文标题自动搜索 repo。你可以选择某个 repo 生成新计划，也可以不选 repo，直接按 paper-only 推进。
+            默认使用当前论文标题自动搜索代码仓。你可以选择某个代码仓生成新计划，也可以不选代码仓，直接按仅论文上下文推进。
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             <Button
@@ -518,7 +518,7 @@ function ReproductionPageContent() {
                     paper_id: activePaper.id,
                     repo_id: selectedRepoId,
                   });
-                  setNotice(selectedRepoId ? '已基于选中 Repo 创建新的复现记录。' : '已按 paper-only 创建新的复现记录。');
+                  setNotice(selectedRepoId ? '已基于选中代码仓创建新的复现记录。' : '已按仅论文上下文创建新的复现记录。');
                   router.push(buildReproductionUrl({ paperId: activePaper.id, reproductionId: result.reproduction_id }));
                 })
               }
@@ -560,7 +560,7 @@ function ReproductionPageContent() {
               ))}
             </div>
           ) : (
-            <p className="subtle">当前没有可用的 repo 候选，你仍可直接按 paper-only 生成计划。</p>
+            <p className="subtle">当前没有可用的代码仓候选，你仍可直接按仅论文上下文生成计划。</p>
           )}
         </Card>
       ) : null}
@@ -568,9 +568,9 @@ function ReproductionPageContent() {
       {detail ? (
         <>
           <Card>
-            <h3 className="title" style={{ fontSize: 16 }}>复现概览 #{detail.reproduction_id}</h3>
+            <h3 className="title" style={{ fontSize: 16 }}>复现概览</h3>
             <p className="subtle">
-              状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}% · paper_id：{detail.paper_id ?? 'N/A'} · repo：{detail.repo ? `${detail.repo.owner}/${detail.repo.name}` : 'paper-only'}
+              状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}% · 代码仓：{detail.repo ? `${detail.repo.owner}/${detail.repo.name}` : '仅论文上下文'}
             </p>
             <pre style={{ whiteSpace: 'pre-wrap' }}>{detail.plan_markdown}</pre>
           </Card>

@@ -125,3 +125,21 @@
 2. 每批完成后同步更新本文件与 `docs/product-audit-outline.md`
 3. 优先做闭环修顺，不随意扩展新工作面
 4. 继续以单用户、本地优先、Chinese-first 为默认标准
+
+### 第十次收口：去 ID 暴露与中文文案补齐
+
+- [x] `dashboard` 中的反思与任务列表不再显示 `#id`
+- [x] `reproduction` 页上下文说明不再向用户暴露 `paper_id / reproduction_id`
+- [x] `PaperWorkspace` 的摘要上下文与论文心得标题不再显示 raw ID
+- [x] `WeeklyReportPanel` 的论文入口统一跳到 `/papers/[paperId]`
+- [x] `ReproStepTracker` 的步骤编辑/日志入口标题改为自然中文
+- [x] 高频页面中的 `paper-only` 文案统一收口为“仅论文上下文”
+- [x] 复现步骤状态选择器改为中文标签
+
+### 当前剩余可选优化
+
+- [ ] 阅读页增加段落定位、高亮与批注
+- [ ] 选词翻译增加历史复用与最近记录
+- [ ] Memory 结果补更多对象标题与来源解释
+- [ ] 周报历史列表增加轻量筛选
+- [ ] 顶栏帮助抽屉增加版本更新记录
