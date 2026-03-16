@@ -32,8 +32,6 @@ from app.models.schemas.paper import (
 )
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.normalizer import dedupe_and_rank
-from app.services.paper_search.openalex import OpenAlexSearchService
-from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
 from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
 from app.services.pdf.reader import paper_reader_service
@@ -43,8 +41,6 @@ from app.services.workflow.service import workflow_service
 router = APIRouter(prefix='/papers', tags=['papers'])
 
 arxiv_service = ArxivSearchService()
-semantic_service = SemanticScholarSearchService()
-openalex_service = OpenAlexSearchService()
 
 
 def to_paper_out(p: PaperRecord) -> PaperOut:
@@ -286,17 +282,12 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
     )
     papers = []
     errors: list[str] = []
+    effective_sources = ['arxiv']
 
-    for source in payload.sources:
-        try:
-            if source == 'arxiv':
-                papers.extend(await arxiv_service.search(payload.query, payload.limit))
-            elif source == 'semantic_scholar':
-                papers.extend(await semantic_service.search(payload.query, payload.limit))
-            elif source == 'openalex':
-                papers.extend(await openalex_service.search(payload.query, payload.limit))
-        except Exception as exc:
-            errors.append(format_search_error(source, exc))
+    try:
+        papers.extend(await arxiv_service.search(payload.query, payload.limit))
+    except Exception as exc:
+        errors.append(format_search_error('arxiv', exc))
 
     unified = dedupe_and_rank(papers, payload.limit, payload.query)
     stored = [upsert_paper(db, p) for p in unified]
@@ -305,7 +296,7 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
         db,
         task.id,
         artifact_type='search_results',
-        snapshot_json={'count': len(stored), 'sources': payload.sources, 'errors': errors},
+        snapshot_json={'count': len(stored), 'sources': effective_sources, 'errors': errors},
         role='output',
     )
     workflow_service.update_task(

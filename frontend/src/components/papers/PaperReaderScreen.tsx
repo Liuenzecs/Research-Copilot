@@ -99,6 +99,9 @@ export default function PaperReaderScreen({
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [viewMode, setViewMode] = useState<"reading" | "workspace">("reading");
+  const [translationDrawerOpen, setTranslationDrawerOpen] = useState(false);
+  const [figurePanelOpen, setFigurePanelOpen] = useState(false);
   const [activeParagraphId, setActiveParagraphId] = useState<number | null>(requestedParagraphId);
   const [currentPageNo, setCurrentPageNo] = useState<number | null>(null);
   const [locatorQuery, setLocatorQuery] = useState("");
@@ -216,23 +219,6 @@ export default function PaperReaderScreen({
   const currentPageFigures = useMemo(
     () => (reader?.figures ?? []).filter((figure) => figure.page_no === effectivePageNo),
     [effectivePageNo, reader?.figures],
-  );
-  const figuresByParagraph = useMemo(() => {
-    const map = new Map<number, PaperReaderFigure[]>();
-    currentPageFigures.forEach((figure) => {
-      if (!figure.anchor_paragraph_id || !currentPageParagraphIds.has(figure.anchor_paragraph_id)) return;
-      const current = map.get(figure.anchor_paragraph_id) ?? [];
-      current.push(figure);
-      map.set(figure.anchor_paragraph_id, current);
-    });
-    return map;
-  }, [currentPageFigures, currentPageParagraphIds]);
-  const supplementalFigures = useMemo(
-    () =>
-      currentPageFigures.filter(
-        (figure) => !figure.anchor_paragraph_id || !currentPageParagraphIds.has(figure.anchor_paragraph_id),
-      ),
-    [currentPageFigures, currentPageParagraphIds],
   );
   const currentPageAnnotations = useMemo(
     () => (reader?.annotations ?? []).filter((item) => currentPageParagraphIds.has(item.paragraph_id)),
@@ -354,6 +340,7 @@ export default function PaperReaderScreen({
     setTranslationError("");
     setStreamingTranslationText("");
     setTranslation(null);
+    setTranslationDrawerOpen(true);
     try {
       const result = await translateSegmentStream(
         {
@@ -518,6 +505,23 @@ export default function PaperReaderScreen({
               进入复现工作区
             </Button>
           </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+            <button
+              type="button"
+              className={`chip-toggle ${viewMode === "reading" ? "active" : ""}`.trim()}
+              onClick={() => setViewMode("reading")}
+            >
+              阅读视图
+            </button>
+            <button
+              type="button"
+              className={`chip-toggle ${viewMode === "workspace" ? "active" : ""}`.trim()}
+              onClick={() => setViewMode("workspace")}
+            >
+              论文工作区
+            </button>
+          </div>
         </div>
 
         <div className="paper-reader-abstract">
@@ -550,7 +554,7 @@ export default function PaperReaderScreen({
         />
       ) : null}
 
-      {reader.reader_ready ? (
+      {viewMode === "reading" && reader.reader_ready ? (
         <Card>
           <div className="paper-reader-header" style={{ alignItems: "center" }}>
             <div>
@@ -558,12 +562,34 @@ export default function PaperReaderScreen({
                 按页阅读
               </h3>
               <p className="subtle" style={{ margin: "4px 0 0" }}>
-                当前改为按页阅读模式。每次聚焦一页正文、该页图像和该页批注，不再整篇长卷展开。
+                当前以正文阅读为主。翻译放到底部抽屉，图片改为本页图集，不再打断正文主线。
               </p>
             </div>
-            <Button className="secondary" type="button" onClick={() => setTranslation(null)}>
-              清空翻译卡片
-            </Button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button
+                className="secondary"
+                type="button"
+                disabled={!currentPagePreview}
+                onClick={() => currentPagePreview && openCurrentPagePreview(currentPagePreview)}
+              >
+                查看本页预览
+              </Button>
+              <Button className="secondary" type="button" onClick={() => setFigurePanelOpen(true)}>
+                本页图像 ({currentPageFigures.length})
+              </Button>
+              <Button
+                className="secondary"
+                type="button"
+                disabled={!translation && !streamingTranslationText}
+                onClick={() => {
+                  setTranslation(null);
+                  setStreamingTranslationText("");
+                  setTranslationDrawerOpen(false);
+                }}
+              >
+                清空翻译
+              </Button>
+            </div>
           </div>
 
           <div className="paper-reader-page-toolbar">
@@ -621,42 +647,6 @@ export default function PaperReaderScreen({
             </div>
           </div>
 
-          {currentPagePreview ? (
-            <div className="paper-reader-current-page-card">
-              <div className="paper-reader-locator-row">
-                <strong>当前页预览</strong>
-                <span className="subtle">可用来对照原始版面、图表和段落位置</span>
-              </div>
-              <button type="button" className="page-preview-image-button" onClick={() => openCurrentPagePreview(currentPagePreview)}>
-                <img
-                  src={resolveApiAssetUrl(currentPagePreview.image_url)}
-                  alt={`第 ${currentPagePreview.page_no} 页预览`}
-                  className="paper-reader-current-page-image"
-                />
-              </button>
-            </div>
-          ) : null}
-
-          {translation || translationLoading || streamingTranslationText ? (
-            <div className="reader-translation-card">
-              <div>
-                <div className="subtle">选中原文</div>
-                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
-                  {translation?.content_en_snapshot || selection?.text || "正在准备翻译内容..."}
-                </p>
-              </div>
-              <div>
-                <div className="subtle">中文翻译</div>
-                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
-                  {translation?.content_zh || streamingTranslationText || "正在通过模型流式生成中文译文..."}
-                </p>
-              </div>
-              <div className="subtle">
-                {translation?.disclaimer || "当前正在流式生成翻译结果，英文原文始终保留。"}
-              </div>
-            </div>
-          ) : null}
-
           <div className="paper-reader-page-layout">
             <div ref={articleRef} className="paper-reader-page-main" onMouseUp={captureSelection} onKeyUp={captureSelection}>
               <article className="paper-reader-page-article">
@@ -664,7 +654,6 @@ export default function PaperReaderScreen({
                   const isActive = activeParagraphId === paragraph.paragraph_id;
                   const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
                   const hasAnnotation = currentPageAnnotations.some((item) => item.paragraph_id === paragraph.paragraph_id);
-                  const attachedFigures = figuresByParagraph.get(paragraph.paragraph_id) ?? [];
                   const className = [
                     "reader-page-paragraph",
                     isActive ? "reader-page-paragraph-active" : "",
@@ -685,36 +674,14 @@ export default function PaperReaderScreen({
                         onClick={() => focusParagraph(paragraph.paragraph_id)}
                       >
                         {index === 0 ? (
-                          <span className="reader-page-paragraph-meta">第 {effectivePageNo} 页 · 点击段落可定位与批注</span>
+                          <span className="reader-page-paragraph-meta">第 {effectivePageNo} 页 · 点击段落可定位、翻译与批注</span>
                         ) : null}
                         {paragraph.text}
                       </p>
-
-                      {attachedFigures.length > 0 ? (
-                        <div className="reader-figure-list">
-                          {attachedFigures.map((figure) => (
-                            <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
                   );
                 })}
               </article>
-
-              {supplementalFigures.length > 0 ? (
-                <div className="reader-supplemental-figures">
-                  <div className="paper-reader-locator-row">
-                    <strong>本页补充图片区</strong>
-                    <span className="subtle">以下图像未能稳定插入正文附近，但仍保留在当前页视图中。</span>
-                  </div>
-                  <div className="reader-figure-list">
-                    {supplementalFigures.map((figure) => (
-                      <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             <div className="paper-reader-page-side">
@@ -794,6 +761,16 @@ export default function PaperReaderScreen({
         </Card>
       ) : null}
 
+      {viewMode === "workspace" ? (
+        <PaperWorkspaceView
+          paperId={paperId}
+          requestedSummaryId={requestedSummaryId}
+          initialWorkspace={reader}
+          onWorkspaceChanged={loadReader}
+          showPaperHeader={false}
+        />
+      ) : null}
+
       {selection ? (
         <button
           type="button"
@@ -803,6 +780,77 @@ export default function PaperReaderScreen({
         >
           {translationLoading ? "翻译中..." : "英译中"}
         </button>
+      ) : null}
+
+      {translationDrawerOpen ? (
+        <div className="reader-bottom-drawer">
+          <div className="reader-bottom-drawer-header">
+            <div>
+              <strong>英译中辅助翻译</strong>
+              <div className="subtle">翻译结果会保留英文原文，并尽量不打断当前阅读位置。</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button
+                className="secondary"
+                type="button"
+                onClick={() => {
+                  setTranslationDrawerOpen(false);
+                  setStreamingTranslationText("");
+                  setTranslation(null);
+                }}
+              >
+                关闭
+              </Button>
+            </div>
+          </div>
+
+          <div className="reader-bottom-drawer-body">
+            <div className="reader-translation-card">
+              <div>
+                <div className="subtle">选中原文</div>
+                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {translation?.content_en_snapshot || selection?.text || "正在准备翻译内容..."}
+                </p>
+              </div>
+              <div>
+                <div className="subtle">中文翻译</div>
+                <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {translation?.content_zh || streamingTranslationText || "正在通过模型流式生成中文译文..."}
+                </p>
+              </div>
+              <div className="subtle">
+                {translation?.disclaimer || "当前正在流式生成翻译结果，英文原文始终保留。"}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {figurePanelOpen ? (
+        <div className="reader-lightbox-overlay" onClick={() => setFigurePanelOpen(false)}>
+          <div className="reader-lightbox reader-figure-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="paper-reader-header" style={{ alignItems: "center" }}>
+              <div>
+                <h4 className="title" style={{ fontSize: 18, margin: 0 }}>本页图集</h4>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  第 {effectivePageNo} 页 · 共 {currentPageFigures.length} 张图像
+                </p>
+              </div>
+              <Button className="secondary" type="button" onClick={() => setFigurePanelOpen(false)}>
+                关闭
+              </Button>
+            </div>
+            {currentPageFigures.length === 0 ? (
+              <EmptyState title="本页暂无图像" hint="切换到其他页后，可在这里查看该页图集。" />
+            ) : (
+              <div className="reader-figure-panel-grid">
+                {currentPageFigures.map((figure) => (
+                  <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
 
       {lightbox ? (
@@ -821,14 +869,6 @@ export default function PaperReaderScreen({
           </div>
         </div>
       ) : null}
-
-      <PaperWorkspaceView
-        paperId={paperId}
-        requestedSummaryId={requestedSummaryId}
-        initialWorkspace={reader}
-        onWorkspaceChanged={loadReader}
-        showPaperHeader={false}
-      />
     </div>
   );
 }

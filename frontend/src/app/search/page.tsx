@@ -56,7 +56,7 @@ function SearchPageContent() {
       setWarnings(nextWarnings);
 
       if (items.length === 0) {
-        setInfo(nextWarnings.length > 0 ? '当前没有可用搜索结果，你可以稍后重试或更换关键词。' : '未检索到结果，请尝试更换关键词。');
+        setInfo(nextWarnings.length > 0 ? '当前没有可用搜索结果，你可以稍后重试或更换关键词。' : '没有找到匹配论文，请尝试更换关键词。');
       }
     } catch (searchError) {
       setError((searchError as Error).message || '搜索失败，请稍后重试。');
@@ -70,8 +70,8 @@ function SearchPageContent() {
   return (
     <>
       <Card>
-        <h2 className="title">论文搜索</h2>
-        <p className="subtle">这里专注于检索论文结果。点击任一结果后，会进入独立的论文阅读与工作页。</p>
+        <h2 className="title">搜索论文</h2>
+        <p className="subtle">这里是纯搜索页，当前搜索源固定为 arXiv。点击结果后会进入独立论文阅读页。</p>
       </Card>
       <PaperSearchForm onSearch={onSearch} />
       <StatusStack
@@ -88,7 +88,7 @@ function SearchPageContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<Loading text="加载搜索页..." />}>
+    <Suspense fallback={<Loading text="正在加载搜索页..." />}>
       <SearchPageContent />
     </Suspense>
   );

@@ -25,13 +25,15 @@ def provider_settings() -> ProviderSettingsOut:
     if llm_mode == 'fallback':
         notes.append('未配置 OPENAI_API_KEY / DEEPSEEK_API_KEY，当前将使用本地兜底结果。')
     if deepseek_enabled:
-        notes.append('DeepSeek 已配置；若调用异常会自动回退到本地兜底。')
-    if libretranslate_enabled:
-        notes.append('选词翻译优先使用 LibreTranslate 兼容公共接口；不可用时回退到本地辅助结果。')
+        notes.append('DeepSeek 已配置；选词翻译和论文总结会优先使用 DeepSeek。')
+    elif openai_enabled:
+        notes.append('OpenAI 已配置；当前会作为大模型能力来源使用。')
+    elif libretranslate_enabled:
+        notes.append('当前未配置大模型；选词翻译会回退到公共翻译接口或本地辅助结果。')
     else:
-        notes.append('未配置 LibreTranslate 兼容接口地址，选词翻译将直接回退到本地辅助结果。')
+        notes.append('当前未配置大模型；选词翻译会直接回退到本地辅助结果。')
     if LEGACY_RUNTIME_DATA_ROOT.exists():
-        notes.append('检测到历史 runtime 目录 backend/backend/data；当前版本已强制统一到 backend/data。')
+        notes.append('检测到历史 runtime 目录 backend/backend/data；当前版本已统一使用 backend/data。')
 
     return ProviderSettingsOut(
         openai_enabled=openai_enabled,

@@ -125,15 +125,24 @@ export type PaperReader = PaperWorkspace & {
 export type LibraryItem = {
   id: number;
   title_en: string;
+  authors: string;
   source: string;
   year?: number;
   pdf_local_path?: string;
+  is_downloaded: boolean;
   reading_status: string;
   interest_level?: number;
   repro_interest?: string;
   is_core_paper: boolean;
   summary_count: number;
   reflection_count?: number;
+  reproduction_count: number;
+  memory_count: number;
+  in_memory: boolean;
+  last_opened_at?: string | null;
+  last_activity_at: string;
+  last_activity_label: string;
+  is_my_library: boolean;
 };
 
 export type ReproductionStep = {

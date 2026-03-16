@@ -151,7 +151,7 @@ export async function health() {
 export async function searchPapers(query: string, limit = 10) {
   return request<{ items: Paper[]; warnings?: string[] }>('/papers/search', {
     method: 'POST',
-    body: JSON.stringify({ query, sources: ['arxiv', 'semantic_scholar'], limit }),
+    body: JSON.stringify({ query, sources: ['arxiv'], limit }),
   });
 }
 

@@ -8,49 +8,91 @@ import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import { listLibrary } from '@/lib/api';
+import { formatDateTime } from '@/lib/presentation';
 import { paperReaderPath } from '@/lib/routes';
 import { readingStatusLabel, READING_STATUS_OPTIONS, reproInterestLabel, REPRO_INTEREST_OPTIONS } from '@/lib/researchState';
 import { LibraryItem } from '@/lib/types';
+
+function buildItemTags(item: LibraryItem): string[] {
+  const tags: string[] = [];
+  if (item.is_downloaded) tags.push('已下载');
+  if (item.in_memory) tags.push('已入记忆');
+  if (item.summary_count > 0) tags.push('有摘要');
+  if ((item.reflection_count ?? 0) > 0) tags.push('有心得');
+  if (item.reproduction_count > 0) tags.push('有复现');
+  if (item.is_core_paper) tags.push('核心论文');
+  return tags;
+}
 
 export default function LibraryPage() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [viewMyOnly, setViewMyOnly] = useState(true);
+  const [query, setQuery] = useState('');
   const [readingStatus, setReadingStatus] = useState('');
   const [reproInterest, setReproInterest] = useState('');
-  const [coreOnly, setCoreOnly] = useState(false);
-  const [hasSummary, setHasSummary] = useState(false);
-  const [hasReflection, setHasReflection] = useState(false);
 
   useEffect(() => {
     listLibrary()
       .then((res) => setItems(res.items))
       .catch((loadError) => {
-        setError((loadError as Error).message || '文献库加载失败，请稍后重试。');
+        setError((loadError as Error).message || '阅读入口加载失败，请稍后重试。');
       })
       .finally(() => setLoading(false));
   }, []);
 
+  const myItemsCount = useMemo(() => items.filter((item) => item.is_my_library).length, [items]);
+
   const filtered = useMemo(() => {
+    const lowered = query.trim().toLowerCase();
+
     return items.filter((item) => {
+      if (viewMyOnly && !item.is_my_library) return false;
       if (readingStatus && item.reading_status !== readingStatus) return false;
       if (reproInterest && item.repro_interest !== reproInterest) return false;
-      if (coreOnly && !item.is_core_paper) return false;
-      if (hasSummary && (item.summary_count ?? 0) <= 0) return false;
-      if (hasReflection && (item.reflection_count ?? 0) <= 0) return false;
-      return true;
+      if (!lowered) return true;
+
+      const haystacks = [item.title_en, item.authors, item.source, item.year ? String(item.year) : '']
+        .join(' ')
+        .toLowerCase();
+      return haystacks.includes(lowered);
     });
-  }, [items, readingStatus, reproInterest, coreOnly, hasSummary, hasReflection]);
+  }, [items, query, readingStatus, reproInterest, viewMyOnly]);
 
   return (
     <>
       <Card>
-        <h2 className="title">文献库</h2>
-        <p className="subtle">按阅读状态和复现意向筛选，并直接进入独立论文阅读页。</p>
+        <h2 className="title">阅读</h2>
+        <p className="subtle">这里优先展示你已经处理过、值得继续推进的论文。需要找新论文时，使用右上角搜索入口。</p>
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`chip-toggle ${viewMyOnly ? 'active' : ''}`.trim()}
+            onClick={() => setViewMyOnly(true)}
+          >
+            我的文献 ({myItemsCount})
+          </button>
+          <button
+            type="button"
+            className={`chip-toggle ${!viewMyOnly ? 'active' : ''}`.trim()}
+            onClick={() => setViewMyOnly(false)}
+          >
+            全部论文 ({items.length})
+          </button>
+        </div>
+
+        <input
+          className="input"
+          placeholder="按标题、作者、来源或年份搜索，例如 transformer、diffusion、ICLR 2024"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+
         <div className="grid-2">
           <select className="select" value={readingStatus} onChange={(event) => setReadingStatus(event.target.value)}>
             <option value="">全部阅读状态</option>
@@ -60,6 +102,7 @@ export default function LibraryPage() {
               </option>
             ))}
           </select>
+
           <select className="select" value={reproInterest} onChange={(event) => setReproInterest(event.target.value)}>
             <option value="">全部复现兴趣</option>
             {REPRO_INTEREST_OPTIONS.map((option) => (
@@ -69,46 +112,62 @@ export default function LibraryPage() {
             ))}
           </select>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <label className="subtle">
-            <input type="checkbox" checked={coreOnly} onChange={(event) => setCoreOnly(event.target.checked)} /> 仅核心论文
-          </label>
-          <label className="subtle">
-            <input type="checkbox" checked={hasSummary} onChange={(event) => setHasSummary(event.target.checked)} /> 仅有摘要
-          </label>
-          <label className="subtle">
-            <input type="checkbox" checked={hasReflection} onChange={(event) => setHasReflection(event.target.checked)} /> 仅有心得
-          </label>
-        </div>
       </div>
 
       <StatusStack items={error ? [{ variant: 'error' as const, message: error }] : []} />
 
       <Card>
-        {loading ? <Loading /> : null}
-        {!loading && filtered.length === 0 ? <EmptyState title="无匹配论文" hint="调整筛选条件后重试。" /> : null}
+        {loading ? <Loading text="正在加载阅读入口..." /> : null}
+        {!loading && filtered.length === 0 ? (
+          <EmptyState
+            title={viewMyOnly ? '当前还没有可继续阅读的文献' : '没有匹配的论文'}
+            hint={viewMyOnly ? '先搜索一篇论文并下载、总结、记录心得或推入记忆后，这里就会逐渐形成你的阅读入口。' : '请调整筛选条件后再试。'}
+          />
+        ) : null}
+
         {!loading && filtered.length > 0 ? (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>
-            {filtered.map((item) => (
-              <li key={String(item.id)} className="library-item">
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <strong style={{ fontSize: 16, lineHeight: 1.5 }}>{item.title_en}</strong>
-                  <div className="subtle">
-                    {item.source} · {item.year ?? 'N/A'} · 阅读状态 {readingStatusLabel(item.reading_status)} · 复现兴趣 {reproInterestLabel(item.repro_interest)}
+            {filtered.map((item) => {
+              const tags = buildItemTags(item);
+              return (
+                <li key={String(item.id)} className="library-item">
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <strong style={{ fontSize: 16, lineHeight: 1.5 }}>{item.title_en}</strong>
+                      <div className="subtle">{item.authors || '作者信息暂缺'}</div>
+                      <div className="subtle">
+                        {item.source} · {item.year ?? '年份未知'} · 阅读状态 {readingStatusLabel(item.reading_status)} · 复现兴趣{' '}
+                        {reproInterestLabel(item.repro_interest)}
+                      </div>
+                      <div className="subtle">
+                        最近动作：{item.last_activity_label}
+                        {item.last_activity_at ? ` · ${formatDateTime(item.last_activity_at)}` : ''}
+                      </div>
+                      <div className="subtle">
+                        摘要 {item.summary_count} · 心得 {item.reflection_count ?? 0} · 复现 {item.reproduction_count} · 记忆{' '}
+                        {item.memory_count}
+                      </div>
+                    </div>
+
+                    {tags.length > 0 ? (
+                      <div className="library-tag-row">
+                        {tags.map((tag) => (
+                          <span key={tag} className="library-tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="subtle">
-                    摘要 {item.summary_count} 条 · 心得 {item.reflection_count ?? 0} 条
-                    {item.is_core_paper ? ' · 核心论文' : ''}
-                    {item.pdf_local_path ? ' · 已下载 PDF' : ' · 尚未下载 PDF'}
+
+                  <div className="library-item-actions">
+                    <Link className="button secondary" href={paperReaderPath(item.id)}>
+                      继续阅读
+                    </Link>
                   </div>
-                </div>
-                <div className="library-item-actions">
-                  <Link className="button secondary" href={paperReaderPath(item.id)}>
-                    进入论文阅读页
-                  </Link>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </Card>

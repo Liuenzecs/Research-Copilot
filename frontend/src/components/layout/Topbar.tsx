@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import Button from '@/components/common/Button';
@@ -13,8 +13,8 @@ function isActivePath(href: string, pathname: string): boolean {
     return pathname === '/dashboard';
   }
 
-  if (href === '/search') {
-    return pathname === '/search' || pathname.startsWith('/papers/');
+  if (href === '/library') {
+    return pathname === '/library' || pathname.startsWith('/papers/');
   }
 
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -24,6 +24,7 @@ export default function Topbar() {
   const [now, setNow] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     const renderNow = () => setNow(new Date().toLocaleString('zh-CN'));
@@ -32,12 +33,14 @@ export default function Topbar() {
     return () => window.clearInterval(timer);
   }, []);
 
+  const searchActive = pathname === '/search';
+
   return (
     <>
       <header className="topbar">
         <Link href="/dashboard" className="topbar-brand">
           <strong>Research Copilot</strong>
-          <span className="subtle">本地优先研究工作台</span>
+          <span className="subtle">本地优先的单人研究工作台</span>
         </Link>
 
         <nav className="topbar-nav" aria-label="主导航">
@@ -53,6 +56,15 @@ export default function Topbar() {
         </nav>
 
         <div className="topbar-actions">
+          <button
+            type="button"
+            aria-label="搜索论文"
+            title="搜索论文"
+            className={`topbar-icon-button ${searchActive ? 'active' : ''}`.trim()}
+            onClick={() => router.push('/search')}
+          >
+            🔍
+          </button>
           <Button className="secondary" type="button" onClick={() => setHelpOpen(true)}>
             功能说明
           </Button>

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class PaperSearchRequest(BaseModel):
     query: str
-    sources: list[str] = Field(default_factory=lambda: ['arxiv', 'semantic_scholar'])
+    sources: list[str] = Field(default_factory=lambda: ['arxiv'])
     limit: int = 10
     year_from: int | None = None
     year_to: int | None = None
