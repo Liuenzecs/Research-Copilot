@@ -54,11 +54,7 @@ function FigureCard({
 }) {
   return (
     <div className="reader-figure-card">
-      <button
-        type="button"
-        className="reader-figure-image-button"
-        onClick={() => onOpen(figure)}
-      >
+      <button type="button" className="reader-figure-image-button" onClick={() => onOpen(figure)}>
         <img
           src={resolveApiAssetUrl(figure.image_url)}
           alt={figure.caption_text || `论文图像 ${figure.figure_id}`}
@@ -73,7 +69,7 @@ function FigureCard({
           <div className="subtle">当前图片暂无可提取 caption。</div>
         )}
         {figure.match_mode === "approximate" ? (
-          <div className="subtle">位置为近似匹配，已尽量插入到相关正文附近。</div>
+          <div className="subtle">当前位置为近似匹配，便于你快速回看相关图像。</div>
         ) : null}
       </div>
     </div>
@@ -103,6 +99,7 @@ export default function PaperReaderScreen({
   const [translationError, setTranslationError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [activeParagraphId, setActiveParagraphId] = useState<number | null>(requestedParagraphId);
+  const [currentPageNo, setCurrentPageNo] = useState<number | null>(null);
   const [locatorQuery, setLocatorQuery] = useState("");
   const [locatorError, setLocatorError] = useState("");
   const [annotationDraft, setAnnotationDraft] = useState("");
@@ -143,15 +140,32 @@ export default function PaperReaderScreen({
     return indexMap;
   }, [reader?.paragraphs]);
 
-  const pageFirstParagraphMap = useMemo(() => {
-    const map = new Map<number, number>();
+  const paragraphsByPage = useMemo(() => {
+    const map = new Map<number, PaperReader["paragraphs"]>();
     (reader?.paragraphs ?? []).forEach((paragraph) => {
-      if (!map.has(paragraph.page_no)) {
-        map.set(paragraph.page_no, paragraph.paragraph_id);
-      }
+      const current = map.get(paragraph.page_no) ?? [];
+      current.push(paragraph);
+      map.set(paragraph.page_no, current);
     });
     return map;
   }, [reader?.paragraphs]);
+
+  const pageNumbers = useMemo(() => {
+    const fromParagraphs = Array.from(paragraphsByPage.keys()).sort((a, b) => a - b);
+    if (fromParagraphs.length > 0) return fromParagraphs;
+    return Array.from(new Set((reader?.pages ?? []).map((item) => item.page_no))).sort((a, b) => a - b);
+  }, [paragraphsByPage, reader?.pages]);
+
+  const pageFirstParagraphMap = useMemo(() => {
+    const map = new Map<number, number>();
+    pageNumbers.forEach((pageNo) => {
+      const paragraphs = paragraphsByPage.get(pageNo) ?? [];
+      if (paragraphs[0]) {
+        map.set(pageNo, paragraphs[0].paragraph_id);
+      }
+    });
+    return map;
+  }, [pageNumbers, paragraphsByPage]);
 
   const matchedParagraphIds = useMemo(() => {
     const query = locatorQuery.trim().toLowerCase();
@@ -161,28 +175,68 @@ export default function PaperReaderScreen({
       .map((paragraph) => paragraph.paragraph_id);
   }, [locatorQuery, reader]);
 
+  const activeParagraph = activeParagraphId
+    ? (reader?.paragraphs.find((paragraph) => paragraph.paragraph_id === activeParagraphId) ?? null)
+    : null;
+
+  useEffect(() => {
+    if (!reader?.paragraphs.length) return;
+    if (requestedParagraphId) {
+      const requested = reader.paragraphs.find((item) => item.paragraph_id === requestedParagraphId);
+      if (requested) {
+        setActiveParagraphId(requested.paragraph_id);
+        setCurrentPageNo(requested.page_no);
+        return;
+      }
+    }
+    if (activeParagraphId) {
+      const current = reader.paragraphs.find((item) => item.paragraph_id === activeParagraphId);
+      if (current) {
+        setCurrentPageNo(current.page_no);
+        return;
+      }
+    }
+    const firstParagraph = reader.paragraphs[0];
+    setActiveParagraphId(firstParagraph.paragraph_id);
+    setCurrentPageNo(firstParagraph.page_no);
+  }, [activeParagraphId, reader, requestedParagraphId]);
+
+  const effectivePageNo = currentPageNo ?? activeParagraph?.page_no ?? pageNumbers[0] ?? 1;
+  const currentPageParagraphs = useMemo(
+    () => paragraphsByPage.get(effectivePageNo) ?? [],
+    [effectivePageNo, paragraphsByPage],
+  );
+  const currentPageParagraphIds = useMemo(
+    () => new Set(currentPageParagraphs.map((paragraph) => paragraph.paragraph_id)),
+    [currentPageParagraphs],
+  );
+  const currentPageIndex = pageNumbers.findIndex((pageNo) => pageNo === effectivePageNo);
+  const currentPagePreview = (reader?.pages ?? []).find((page) => page.page_no === effectivePageNo) ?? null;
+  const currentPageFigures = useMemo(
+    () => (reader?.figures ?? []).filter((figure) => figure.page_no === effectivePageNo),
+    [effectivePageNo, reader?.figures],
+  );
   const figuresByParagraph = useMemo(() => {
     const map = new Map<number, PaperReaderFigure[]>();
-    (reader?.figures ?? []).forEach((figure) => {
-      if (!figure.anchor_paragraph_id) return;
+    currentPageFigures.forEach((figure) => {
+      if (!figure.anchor_paragraph_id || !currentPageParagraphIds.has(figure.anchor_paragraph_id)) return;
       const current = map.get(figure.anchor_paragraph_id) ?? [];
       current.push(figure);
       map.set(figure.anchor_paragraph_id, current);
     });
     return map;
-  }, [reader?.figures]);
-
-  const unanchoredFigures = useMemo(
-    () => (reader?.figures ?? []).filter((figure) => !figure.anchor_paragraph_id),
-    [reader?.figures],
+  }, [currentPageFigures, currentPageParagraphIds]);
+  const supplementalFigures = useMemo(
+    () =>
+      currentPageFigures.filter(
+        (figure) => !figure.anchor_paragraph_id || !currentPageParagraphIds.has(figure.anchor_paragraph_id),
+      ),
+    [currentPageFigures, currentPageParagraphIds],
   );
-
-  const activeParagraph = activeParagraphId
-    ? (reader?.paragraphs.find((paragraph) => paragraph.paragraph_id === activeParagraphId) ?? null)
-    : null;
-  const activePageNo = activeParagraph?.page_no ?? reader?.pages[0]?.page_no ?? 1;
-  const activeParagraphIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? -1) : -1;
-  const activeParagraphNumber = activeParagraphIndex >= 0 ? activeParagraphIndex + 1 : null;
+  const currentPageAnnotations = useMemo(
+    () => (reader?.annotations ?? []).filter((item) => currentPageParagraphIds.has(item.paragraph_id)),
+    [currentPageParagraphIds, reader?.annotations],
+  );
   const activeParagraphAnnotations = useMemo(() => {
     if (!reader || !activeParagraphId) return [];
     return reader.annotations.filter((item) => item.paragraph_id === activeParagraphId);
@@ -196,34 +250,32 @@ export default function PaperReaderScreen({
   }, [paperId, requestedSummaryId]);
 
   const focusParagraph = useCallback((paragraphId: number, options?: FocusParagraphOptions) => {
-    const element = paragraphRefs.current[paragraphId];
-    if (!element) return false;
+    const paragraph = reader?.paragraphs.find((item) => item.paragraph_id === paragraphId);
+    if (!paragraph) return false;
+
     setActiveParagraphId(paragraphId);
-    element.scrollIntoView({
-      behavior: options?.behavior ?? "smooth",
-      block: "center",
-    });
+    setCurrentPageNo(paragraph.page_no);
+
+    const applyScroll = () => {
+      const element = paragraphRefs.current[paragraphId];
+      if (!element) return;
+      element.scrollIntoView({
+        behavior: options?.behavior ?? "smooth",
+        block: "center",
+      });
+    };
+
+    if (options?.behavior === "auto") {
+      window.requestAnimationFrame(applyScroll);
+    } else {
+      applyScroll();
+    }
+
     if (options?.updateUrl !== false) {
       updateReaderUrl(paragraphId);
     }
     return true;
-  }, [updateReaderUrl]);
-
-  useEffect(() => {
-    if (!reader?.paragraphs.length) return;
-    if (requestedParagraphId && paragraphIndexMap.has(requestedParagraphId)) {
-      const frame = window.requestAnimationFrame(() => {
-        focusParagraph(requestedParagraphId, { behavior: "auto", updateUrl: false });
-        const paragraphNumber = (paragraphIndexMap.get(requestedParagraphId) ?? 0) + 1;
-        setNotice(`已定位到正文第 ${paragraphNumber} 段。`);
-      });
-      return () => window.cancelAnimationFrame(frame);
-    }
-    if (!activeParagraphId) {
-      setActiveParagraphId(reader.paragraphs[0]?.paragraph_id ?? null);
-    }
-    return undefined;
-  }, [activeParagraphId, focusParagraph, paragraphIndexMap, reader, requestedParagraphId]);
+  }, [reader?.paragraphs, updateReaderUrl]);
 
   function clearSelection() {
     setSelection(null);
@@ -235,6 +287,7 @@ export default function PaperReaderScreen({
       clearSelection();
       return;
     }
+
     const text = currentSelection.toString().trim();
     if (!text) {
       clearSelection();
@@ -265,6 +318,10 @@ export default function PaperReaderScreen({
     const rect = range.getBoundingClientRect();
     const left = Math.min(rect.left, window.innerWidth - 220);
     setActiveParagraphId(paragraphId);
+    const paragraph = reader?.paragraphs.find((item) => item.paragraph_id === paragraphId);
+    if (paragraph) {
+      setCurrentPageNo(paragraph.page_no);
+    }
     updateReaderUrl(paragraphId);
     setSelection({
       text,
@@ -305,9 +362,9 @@ export default function PaperReaderScreen({
         },
       });
       setTranslation(result);
-      focusParagraph(selection.paragraphId);
+      focusParagraph(selection.paragraphId, { behavior: "auto" });
       const paragraphNumber = (paragraphIndexMap.get(selection.paragraphId) ?? 0) + 1;
-      setNotice(`已完成选词翻译，并回到正文第 ${paragraphNumber} 段。`);
+      setNotice(`已完成英译中辅助翻译，并回到当前页的第 ${paragraphNumber} 段。`);
     } catch (translateError) {
       setTranslationError((translateError as Error).message || "选词翻译失败，请稍后重试。");
     } finally {
@@ -317,7 +374,7 @@ export default function PaperReaderScreen({
 
   async function handleCreateAnnotation() {
     if (!activeParagraphId) {
-      setLocatorError("请先选中或定位到一个正文段落。");
+      setLocatorError("请先选中当前页中的一个正文段落。");
       return;
     }
     if (!annotationDraft.trim()) {
@@ -335,7 +392,7 @@ export default function PaperReaderScreen({
       });
       const paragraphNumber = (paragraphIndexMap.get(activeParagraphId) ?? 0) + 1;
       setAnnotationDraft("");
-      setNotice(`已保存正文第 ${paragraphNumber} 段的批注。`);
+      setNotice(`已保存当前页第 ${paragraphNumber} 段的批注。`);
       await loadReader();
       focusParagraph(activeParagraphId, { behavior: "auto" });
     } catch (annotationError) {
@@ -363,35 +420,30 @@ export default function PaperReaderScreen({
 
     setLocatorError("");
     focusParagraph(target.paragraph_id);
-    const paragraphNumber = (paragraphIndexMap.get(target.paragraph_id) ?? 0) + 1;
-    setNotice(`已定位到包含“${query}”的正文第 ${paragraphNumber} 段。`);
+    setNotice(`已定位到第 ${target.page_no} 页相关正文。`);
   }
 
-  function handleStepParagraph(offset: -1 | 1) {
-    if (!reader || reader.paragraphs.length === 0) return;
-    const fallbackIndex = offset > 0 ? 0 : reader.paragraphs.length - 1;
-    const currentIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? fallbackIndex) : fallbackIndex;
-    const nextIndex = Math.max(0, Math.min(reader.paragraphs.length - 1, currentIndex + offset));
-    const target = reader.paragraphs[nextIndex];
-    if (!target) return;
-    setLocatorError("");
-    focusParagraph(target.paragraph_id);
-    setNotice(`已切换到正文第 ${nextIndex + 1} 段。`);
-  }
-
-  function handleFocusPage(pageNo: number) {
+  function goToPage(pageNo: number) {
     const firstParagraphId = pageFirstParagraphMap.get(pageNo);
-    if (!firstParagraphId) {
-      setLocatorError(`第 ${pageNo} 页当前没有可定位的正文段落。`);
+    if (firstParagraphId) {
+      focusParagraph(firstParagraphId, { behavior: "auto" });
+      setNotice(`已切换到第 ${pageNo} 页。`);
       return;
     }
-    setLocatorError("");
-    focusParagraph(firstParagraphId);
-    setNotice(`已跳转到第 ${pageNo} 页的正文位置。`);
+    setCurrentPageNo(pageNo);
+    setNotice(`已切换到第 ${pageNo} 页。`);
   }
 
-  function openPagePreview(page: PaperReaderPagePreview) {
-    handleFocusPage(page.page_no);
+  function stepPage(offset: -1 | 1) {
+    if (currentPageIndex < 0) return;
+    const nextIndex = Math.max(0, Math.min(pageNumbers.length - 1, currentPageIndex + offset));
+    const nextPageNo = pageNumbers[nextIndex];
+    if (nextPageNo) {
+      goToPage(nextPageNo);
+    }
+  }
+
+  function openCurrentPagePreview(page: PaperReaderPagePreview) {
     setLightbox({
       src: resolveApiAssetUrl(page.image_url),
       title: `第 ${page.page_no} 页预览`,
@@ -436,7 +488,7 @@ export default function PaperReaderScreen({
               <span className="reader-chip">摘要 {summaryStats?.summaryCount ?? 0}</span>
               <span className="reader-chip">心得 {summaryStats?.reflectionCount ?? 0}</span>
               <span className="reader-chip">近期任务 {summaryStats?.taskCount ?? 0}</span>
-              <span className="reader-chip">页面预览 {reader.pages.length}</span>
+              <span className="reader-chip">总页数 {pageNumbers.length}</span>
               <span className="reader-chip">图像 {reader.figures.length}</span>
             </div>
           </div>
@@ -485,54 +537,8 @@ export default function PaperReaderScreen({
       {!reader.pdf_downloaded ? (
         <EmptyState
           title="当前尚未下载 PDF"
-          hint="你仍可先查看 abstract 和研究状态；下载 PDF 后即可进入结构化正文阅读、页面预览和图片辅助。"
+          hint="你仍可先查看 abstract 和研究状态；下载 PDF 后即可进入翻页阅读、页面预览和图片辅助。"
         />
-      ) : null}
-
-      {reader.pages.length > 0 ? (
-        <Card>
-          <div className="paper-reader-header" style={{ alignItems: "center" }}>
-            <div>
-              <h3 className="title" style={{ fontSize: 18 }}>
-                页面预览
-              </h3>
-              <p className="subtle" style={{ margin: "4px 0 0" }}>
-                用页面缩略图快速确认原始版面、图表位置和当前阅读页。
-              </p>
-            </div>
-            <div className="subtle">当前正文对应第 {activePageNo} 页</div>
-          </div>
-          <div className="page-preview-strip">
-            {reader.pages.map((page) => (
-              <div
-                key={page.page_no}
-                className={`page-preview-card${page.page_no === activePageNo ? " active" : ""}`}
-              >
-                <button type="button" className="page-preview-image-button" onClick={() => openPagePreview(page)}>
-                  <img
-                    src={resolveApiAssetUrl(page.image_url)}
-                    alt={`第 ${page.page_no} 页预览`}
-                    className="page-preview-image"
-                  />
-                </button>
-                <div className="page-preview-footer">
-                  <strong>第 {page.page_no} 页</strong>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <Button className="secondary" type="button" onClick={() => handleFocusPage(page.page_no)}>
-                      跳到本页
-                    </Button>
-                    <Button className="secondary" type="button" onClick={() => setLightbox({
-                      src: resolveApiAssetUrl(page.image_url),
-                      title: `第 ${page.page_no} 页预览`,
-                    })}>
-                      放大查看
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
       ) : null}
 
       {reader.reader_ready ? (
@@ -540,10 +546,10 @@ export default function PaperReaderScreen({
           <div className="paper-reader-header" style={{ alignItems: "center" }}>
             <div>
               <h3 className="title" style={{ fontSize: 18 }}>
-                论文正文阅读
+                按页阅读
               </h3>
               <p className="subtle" style={{ margin: "4px 0 0" }}>
-                正文已按结构化块重建。你可以定位段落、写批注、回看图像，并在需要时查看原页面。
+                当前改为按页阅读模式。每次聚焦一页正文、该页图像和该页批注，不再整篇长卷展开。
               </p>
             </div>
             <Button className="secondary" type="button" onClick={() => setTranslation(null)}>
@@ -551,20 +557,43 @@ export default function PaperReaderScreen({
             </Button>
           </div>
 
-          <div className="paper-reader-locator">
+          <div className="paper-reader-page-toolbar">
             <div className="paper-reader-locator-row">
-              <strong>正文定位</strong>
-              <span className="subtle">共 {reader.paragraphs.length} 段</span>
-              {activeParagraphNumber ? <span className="subtle">当前第 {activeParagraphNumber} 段</span> : null}
-              {matchedParagraphIds.length > 0 ? <span className="subtle">关键词命中 {matchedParagraphIds.length} 段</span> : null}
-              <span className="subtle">当前页 {activePageNo}</span>
+              <strong>翻页</strong>
+              <span className="subtle">
+                当前第 {effectivePageNo} 页 / 共 {pageNumbers.length} 页
+              </span>
+              <span className="subtle">本页正文 {currentPageParagraphs.length} 段</span>
+              <span className="subtle">本页图像 {currentPageFigures.length} 张</span>
             </div>
 
             <div className="paper-reader-locator-row">
+              <Button className="secondary" type="button" disabled={currentPageIndex <= 0} onClick={() => stepPage(-1)}>
+                上一页
+              </Button>
+              <select
+                className="select"
+                value={String(effectivePageNo)}
+                onChange={(event) => goToPage(Number(event.target.value))}
+              >
+                {pageNumbers.map((pageNo) => (
+                  <option key={pageNo} value={pageNo}>
+                    第 {pageNo} 页
+                  </option>
+                ))}
+              </select>
+              <Button
+                className="secondary"
+                type="button"
+                disabled={currentPageIndex < 0 || currentPageIndex >= pageNumbers.length - 1}
+                onClick={() => stepPage(1)}
+              >
+                下一页
+              </Button>
               <input
                 className="input"
                 style={{ minWidth: 260, flex: 1 }}
-                placeholder="按关键词定位正文段落，例如 baseline、dataset、ablation"
+                placeholder="按关键词定位正文，例如 baseline、dataset、ablation"
                 value={locatorQuery}
                 onChange={(event) => {
                   setLocatorQuery(event.target.value);
@@ -577,97 +606,27 @@ export default function PaperReaderScreen({
                   }
                 }}
               />
-              <Button className="secondary" type="button" onClick={() => handleStepParagraph(-1)}>
-                上一段
-              </Button>
-              <Button className="secondary" type="button" onClick={() => handleStepParagraph(1)}>
-                下一段
-              </Button>
               <Button type="button" onClick={handleLocateParagraph}>
                 定位关键词
               </Button>
             </div>
           </div>
 
-          <div className="paper-reader-annotation-layout">
-            <div className="paper-reader-annotation-panel">
+          {currentPagePreview ? (
+            <div className="paper-reader-current-page-card">
               <div className="paper-reader-locator-row">
-                <strong>当前段落批注</strong>
-                {activeParagraphNumber ? <span className="subtle">正在批注第 {activeParagraphNumber} 段</span> : null}
-                <span className="subtle">已保存 {reader.annotations.length} 条批注</span>
+                <strong>当前页预览</strong>
+                <span className="subtle">可用来对照原始版面、图表和段落位置</span>
               </div>
-
-              {activeParagraph ? (
-                <>
-                  <p className="subtle" style={{ margin: 0 }}>
-                    当前段落片段：{activeParagraph.text.slice(0, 180)}
-                    {activeParagraph.text.length > 180 ? "..." : ""}
-                  </p>
-                  {selectedQuoteForAnnotation ? (
-                    <div className="reader-annotation-quote">
-                      <div className="subtle">将随批注保存的选中原文</div>
-                      <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{selectedQuoteForAnnotation}</p>
-                    </div>
-                  ) : (
-                    <p className="subtle" style={{ margin: 0 }}>
-                      你也可以先在该段中选中文本，再保存批注，系统会一并保留引用片段。
-                    </p>
-                  )}
-                  <textarea
-                    className="textarea"
-                    placeholder="记录这段正文对你有什么启发、疑问、复现提醒或后续要查证的点"
-                    value={annotationDraft}
-                    onChange={(event) => setAnnotationDraft(event.target.value)}
-                  />
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Button type="button" disabled={annotationSaving} onClick={() => void handleCreateAnnotation()}>
-                      {annotationSaving ? "保存中..." : "保存当前段落批注"}
-                    </Button>
-                    <Button className="secondary" type="button" onClick={() => setAnnotationDraft("")}>
-                      清空批注草稿
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <p className="subtle" style={{ margin: 0 }}>请先点击正文中的任一段落，再为它写批注。</p>
-              )}
+              <button type="button" className="page-preview-image-button" onClick={() => openCurrentPagePreview(currentPagePreview)}>
+                <img
+                  src={resolveApiAssetUrl(currentPagePreview.image_url)}
+                  alt={`第 ${currentPagePreview.page_no} 页预览`}
+                  className="paper-reader-current-page-image"
+                />
+              </button>
             </div>
-
-            <div className="paper-reader-annotation-panel">
-              <div className="paper-reader-locator-row">
-                <strong>批注回看</strong>
-                {activeParagraphNumber ? <span className="subtle">当前段落已有 {activeParagraphAnnotations.length} 条</span> : null}
-              </div>
-              {reader.annotations.length === 0 ? (
-                <p className="subtle" style={{ margin: 0 }}>当前还没有正文批注。你可以先从正在阅读的关键段落开始记录。</p>
-              ) : (
-                <div className="paper-reader-annotation-list">
-                  {reader.annotations.slice(0, 12).map((item) => {
-                    const paragraphNumber = (paragraphIndexMap.get(item.paragraph_id) ?? 0) + 1;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`paper-reader-annotation-item${item.paragraph_id === activeParagraphId ? " active" : ""}`}
-                        onClick={() => {
-                          setLocatorError("");
-                          focusParagraph(item.paragraph_id);
-                          setNotice(`已跳回正文第 ${paragraphNumber} 段的批注位置。`);
-                        }}
-                      >
-                        <div className="paper-reader-locator-row">
-                          <strong>第 {paragraphNumber} 段</strong>
-                          <span className="subtle">{formatDateTime(item.updated_at)}</span>
-                        </div>
-                        {item.selected_text ? <div className="subtle">引用：{item.selected_text}</div> : null}
-                        <div style={{ whiteSpace: "pre-wrap" }}>{item.note_text}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+          ) : null}
 
           {translation ? (
             <div className="reader-translation-card">
@@ -683,66 +642,140 @@ export default function PaperReaderScreen({
             </div>
           ) : null}
 
-          <div ref={articleRef} className="paper-reader-article-shell" onMouseUp={captureSelection} onKeyUp={captureSelection}>
-            <article className="paper-reader-article">
-              {reader.paragraphs.map((paragraph, index) => {
-                const isActive = activeParagraphId === paragraph.paragraph_id;
-                const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
-                const attachedFigures = figuresByParagraph.get(paragraph.paragraph_id) ?? [];
-                const className = [
-                  "reader-paragraph",
-                  isActive ? "reader-paragraph-active" : "",
-                  isMatched ? "reader-paragraph-match" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
+          <div className="paper-reader-page-layout">
+            <div ref={articleRef} className="paper-reader-page-main" onMouseUp={captureSelection} onKeyUp={captureSelection}>
+              <article className="paper-reader-page-article">
+                {currentPageParagraphs.map((paragraph, index) => {
+                  const isActive = activeParagraphId === paragraph.paragraph_id;
+                  const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
+                  const hasAnnotation = currentPageAnnotations.some((item) => item.paragraph_id === paragraph.paragraph_id);
+                  const attachedFigures = figuresByParagraph.get(paragraph.paragraph_id) ?? [];
+                  const className = [
+                    "reader-page-paragraph",
+                    isActive ? "reader-page-paragraph-active" : "",
+                    isMatched ? "reader-page-paragraph-match" : "",
+                    hasAnnotation ? "reader-page-paragraph-annotated" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
-                return (
-                  <div key={paragraph.paragraph_id} className="reader-paragraph-block">
-                    <p
-                      ref={(element) => {
-                        paragraphRefs.current[paragraph.paragraph_id] = element;
-                      }}
-                      data-paragraph-id={paragraph.paragraph_id}
-                      className={className}
-                      onClick={() => {
-                        setLocatorError("");
-                        focusParagraph(paragraph.paragraph_id);
-                      }}
-                    >
-                      <span className="reader-paragraph-meta">
-                        <span className="reader-paragraph-badge">第 {index + 1} 段 · 第 {paragraph.page_no} 页</span>
-                        <span className="reader-paragraph-action">点击可高亮并保持定位</span>
-                      </span>
-                      {paragraph.text}
-                    </p>
+                  return (
+                    <div key={paragraph.paragraph_id} className="reader-page-flow-block">
+                      <p
+                        ref={(element) => {
+                          paragraphRefs.current[paragraph.paragraph_id] = element;
+                        }}
+                        data-paragraph-id={paragraph.paragraph_id}
+                        className={className}
+                        onClick={() => focusParagraph(paragraph.paragraph_id)}
+                      >
+                        {index === 0 ? (
+                          <span className="reader-page-paragraph-meta">第 {effectivePageNo} 页 · 点击段落可定位与批注</span>
+                        ) : null}
+                        {paragraph.text}
+                      </p>
 
-                    {attachedFigures.length > 0 ? (
-                      <div className="reader-figure-list">
-                        {attachedFigures.map((figure) => (
-                          <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
-                        ))}
-                      </div>
-                    ) : null}
+                      {attachedFigures.length > 0 ? (
+                        <div className="reader-figure-list">
+                          {attachedFigures.map((figure) => (
+                            <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </article>
+
+              {supplementalFigures.length > 0 ? (
+                <div className="reader-supplemental-figures">
+                  <div className="paper-reader-locator-row">
+                    <strong>本页补充图片区</strong>
+                    <span className="subtle">以下图像未能稳定插入正文附近，但仍保留在当前页视图中。</span>
                   </div>
-                );
-              })}
-            </article>
-          </div>
+                  <div className="reader-figure-list">
+                    {supplementalFigures.map((figure) => (
+                      <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
-          {unanchoredFigures.length > 0 ? (
-            <div className="reader-supplemental-figures">
-              <div className="paper-reader-locator-row">
-                <strong>补充图片区</strong>
-                <span className="subtle">以下图片未能稳定锚定到具体正文段落，但仍保留供参考。</span>
+            <div className="paper-reader-page-side">
+              <div className="paper-reader-annotation-panel">
+                <div className="paper-reader-locator-row">
+                  <strong>当前段落批注</strong>
+                  {activeParagraph ? <span className="subtle">正在编辑当前页选中段落</span> : null}
+                </div>
+                {activeParagraph ? (
+                  <>
+                    <p className="subtle" style={{ margin: 0 }}>
+                      当前段落片段：{activeParagraph.text.slice(0, 160)}
+                      {activeParagraph.text.length > 160 ? "..." : ""}
+                    </p>
+                    {selectedQuoteForAnnotation ? (
+                      <div className="reader-annotation-quote">
+                        <div className="subtle">将随批注保存的选中原文</div>
+                        <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{selectedQuoteForAnnotation}</p>
+                      </div>
+                    ) : (
+                      <p className="subtle" style={{ margin: 0 }}>
+                        你可以先选中英文句子再翻译或保存批注，系统会保留引用原文。
+                      </p>
+                    )}
+                    <textarea
+                      className="textarea"
+                      placeholder="记录这段正文对你有什么启发、疑问、复现提醒或后续要查证的点"
+                      value={annotationDraft}
+                      onChange={(event) => setAnnotationDraft(event.target.value)}
+                    />
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <Button type="button" disabled={annotationSaving} onClick={() => void handleCreateAnnotation()}>
+                        {annotationSaving ? "保存中..." : "保存当前段落批注"}
+                      </Button>
+                      <Button className="secondary" type="button" onClick={() => setAnnotationDraft("")}>
+                        清空批注草稿
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="subtle" style={{ margin: 0 }}>请先点击当前页中的正文段落，再写批注。</p>
+                )}
               </div>
-              <div className="reader-figure-list">
-                {unanchoredFigures.map((figure) => (
-                  <FigureCard key={figure.figure_id} figure={figure} onOpen={openFigurePreview} />
-                ))}
+
+              <div className="paper-reader-annotation-panel">
+                <div className="paper-reader-locator-row">
+                  <strong>本页批注回看</strong>
+                  <span className="subtle">共 {currentPageAnnotations.length} 条</span>
+                </div>
+                {currentPageAnnotations.length === 0 ? (
+                  <p className="subtle" style={{ margin: 0 }}>当前页还没有批注。</p>
+                ) : (
+                  <div className="paper-reader-annotation-list">
+                    {currentPageAnnotations.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`paper-reader-annotation-item${item.paragraph_id === activeParagraphId ? " active" : ""}`}
+                        onClick={() => {
+                          focusParagraph(item.paragraph_id, { behavior: "auto" });
+                          setNotice("已回到本页批注对应的正文位置。");
+                        }}
+                      >
+                        <div className="paper-reader-locator-row">
+                          <strong>本页批注</strong>
+                          <span className="subtle">{formatDateTime(item.updated_at)}</span>
+                        </div>
+                        {item.selected_text ? <div className="subtle">引用：{item.selected_text}</div> : null}
+                        <div style={{ whiteSpace: "pre-wrap" }}>{item.note_text}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          ) : null}
+          </div>
         </Card>
       ) : null}
 
@@ -753,7 +786,7 @@ export default function PaperReaderScreen({
           style={{ top: selection.top, left: selection.left }}
           onClick={() => void handleTranslateSelection()}
         >
-          {translationLoading ? "翻译中..." : "翻译选中内容"}
+          {translationLoading ? "翻译中..." : "英译中"}
         </button>
       ) : null}
 

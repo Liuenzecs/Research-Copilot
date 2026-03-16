@@ -254,6 +254,55 @@ textarea {
   flex-wrap: wrap;
 }
 
+.paper-reader-page-toolbar {
+  max-width: 1080px;
+  margin: 0 auto 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.paper-reader-current-page-card {
+  max-width: 1080px;
+  margin: 0 auto 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: #fbfdff;
+  display: grid;
+  gap: 10px;
+}
+
+.paper-reader-current-page-image {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: white;
+}
+
+.paper-reader-page-layout {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
+  gap: 16px;
+}
+
+.paper-reader-page-main {
+  min-width: 0;
+}
+
+.paper-reader-page-side {
+  display: grid;
+  gap: 14px;
+}
+
 .paper-reader-annotation-layout {
   max-width: 1080px;
   margin: 0 auto 16px;
@@ -363,6 +412,56 @@ textarea {
 .reader-paragraph-block {
   display: grid;
   gap: 10px;
+}
+
+.reader-page-article {
+  padding: 22px 26px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  display: grid;
+  gap: 12px;
+}
+
+.reader-page-flow-block {
+  display: grid;
+  gap: 10px;
+}
+
+.reader-page-paragraph {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.95;
+  color: #0f172a;
+  white-space: pre-wrap;
+  padding: 2px 0;
+  transition: background 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.reader-page-paragraph-meta {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.reader-page-paragraph-active {
+  padding: 12px 14px;
+  border-left: 3px solid #14b8a6;
+  border-radius: 10px;
+  background: #f0fdfa;
+}
+
+.reader-page-paragraph-match {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.reader-page-paragraph-annotated {
+  box-shadow: inset 3px 0 0 #0f766e;
+  padding-left: 14px;
 }
 
 .reader-paragraph {
@@ -621,6 +720,10 @@ textarea {
 
   .paper-reader-locator-row {
     align-items: stretch;
+  }
+
+  .paper-reader-page-layout {
+    grid-template-columns: 1fr;
   }
 
   .paper-reader-annotation-layout {

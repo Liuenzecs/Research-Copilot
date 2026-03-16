@@ -26,7 +26,7 @@ def test_key_field_translation(client, monkeypatch):
     assert trans.status_code == 200
     rows = trans.json()
     assert len(rows) >= 1
-    assert rows[0]['disclaimer'] == 'AI翻译，仅供辅助理解'
+    assert rows[0]['disclaimer'] == 'AI翻译，仅供辅助理解。英文原文始终保留。'
 
 
 def test_segment_selection_translation_prefers_public_api(client, monkeypatch):
@@ -46,7 +46,7 @@ def test_segment_selection_translation_prefers_public_api(client, monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload['content_zh'] == '选词翻译结果'
-    assert payload['disclaimer'] == 'AI翻译，仅供辅助理解'
+    assert payload['disclaimer'] == 'AI翻译，仅供辅助理解。英文原文始终保留。'
 
 
 def test_segment_selection_translation_falls_back_to_local_helper(client, monkeypatch):
@@ -65,4 +65,48 @@ def test_segment_selection_translation_falls_back_to_local_helper(client, monkey
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload['content_zh'].startswith('【中文辅助】')
+    assert payload['content_zh'].startswith('【中文辅助结果】')
+    assert payload['disclaimer'] == '公共翻译接口暂不可用，当前结果为中文辅助占位，请优先参考英文原文。'
+
+
+def test_segment_selection_translation_reuses_cached_result(client, monkeypatch):
+    calls = {'count': 0}
+
+    async def fake_public(text: str):
+        calls['count'] += 1
+        return '这是缓存后的翻译结果', 'libretranslate', 'public-free'
+
+    monkeypatch.setattr('app.services.translation.service.translation_service._translate_via_libretranslate', fake_public)
+
+    payload = {
+        'text': 'Repeated translation text',
+        'mode': 'selection',
+        'locator': {'paper_id': 1, 'paragraph_id': 2, 'selected_text': 'Repeated translation text'},
+    }
+    first = client.post('/translation/segment', json=payload)
+    second = client.post('/translation/segment', json=payload)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()['content_zh'] == '这是缓存后的翻译结果'
+    assert second.json()['content_zh'] == '这是缓存后的翻译结果'
+    assert calls['count'] == 1
+
+
+def test_segment_selection_translation_rejects_english_to_english_result(client, monkeypatch):
+    async def fake_public(text: str):
+        return text, 'libretranslate', 'public-free'
+
+    monkeypatch.setattr('app.services.translation.service.translation_service._translate_via_libretranslate', fake_public)
+
+    response = client.post(
+        '/translation/segment',
+        json={
+            'text': 'This should not come back as English',
+            'mode': 'selection',
+            'locator': {'paper_id': 2, 'paragraph_id': 3, 'selected_text': 'This should not come back as English'},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['content_zh'] != 'This should not come back as English'
+    assert '中文' in payload['content_zh']

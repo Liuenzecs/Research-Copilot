@@ -83,7 +83,7 @@ async def translate_segment(payload: SegmentTranslationRequest, db: Session = De
         target_id=0,
         unit_type=payload.mode,
         field_name='',
-        locator_json=json.dumps(payload.locator or {}, ensure_ascii=False),
+        locator_json=json.dumps(payload.locator or {}, ensure_ascii=False, sort_keys=True),
         english_text=payload.text,
         prefer_public_api=payload.mode == 'selection',
     )
