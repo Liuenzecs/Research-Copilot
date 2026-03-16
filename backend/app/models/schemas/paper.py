@@ -65,6 +65,22 @@ class PaperReaderParagraph(BaseModel):
     text: str
 
 
+class PaperAnnotationOut(BaseModel):
+    id: int
+    paper_id: int
+    paragraph_id: int
+    selected_text: str = ''
+    note_text: str = ''
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaperAnnotationCreateRequest(BaseModel):
+    paragraph_id: int
+    selected_text: str = ''
+    note_text: str
+
+
 class PaperReaderResponse(BaseModel):
     paper: PaperOut
     research_state: dict[str, Any]
@@ -74,6 +90,7 @@ class PaperReaderResponse(BaseModel):
     pdf_downloaded: bool
     reader_ready: bool
     paragraphs: list[PaperReaderParagraph]
+    annotations: list[PaperAnnotationOut] = Field(default_factory=list)
     text_notice: str = ''
 
 

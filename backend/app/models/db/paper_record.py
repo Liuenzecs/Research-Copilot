@@ -28,6 +28,7 @@ class PaperRecord(TimestampMixin, Base):
     research_state = relationship('PaperResearchStateRecord', back_populates='paper', uselist=False, cascade='all,delete-orphan')
     summaries = relationship('SummaryRecord', back_populates='paper')
     notes = relationship('NoteRecord', back_populates='paper')
+    annotations = relationship('PaperAnnotationRecord', back_populates='paper', cascade='all,delete-orphan')
     ideas = relationship('IdeaRecord', back_populates='paper')
     repos = relationship('RepoRecord', back_populates='paper')
     reproductions = relationship('ReproductionRecord', back_populates='paper')

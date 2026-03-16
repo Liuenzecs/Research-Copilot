@@ -69,3 +69,52 @@ def test_paper_reader_returns_paragraphs_for_downloaded_pdf(client, tmp_path):
     assert len(payload['paragraphs']) >= 1
     assert payload['paragraphs'][0]['paragraph_id'] == 1
     assert 'paragraph' in payload['paragraphs'][0]['text'].lower()
+
+
+def test_create_paper_annotation_and_reader_returns_annotations(client, tmp_path):
+    pdf_path = tmp_path / 'reader-annotation-paper.pdf'
+    _write_pdf(pdf_path, 'Baseline setup paragraph.\n\nAblation details paragraph.')
+
+    with SessionLocal() as db:
+        paper = _create_paper(db, title='Reader Annotation Paper', pdf_local_path=str(pdf_path))
+        paper_id = paper.id
+
+    create_response = client.post(
+        f'/papers/{paper_id}/annotations',
+        json={
+            'paragraph_id': 1,
+            'selected_text': 'Baseline setup paragraph.',
+            'note_text': '这里解释了实验的基础设定，后续复现时要先对齐。',
+        },
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created['paper_id'] == paper_id
+    assert created['paragraph_id'] == 1
+    assert created['selected_text'] == 'Baseline setup paragraph.'
+
+    reader_response = client.get(f'/papers/{paper_id}/reader')
+    assert reader_response.status_code == 200
+    payload = reader_response.json()
+    assert len(payload['annotations']) == 1
+    assert payload['annotations'][0]['note_text'] == '这里解释了实验的基础设定，后续复现时要先对齐。'
+    assert payload['annotations'][0]['paragraph_id'] == 1
+
+
+def test_create_paper_annotation_requires_note_text(client, tmp_path):
+    pdf_path = tmp_path / 'reader-annotation-empty-note.pdf'
+    _write_pdf(pdf_path, 'Only paragraph.')
+
+    with SessionLocal() as db:
+        paper = _create_paper(db, title='Reader Annotation Empty Note', pdf_local_path=str(pdf_path))
+        paper_id = paper.id
+
+    response = client.post(
+        f'/papers/{paper_id}/annotations',
+        json={
+            'paragraph_id': 1,
+            'selected_text': 'Only paragraph.',
+            'note_text': '   ',
+        },
+    )
+    assert response.status_code == 400

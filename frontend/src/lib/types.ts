@@ -84,10 +84,21 @@ export type PaperReaderParagraph = {
   text: string;
 };
 
+export type PaperAnnotation = {
+  id: number;
+  paper_id: number;
+  paragraph_id: number;
+  selected_text: string;
+  note_text: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PaperReader = PaperWorkspace & {
   pdf_downloaded: boolean;
   reader_ready: boolean;
   paragraphs: PaperReaderParagraph[];
+  annotations: PaperAnnotation[];
   text_notice: string;
 };
 

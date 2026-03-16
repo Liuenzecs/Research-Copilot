@@ -102,6 +102,24 @@ export async function getPaperReader(paperId: number) {
   return request<PaperReader>(`/papers/${paperId}/reader`);
 }
 
+export async function createPaperAnnotation(
+  paperId: number,
+  payload: {
+    paragraph_id: number;
+    selected_text?: string;
+    note_text: string;
+  },
+) {
+  return request(`/papers/${paperId}/annotations`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paragraph_id: payload.paragraph_id,
+      selected_text: payload.selected_text ?? '',
+      note_text: payload.note_text,
+    }),
+  });
+}
+
 export async function updatePaperResearchState(
   paperId: number,
   payload: {

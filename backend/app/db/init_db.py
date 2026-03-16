@@ -5,6 +5,7 @@ from app.models.db.base import Base
 from app.models.db import idea_record  # noqa: F401
 from app.models.db import memory_record  # noqa: F401
 from app.models.db import note_record  # noqa: F401
+from app.models.db import paper_annotation_record  # noqa: F401
 from app.models.db import paper_record  # noqa: F401
 from app.models.db import profile_record  # noqa: F401
 from app.models.db import reflection_record  # noqa: F401

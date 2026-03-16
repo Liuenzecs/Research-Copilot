@@ -9,7 +9,8 @@ import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
 import PaperWorkspaceView from "@/components/papers/PaperWorkspace";
-import { downloadPaper, getPaperPdfUrl, getPaperReader, translateSegment } from "@/lib/api";
+import { createPaperAnnotation, downloadPaper, getPaperPdfUrl, getPaperReader, translateSegment } from "@/lib/api";
+import { formatDateTime } from "@/lib/presentation";
 import { paperReaderPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
 import { PaperReader, TranslationResult } from "@/lib/types";
@@ -52,6 +53,8 @@ export default function PaperReaderScreen({
   const [activeParagraphId, setActiveParagraphId] = useState<number | null>(requestedParagraphId);
   const [locatorQuery, setLocatorQuery] = useState("");
   const [locatorError, setLocatorError] = useState("");
+  const [annotationDraft, setAnnotationDraft] = useState("");
+  const [annotationSaving, setAnnotationSaving] = useState(false);
 
   const loadReader = useCallback(async () => {
     setLoading(true);
@@ -100,6 +103,15 @@ export default function PaperReaderScreen({
 
   const activeParagraphIndex = activeParagraphId ? (paragraphIndexMap.get(activeParagraphId) ?? -1) : -1;
   const activeParagraphNumber = activeParagraphIndex >= 0 ? activeParagraphIndex + 1 : null;
+  const activeParagraph = activeParagraphId
+    ? (reader?.paragraphs.find((paragraph) => paragraph.paragraph_id === activeParagraphId) ?? null)
+    : null;
+  const activeParagraphAnnotations = useMemo(() => {
+    if (!reader || !activeParagraphId) return [];
+    return reader.annotations.filter((item) => item.paragraph_id === activeParagraphId);
+  }, [activeParagraphId, reader]);
+  const selectedQuoteForAnnotation =
+    selection && selection.paragraphId === activeParagraphId ? selection.text : "";
 
   const updateReaderUrl = useCallback((paragraphId: number | null) => {
     if (typeof window === "undefined") return;
@@ -233,6 +245,36 @@ export default function PaperReaderScreen({
       setTranslationError((translateError as Error).message || "选词翻译失败，请稍后重试。");
     } finally {
       setTranslationLoading(false);
+    }
+  }
+
+  async function handleCreateAnnotation() {
+    if (!activeParagraphId) {
+      setLocatorError("请先选中或定位到一个正文段落。");
+      return;
+    }
+    if (!annotationDraft.trim()) {
+      setLocatorError("请先写下批注内容。");
+      return;
+    }
+
+    setAnnotationSaving(true);
+    setLocatorError("");
+    try {
+      await createPaperAnnotation(paperId, {
+        paragraph_id: activeParagraphId,
+        selected_text: selectedQuoteForAnnotation,
+        note_text: annotationDraft.trim(),
+      });
+      const paragraphNumber = (paragraphIndexMap.get(activeParagraphId) ?? 0) + 1;
+      setAnnotationDraft("");
+      setNotice(`已保存正文第 ${paragraphNumber} 段的批注。`);
+      await loadReader();
+      focusParagraph(activeParagraphId, { behavior: "auto" });
+    } catch (annotationError) {
+      setLocatorError((annotationError as Error).message || "保存批注失败，请稍后重试。");
+    } finally {
+      setAnnotationSaving(false);
     }
   }
 
@@ -412,6 +454,86 @@ export default function PaperReaderScreen({
               <Button type="button" onClick={handleLocateParagraph}>
                 定位关键词
               </Button>
+            </div>
+          </div>
+
+          <div className="paper-reader-annotation-layout">
+            <div className="paper-reader-annotation-panel">
+              <div className="paper-reader-locator-row">
+                <strong>当前段落批注</strong>
+                {activeParagraphNumber ? <span className="subtle">正在批注第 {activeParagraphNumber} 段</span> : null}
+                <span className="subtle">已保存 {reader.annotations.length} 条批注</span>
+              </div>
+
+              {activeParagraph ? (
+                <>
+                  <p className="subtle" style={{ margin: 0 }}>
+                    当前段落片段：{activeParagraph.text.slice(0, 160)}
+                    {activeParagraph.text.length > 160 ? "..." : ""}
+                  </p>
+                  {selectedQuoteForAnnotation ? (
+                    <div className="reader-annotation-quote">
+                      <div className="subtle">将随批注保存的选中原文</div>
+                      <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{selectedQuoteForAnnotation}</p>
+                    </div>
+                  ) : (
+                    <p className="subtle" style={{ margin: 0 }}>
+                      你也可以先在该段中选中文本，再保存批注，系统会一并保留引用片段。
+                    </p>
+                  )}
+                  <textarea
+                    className="textarea"
+                    placeholder="记录这段正文对你有什么启发、疑问、复现提醒或后续要查证的点"
+                    value={annotationDraft}
+                    onChange={(event) => setAnnotationDraft(event.target.value)}
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button type="button" disabled={annotationSaving} onClick={() => void handleCreateAnnotation()}>
+                      {annotationSaving ? "保存中..." : "保存当前段落批注"}
+                    </Button>
+                    <Button className="secondary" type="button" onClick={() => setAnnotationDraft("")}>
+                      清空批注草稿
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="subtle" style={{ margin: 0 }}>请先点击正文中的任一段落，再为它写批注。</p>
+              )}
+            </div>
+
+            <div className="paper-reader-annotation-panel">
+              <div className="paper-reader-locator-row">
+                <strong>批注回看</strong>
+                {activeParagraphNumber ? <span className="subtle">当前段落已有 {activeParagraphAnnotations.length} 条</span> : null}
+              </div>
+              {reader.annotations.length === 0 ? (
+                <p className="subtle" style={{ margin: 0 }}>当前还没有正文批注。你可以先从正在阅读的关键段落开始记录。</p>
+              ) : (
+                <div className="paper-reader-annotation-list">
+                  {reader.annotations.slice(0, 12).map((item) => {
+                    const paragraphNumber = (paragraphIndexMap.get(item.paragraph_id) ?? 0) + 1;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`paper-reader-annotation-item${item.paragraph_id === activeParagraphId ? " active" : ""}`}
+                        onClick={() => {
+                          setLocatorError("");
+                          focusParagraph(item.paragraph_id);
+                          setNotice(`已跳回正文第 ${paragraphNumber} 段的批注位置。`);
+                        }}
+                      >
+                        <div className="paper-reader-locator-row">
+                          <strong>第 {paragraphNumber} 段</strong>
+                          <span className="subtle">{formatDateTime(item.updated_at)}</span>
+                        </div>
+                        {item.selected_text ? <div className="subtle">引用：{item.selected_text}</div> : null}
+                        <div style={{ whiteSpace: "pre-wrap" }}>{item.note_text}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

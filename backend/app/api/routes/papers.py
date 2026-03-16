@@ -13,11 +13,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.db.paper_record import PaperRecord, PaperResearchStateRecord
+from app.models.db.paper_annotation_record import PaperAnnotationRecord
 from app.models.db.reflection_record import ReflectionRecord
 from app.models.db.summary_record import SummaryRecord
 from app.models.db.task_artifact_record import TaskArtifactRecord
 from app.models.db.task_record import TaskRecord
 from app.models.schemas.paper import (
+    PaperAnnotationCreateRequest,
+    PaperAnnotationOut,
     PaperContextReflectionCreateRequest,
     PaperDownloadRequest,
     PaperDownloadResponse,
@@ -100,6 +103,18 @@ def reflection_to_dict(item: ReflectionRecord) -> dict:
         'created_at': item.created_at,
         'updated_at': item.updated_at,
     }
+
+
+def annotation_to_out(item: PaperAnnotationRecord) -> PaperAnnotationOut:
+    return PaperAnnotationOut(
+        id=item.id,
+        paper_id=item.paper_id,
+        paragraph_id=item.paragraph_id,
+        selected_text=item.selected_text or '',
+        note_text=item.note_text or '',
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
 
 
 def build_workspace_payload(db: Session, paper: PaperRecord) -> dict:
@@ -451,7 +466,48 @@ def get_paper_reader(paper_id: int, db: Session = Depends(get_db)) -> PaperReade
 
     workspace_payload = build_workspace_payload(db, paper)
     reader_payload = build_reader_payload(paper)
-    return PaperReaderResponse(**workspace_payload, **reader_payload)
+    annotations = (
+        db.execute(
+            select(PaperAnnotationRecord)
+            .where(PaperAnnotationRecord.paper_id == paper_id)
+            .order_by(PaperAnnotationRecord.updated_at.desc(), PaperAnnotationRecord.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return PaperReaderResponse(
+        **workspace_payload,
+        **reader_payload,
+        annotations=[annotation_to_out(item) for item in annotations],
+    )
+
+
+@router.post('/{paper_id}/annotations', response_model=PaperAnnotationOut)
+def create_paper_annotation(
+    paper_id: int,
+    payload: PaperAnnotationCreateRequest,
+    db: Session = Depends(get_db),
+) -> PaperAnnotationOut:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+    if payload.paragraph_id <= 0:
+        raise HTTPException(status_code=400, detail='paragraph_id must be positive')
+
+    note_text = (payload.note_text or '').strip()
+    if not note_text:
+        raise HTTPException(status_code=400, detail='note_text is required')
+
+    annotation = PaperAnnotationRecord(
+        paper_id=paper_id,
+        paragraph_id=payload.paragraph_id,
+        selected_text=(payload.selected_text or '').strip(),
+        note_text=note_text,
+    )
+    db.add(annotation)
+    db.commit()
+    db.refresh(annotation)
+    return annotation_to_out(annotation)
 
 
 @router.patch('/{paper_id}/research-state')
