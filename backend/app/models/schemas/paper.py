@@ -64,11 +64,14 @@ class PaperReaderParagraph(BaseModel):
     paragraph_id: int
     text: str
     page_no: int
+    kind: str = 'body'
+    bbox: list[float] = Field(default_factory=list)
 
 
 class PaperReaderPagePreview(BaseModel):
     page_no: int
     image_url: str
+    thumbnail_url: str = ''
     width: int
     height: int
 

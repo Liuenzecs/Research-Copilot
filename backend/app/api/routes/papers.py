@@ -423,6 +423,22 @@ def get_paper_reader_page_preview(
     return FileResponse(path=str(path), media_type='image/png')
 
 
+@router.get('/{paper_id}/reader/pages/{page_no}/thumbnail')
+def get_paper_reader_page_thumbnail(
+    paper_id: int,
+    page_no: int,
+    db: Session = Depends(get_db),
+):
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    path = paper_reader_service.get_page_thumbnail_path(paper_id, paper.pdf_local_path, page_no)
+    if path is None:
+        raise HTTPException(status_code=404, detail='Page thumbnail not found')
+    return FileResponse(path=str(path), media_type='image/png')
+
+
 @router.get('/{paper_id}/reader/figures/{figure_id}')
 def get_paper_reader_figure(
     paper_id: int,

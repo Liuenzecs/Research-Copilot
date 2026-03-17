@@ -1,5 +1,5 @@
-﻿import { PropsWithChildren } from 'react';
+import { PropsWithChildren } from 'react';
 
-export default function Card({ children }: PropsWithChildren) {
-  return <section className="card">{children}</section>;
+export default function Card({ children, className = '' }: PropsWithChildren<{ className?: string }>) {
+  return <section className={['card', className].filter(Boolean).join(' ')}>{children}</section>;
 }

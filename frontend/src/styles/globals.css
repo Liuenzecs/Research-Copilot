@@ -333,31 +333,135 @@ textarea {
   gap: 10px;
 }
 
-.paper-reader-current-page-image {
-  width: 100%;
-  max-height: 360px;
-  object-fit: contain;
-  display: block;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: white;
-}
-
-.paper-reader-page-layout {
-  max-width: 1320px;
+.paper-reader-page-shell {
+  max-width: 1280px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.72fr);
-  gap: 20px;
+  gap: 14px;
 }
 
-.paper-reader-page-main {
-  min-width: 0;
+.paper-reader-page-scroll {
+  overflow: auto;
+  padding: 8px 0 4px;
 }
 
-.paper-reader-page-side {
+.paper-reader-page-image-button {
+  display: block;
+  min-width: 720px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.paper-reader-page-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: white;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.1);
+}
+
+.paper-reader-text-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.paper-reader-text-article {
+  padding: 28px 36px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: #fffefb;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.05);
   display: grid;
   gap: 14px;
+}
+
+.paper-reader-text-meta {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.paper-reader-text-tools {
+  display: grid;
+  gap: 14px;
+}
+
+.reader-text-block {
+  padding: 4px 0;
+  border-left: 2px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  cursor: text;
+}
+
+.reader-text-block-active {
+  padding-left: 14px;
+  border-left-color: #14b8a6;
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.reader-text-block-match {
+  padding-left: 12px;
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.reader-text-block-annotated {
+  box-shadow: inset 3px 0 0 #0f766e;
+}
+
+.reader-text-block-heading {
+  margin-top: 10px;
+}
+
+.reader-text-heading {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.45;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.reader-text-body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 19px;
+  line-height: 1.92;
+  color: #172033;
+  white-space: pre-wrap;
+}
+
+.reader-text-caption {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #64748b;
+  white-space: pre-wrap;
+}
+
+.reader-text-formula-label {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.reader-text-formula {
+  margin: 0 0 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-family: "Times New Roman", Georgia, serif;
 }
 
 .paper-reader-annotation-layout {
@@ -426,6 +530,9 @@ textarea {
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   background: #fbfdff;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
   transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
@@ -585,7 +692,7 @@ textarea {
 
 .reader-figure-image {
   width: 100%;
-  max-height: 560px;
+  max-height: 680px;
   object-fit: contain;
   display: block;
   border-radius: 10px;
@@ -668,8 +775,8 @@ textarea {
 }
 
 .reader-lightbox {
-  width: min(1600px, 96vw);
-  max-height: 92vh;
+  width: min(1700px, 96vw);
+  max-height: 94vh;
   overflow: auto;
   display: grid;
   gap: 14px;
@@ -682,7 +789,7 @@ textarea {
 .reader-lightbox-image {
   width: 100%;
   height: auto;
-  max-height: 84vh;
+  max-height: 88vh;
   object-fit: contain;
   border-radius: 12px;
   background: #f8fafc;
@@ -808,26 +915,23 @@ textarea {
     align-items: stretch;
   }
 
-  .paper-reader-page-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .paper-reader-annotation-layout {
-    grid-template-columns: 1fr;
-  }
-
   .page-preview-card {
     min-width: 180px;
     max-width: 180px;
   }
 
-  .paper-reader-article {
-    max-width: 100%;
+  .paper-reader-text-article {
+    padding: 18px 18px 20px;
   }
 
-  .reader-paragraph {
-    padding: 14px;
-    font-size: 16px;
+  .reader-text-body {
+    font-size: 17px;
+    line-height: 1.82;
+  }
+
+  .paper-reader-page-image-button {
+    min-width: 100%;
+    width: 100% !important;
   }
 
   .help-drawer {

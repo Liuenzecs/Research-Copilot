@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -10,46 +11,48 @@ import fitz
 
 from app.core.config import get_settings
 
-CAPTION_PATTERN = re.compile(r'^\s*(figure|fig\.?)\s*\d+[\s:.-]', re.IGNORECASE)
-PAGE_PREVIEW_SCALE = 1.25
+CAPTION_PATTERN = re.compile(r'^\s*(figure|fig\.?)\s*\d+[\s:.\-]', re.IGNORECASE)
+PAGE_IMAGE_SCALE = 2.15
+PAGE_THUMBNAIL_SCALE = 0.34
 MIN_FIGURE_WIDTH = 100
 MIN_FIGURE_HEIGHT = 80
 MIN_FIGURE_AREA = 18_000
+FORMULA_HINT_PATTERN = re.compile(
+    r'(=|≈|≃|≤|≥|±|∑|∫|√|→|←|↔|λ|μ|σ|α|β|γ|θ|π|\bsoftmax\b|\bargmax\b|\bargmin\b)',
+    re.IGNORECASE,
+)
+HEADING_PREFIX_PATTERN = re.compile(r'^(\d+(\.\d+)*)\s+[A-Z]')
 
 
 def _normalize_whitespace(text: str) -> str:
-    text = text.replace('\u00ad', '')
+    text = (text or '').replace('\u00ad', '')
     text = re.sub(r'(\w)-\s+(\w)', r'\1\2', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
-def _split_long_text(text: str, limit: int = 900) -> list[str]:
-    normalized = _normalize_whitespace(text)
-    if not normalized:
-        return []
-    if len(normalized) <= limit:
-        return [normalized]
-
-    parts: list[str] = []
-    current = ''
-    for chunk in re.split(r'(?<=[.!?;:])\s+', normalized):
-        candidate = f'{current} {chunk}'.strip() if current else chunk
-        if len(candidate) <= limit:
-            current = candidate
-            continue
-        if current:
-            parts.append(current)
-        current = chunk
-
-    if current:
-        parts.append(current)
-    return parts or [normalized]
+def _join_text(current: str, incoming: str) -> str:
+    if not current:
+        return incoming
+    if not incoming:
+        return current
+    if current.endswith('-'):
+        return f'{current[:-1]}{incoming}'
+    return f'{current} {incoming}'.strip()
 
 
 def _looks_like_page_number(text: str) -> bool:
     compact = re.sub(r'\s+', '', text)
     return bool(compact) and compact.isdigit() and len(compact) <= 4
+
+
+def _bbox_union(first: list[float], second: list[float]) -> list[float]:
+    return [
+        min(first[0], second[0]),
+        min(first[1], second[1]),
+        max(first[2], second[2]),
+        max(first[3], second[3]),
+    ]
 
 
 class PaperReaderService:
@@ -68,7 +71,7 @@ class PaperReaderService:
                 'pages': [],
                 'figures': [],
                 'reader_notices': [],
-                'text_notice': '当前尚未下载 PDF，请先下载论文后再进入正文阅读。',
+                'text_notice': '当前尚未下载 PDF。请先下载论文后再进入原版页面阅读或辅助文本阅读。',
             }
 
         pdf_path = self.resolve_pdf_path(pdf_local_path)
@@ -89,6 +92,7 @@ class PaperReaderService:
             {
                 'page_no': item['page_no'],
                 'image_url': f"/papers/{paper_id}/reader/pages/{item['page_no']}",
+                'thumbnail_url': f"/papers/{paper_id}/reader/pages/{item['page_no']}/thumbnail",
                 'width': item['width'],
                 'height': item['height'],
             }
@@ -109,14 +113,14 @@ class PaperReaderService:
 
         return {
             'pdf_downloaded': True,
-            'reader_ready': bool(paragraphs),
+            'reader_ready': bool(pages or paragraphs),
             'paragraphs': paragraphs,
             'pages': pages,
             'figures': figures,
             'reader_notices': reader_notices,
             'text_notice': manifest.get(
                 'text_notice',
-                '当前为结构化正文阅读视图；英文原文始终保持 canonical。',
+                '原版页面为主阅读视图；辅助文本用于搜索定位、选词翻译与批注，公式与版式请以原版页面为准。',
             ),
         }
 
@@ -131,6 +135,19 @@ class PaperReaderService:
         if page is None:
             return None
         path = self._cache_root(paper_id) / page['file_name']
+        return path if path.exists() else None
+
+    def get_page_thumbnail_path(self, paper_id: int, pdf_local_path: str, page_no: int) -> Path | None:
+        if page_no <= 0 or not pdf_local_path:
+            return None
+        pdf_path = self.resolve_pdf_path(pdf_local_path)
+        if not pdf_path.exists() or not pdf_path.is_file():
+            return None
+        manifest = self._ensure_manifest(paper_id, pdf_path)
+        page = next((item for item in manifest.get('pages', []) if item['page_no'] == page_no), None)
+        if page is None:
+            return None
+        path = self._cache_root(paper_id) / page['thumbnail_file_name']
         return path if path.exists() else None
 
     def get_figure_path(self, paper_id: int, pdf_local_path: str, figure_id: int) -> Path | None:
@@ -182,21 +199,26 @@ class PaperReaderService:
                     child.unlink(missing_ok=True)
 
         pages_dir = cache_root / 'pages'
+        thumbnails_dir = cache_root / 'thumbnails'
         figures_dir = cache_root / 'figures'
         pages_dir.mkdir(parents=True, exist_ok=True)
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
         figures_dir.mkdir(parents=True, exist_ok=True)
 
         reader_notices: list[str] = []
         with fitz.open(pdf_path) as doc:
-            text_blocks_by_page = self._collect_text_blocks(doc)
-            paragraphs, paragraph_meta, caption_blocks_by_page = self._build_paragraphs(doc, text_blocks_by_page)
-            pages = self._build_page_previews(doc, pages_dir, reader_notices)
+            structured_blocks_by_page, body_font_size = self._collect_structured_blocks(doc)
+            paragraphs, paragraph_meta, caption_blocks_by_page = self._build_paragraphs(
+                structured_blocks_by_page,
+                body_font_size,
+            )
+            pages = self._build_page_previews(doc, pages_dir, thumbnails_dir, reader_notices)
             figures = self._build_figures(doc, figures_dir, caption_blocks_by_page, paragraph_meta, reader_notices)
 
             if not paragraphs:
                 paragraphs = self._build_fallback_paragraphs(doc)
                 if paragraphs:
-                    reader_notices.append('结构化正文重建不完整，已回退到较粗粒度的文本整理模式。')
+                    reader_notices.append('结构化辅助文本整理不完整，已回退到较粗粒度的文本模式。')
 
         text_notice = self._build_text_notice(paragraphs, pages, figures, reader_notices)
         manifest = {
@@ -211,43 +233,102 @@ class PaperReaderService:
         self._manifest_path(paper_id).write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         return manifest
 
-    def _collect_text_blocks(self, doc: fitz.Document) -> dict[int, list[dict[str, Any]]]:
+    def _collect_structured_blocks(
+        self,
+        doc: fitz.Document,
+    ) -> tuple[dict[int, list[dict[str, Any]]], float]:
         blocks_by_page: dict[int, list[dict[str, Any]]] = {}
         repeated_edge_candidates: dict[str, int] = {}
-
         raw_pages: list[tuple[int, float, list[dict[str, Any]]]] = []
+        font_sizes: list[float] = []
+
         for page_index, page in enumerate(doc):
             page_no = page_index + 1
-            page_height = float(page.rect.height)
             page_width = float(page.rect.width)
+            page_height = float(page.rect.height)
+            page_dict = page.get_text('dict', sort=False)
             page_blocks: list[dict[str, Any]] = []
-            for block_index, block in enumerate(page.get_text('blocks', sort=False)):
-                x0, y0, x1, y1, text, *_rest = block
-                block_type = int(block[6]) if len(block) > 6 else 0
-                if block_type != 0:
+
+            for block_index, block in enumerate(page_dict.get('blocks', [])):
+                if int(block.get('type', 0)) != 0:
                     continue
-                normalized = _normalize_whitespace(text or '')
-                if not normalized:
+
+                line_texts: list[str] = []
+                span_sizes: list[float] = []
+                span_fonts: list[str] = []
+                math_hint_count = 0
+                alpha_count = 0
+                digit_count = 0
+
+                for line in block.get('lines', []):
+                    spans = line.get('spans', [])
+                    raw_line = ''.join(str(span.get('text', '')) for span in spans)
+                    normalized_line = _normalize_whitespace(raw_line)
+                    if not normalized_line:
+                        continue
+                    line_texts.append(normalized_line)
+                    for span in spans:
+                        text = str(span.get('text', '') or '')
+                        size = float(span.get('size', 0.0) or 0.0)
+                        if size > 0:
+                            span_sizes.append(size)
+                        font = str(span.get('font', '') or '').strip().lower()
+                        if font:
+                            span_fonts.append(font)
+                        math_hint_count += len(FORMULA_HINT_PATTERN.findall(text))
+                        alpha_count += sum(1 for char in text if char.isalpha())
+                        digit_count += sum(1 for char in text if char.isdigit())
+
+                if not line_texts:
                     continue
+
+                text = _normalize_whitespace(' '.join(line_texts))
+                if not text:
+                    continue
+
+                avg_font_size = statistics.mean(span_sizes) if span_sizes else 0.0
+                max_font_size = max(span_sizes) if span_sizes else 0.0
+                font_sizes.extend(size for size in span_sizes if size >= 7.5)
+                bbox = [float(value) for value in block.get('bbox', (0.0, 0.0, 0.0, 0.0))]
+                column_bucket = self._column_bucket(bbox, page_width)
                 record = {
                     'block_id': f'{page_no}-{block_index}',
                     'page_no': page_no,
-                    'bbox': [float(x0), float(y0), float(x1), float(y1)],
-                    'text': normalized,
+                    'bbox': bbox,
+                    'text': text,
+                    'line_texts': line_texts,
+                    'avg_font_size': avg_font_size,
+                    'max_font_size': max_font_size,
+                    'font_names': sorted(set(span_fonts)),
+                    'line_count': len(line_texts),
                     'page_width': page_width,
                     'page_height': page_height,
+                    'column_bucket': column_bucket,
+                    'math_hint_count': math_hint_count,
+                    'alpha_count': alpha_count,
+                    'digit_count': digit_count,
                 }
                 page_blocks.append(record)
-                if len(normalized) <= 120 and (y0 <= page_height * 0.08 or y1 >= page_height * 0.92):
-                    repeated_edge_candidates[normalized] = repeated_edge_candidates.get(normalized, 0) + 1
+
+                if len(text) <= 120 and (bbox[1] <= page_height * 0.08 or bbox[3] >= page_height * 0.92):
+                    repeated_edge_candidates[text] = repeated_edge_candidates.get(text, 0) + 1
+
             raw_pages.append((page_no, page_width, page_blocks))
 
         repeated_edges = {text for text, count in repeated_edge_candidates.items() if count >= 2}
+        body_font_size = statistics.median(font_sizes) if font_sizes else 12.0
 
         for page_no, page_width, page_blocks in raw_pages:
-            kept = [block for block in page_blocks if not self._should_drop_edge_block(block, repeated_edges)]
-            blocks_by_page[page_no] = self._order_blocks(kept, page_width)
-        return blocks_by_page
+            kept_blocks = [block for block in page_blocks if not self._should_drop_edge_block(block, repeated_edges)]
+            ordered = self._order_blocks(kept_blocks, page_width)
+            blocks_by_page[page_no] = [
+                {
+                    **block,
+                    'kind': self._classify_block(block, body_font_size),
+                }
+                for block in ordered
+            ]
+        return blocks_by_page, body_font_size
 
     def _should_drop_edge_block(self, block: dict[str, Any], repeated_edges: set[str]) -> bool:
         text = block['text']
@@ -258,9 +339,15 @@ class PaperReaderService:
             return False
         if _looks_like_page_number(text):
             return True
-        if text in repeated_edges:
-            return True
-        return False
+        return text in repeated_edges
+
+    def _column_bucket(self, bbox: list[float], page_width: float) -> str:
+        x0, _y0, x1, _y1 = bbox
+        width = x1 - x0
+        center_x = (x0 + x1) / 2
+        if width >= page_width * 0.72:
+            return 'full'
+        return 'left' if center_x < page_width / 2 else 'right'
 
     def _order_blocks(self, blocks: list[dict[str, Any]], page_width: float) -> list[dict[str, Any]]:
         if not blocks:
@@ -270,12 +357,10 @@ class PaperReaderService:
         left_column: list[dict[str, Any]] = []
         right_column: list[dict[str, Any]] = []
         for block in blocks:
-            x0, y0, x1, _y1 = block['bbox']
-            width = x1 - x0
-            center_x = (x0 + x1) / 2
-            if width >= page_width * 0.72:
+            bucket = block['column_bucket']
+            if bucket == 'full':
                 full_width.append(block)
-            elif center_x < page_width / 2:
+            elif bucket == 'left':
                 left_column.append(block)
             else:
                 right_column.append(block)
@@ -299,97 +384,242 @@ class PaperReaderService:
 
         return sorted(blocks, key=lambda item: (item['bbox'][1], item['bbox'][0]))
 
+    def _classify_block(self, block: dict[str, Any], body_font_size: float) -> str:
+        text = block['text']
+        if CAPTION_PATTERN.match(text):
+            return 'caption'
+        if self._looks_like_formula_block(block):
+            return 'formula'
+        if self._looks_like_heading_block(block, body_font_size):
+            return 'heading'
+        return 'body'
+
+    def _looks_like_formula_block(self, block: dict[str, Any]) -> bool:
+        text = block['text']
+        if len(text) <= 6:
+            return False
+
+        symbol_hits = len(FORMULA_HINT_PATTERN.findall(text))
+        special_char_hits = sum(
+            1
+            for char in text
+            if char in '=+-*/^_<>[]{}()|~∑∫√≈≤≥±×·∥∈∂'
+        )
+        alpha_count = max(block.get('alpha_count', 0), 1)
+        digit_count = block.get('digit_count', 0)
+        hint_count = symbol_hits + special_char_hits + block.get('math_hint_count', 0) + digit_count
+
+        if hint_count >= 10 and hint_count / max(len(text), 1) >= 0.12:
+            return True
+        if re.search(r'\b(eq\.?|theorem|lemma)\b', text, re.IGNORECASE):
+            return True
+        if '=' in text and alpha_count <= 80 and len(text.split()) <= 18:
+            return True
+        return False
+
+    def _looks_like_heading_block(self, block: dict[str, Any], body_font_size: float) -> bool:
+        text = block['text']
+        if len(text) > 160:
+            return False
+        if CAPTION_PATTERN.match(text) or text.endswith(('.', ';', ':', '?', '!')):
+            return False
+
+        words = text.split()
+        if len(words) > 18:
+            return False
+
+        avg_font_size = block.get('avg_font_size', 0.0) or body_font_size
+        max_font_size = block.get('max_font_size', 0.0) or avg_font_size
+        font_names = block.get('font_names', [])
+        is_boldish = any('bold' in name or 'black' in name or 'medium' in name for name in font_names)
+        starts_like_heading = bool(HEADING_PREFIX_PATTERN.match(text)) or text.isupper()
+
+        if max_font_size >= body_font_size * 1.2 and block.get('line_count', 1) <= 4:
+            return True
+        if is_boldish and avg_font_size >= body_font_size * 1.08 and len(words) <= 14:
+            return True
+        return starts_like_heading and avg_font_size >= body_font_size * 1.02
+
     def _build_paragraphs(
         self,
-        doc: fitz.Document,
-        text_blocks_by_page: dict[int, list[dict[str, Any]]],
+        structured_blocks_by_page: dict[int, list[dict[str, Any]]],
+        body_font_size: float,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, list[dict[str, Any]]]]:
         paragraphs: list[dict[str, Any]] = []
         paragraph_meta: list[dict[str, Any]] = []
+        caption_blocks_by_page: dict[int, list[dict[str, Any]]] = {}
         paragraph_id = 1
 
-        caption_block_ids = self._detect_caption_block_ids(text_blocks_by_page)
-        caption_blocks_by_page: dict[int, list[dict[str, Any]]] = {}
-        for page_index, _page in enumerate(doc):
-            page_no = page_index + 1
-            for block in text_blocks_by_page.get(page_no, []):
-                if block['block_id'] in caption_block_ids:
+        def append_paragraph(
+            *,
+            page_no: int,
+            text: str,
+            kind: str,
+            bbox: list[float],
+            track_for_anchor: bool,
+        ) -> None:
+            nonlocal paragraph_id
+            paragraphs.append(
+                {
+                    'paragraph_id': paragraph_id,
+                    'text': text,
+                    'page_no': page_no,
+                    'kind': kind,
+                    'bbox': [round(value, 2) for value in bbox],
+                }
+            )
+            if track_for_anchor:
+                paragraph_meta.append(
+                    {
+                        'paragraph_id': paragraph_id,
+                        'page_no': page_no,
+                        'bbox': bbox,
+                    }
+                )
+            paragraph_id += 1
+
+        for page_no, blocks in structured_blocks_by_page.items():
+            pending: dict[str, Any] | None = None
+            for block in blocks:
+                kind = block['kind']
+                if kind == 'caption':
                     caption_blocks_by_page.setdefault(page_no, []).append(
                         {'block_id': block['block_id'], 'bbox': block['bbox'], 'text': block['text']}
                     )
-                    continue
-                chunks = _split_long_text(block['text'])
-                if not chunks:
-                    continue
-                for chunk in chunks:
-                    paragraphs.append(
-                        {
-                            'paragraph_id': paragraph_id,
-                            'text': chunk,
-                            'page_no': page_no,
-                        }
+
+                if kind != 'body':
+                    if pending is not None:
+                        append_paragraph(
+                            page_no=page_no,
+                            text=pending['text'],
+                            kind='body',
+                            bbox=pending['bbox'],
+                            track_for_anchor=True,
+                        )
+                        pending = None
+                    append_paragraph(
+                        page_no=page_no,
+                        text=block['text'],
+                        kind=kind,
+                        bbox=block['bbox'],
+                        track_for_anchor=kind in {'body', 'heading'},
                     )
-                    paragraph_meta.append(
-                        {
-                            'paragraph_id': paragraph_id,
-                            'page_no': page_no,
-                            'bbox': block['bbox'],
-                        }
+                    continue
+
+                if pending is not None and self._should_merge_body_blocks(pending, block, body_font_size):
+                    pending['text'] = _join_text(pending['text'], block['text'])
+                    pending['bbox'] = _bbox_union(pending['bbox'], block['bbox'])
+                    pending['avg_font_size'] = (pending['avg_font_size'] + block['avg_font_size']) / 2
+                    continue
+
+                if pending is not None:
+                    append_paragraph(
+                        page_no=page_no,
+                        text=pending['text'],
+                        kind='body',
+                        bbox=pending['bbox'],
+                        track_for_anchor=True,
                     )
-                    paragraph_id += 1
+
+                pending = {
+                    'text': block['text'],
+                    'bbox': block['bbox'],
+                    'avg_font_size': block['avg_font_size'],
+                    'column_bucket': block['column_bucket'],
+                }
+
+            if pending is not None:
+                append_paragraph(
+                    page_no=page_no,
+                    text=pending['text'],
+                    kind='body',
+                    bbox=pending['bbox'],
+                    track_for_anchor=True,
+                )
+
         return paragraphs, paragraph_meta, caption_blocks_by_page
 
-    def _detect_caption_block_ids(self, text_blocks_by_page: dict[int, list[dict[str, Any]]]) -> set[str]:
-        result: set[str] = set()
-        for blocks in text_blocks_by_page.values():
-            for block in blocks:
-                if CAPTION_PATTERN.match(block['text']):
-                    result.add(block['block_id'])
-        return result
+    def _should_merge_body_blocks(
+        self,
+        current: dict[str, Any],
+        incoming: dict[str, Any],
+        body_font_size: float,
+    ) -> bool:
+        if current['column_bucket'] != incoming['column_bucket']:
+            return False
+
+        current_bbox = current['bbox']
+        incoming_bbox = incoming['bbox']
+        vertical_gap = incoming_bbox[1] - current_bbox[3]
+        if vertical_gap > max(28.0, body_font_size * 1.9):
+            return False
+
+        aligned = abs(current_bbox[0] - incoming_bbox[0]) <= 28
+        if not aligned:
+            return False
+
+        size_gap = abs(current['avg_font_size'] - incoming.get('avg_font_size', current['avg_font_size']))
+        if size_gap > max(2.4, body_font_size * 0.22):
+            return False
+
+        current_text = current['text']
+        if len(current_text) >= 48 and re.search(r'[.!?:"”)]$', current_text):
+            return False
+        return True
 
     def _build_fallback_paragraphs(self, doc: fitz.Document) -> list[dict[str, Any]]:
         paragraphs: list[dict[str, Any]] = []
         paragraph_id = 1
         for page_index, page in enumerate(doc):
             page_no = page_index + 1
-            current_lines: list[str] = []
-
-            def flush() -> None:
-                nonlocal current_lines, paragraph_id
-                if not current_lines:
-                    return
-                merged = _normalize_whitespace(' '.join(current_lines))
-                if merged:
-                    paragraphs.append({'paragraph_id': paragraph_id, 'text': merged, 'page_no': page_no})
-                    paragraph_id += 1
-                current_lines = []
-
-            for line in page.get_text('text').splitlines():
-                stripped = line.strip()
-                if not stripped:
-                    flush()
+            blocks = page.get_text('blocks', sort=True)
+            for block in blocks:
+                if len(block) < 5:
                     continue
-                current_lines.append(stripped)
-                if len(' '.join(current_lines)) >= 700:
-                    flush()
-            flush()
+                x0, y0, x1, y1, text, *_rest = block
+                normalized = _normalize_whitespace(text or '')
+                if not normalized:
+                    continue
+                paragraphs.append(
+                    {
+                        'paragraph_id': paragraph_id,
+                        'text': normalized,
+                        'page_no': page_no,
+                        'kind': 'body',
+                        'bbox': [float(x0), float(y0), float(x1), float(y1)],
+                    }
+                )
+                paragraph_id += 1
         return paragraphs
 
-    def _build_page_previews(self, doc: fitz.Document, pages_dir: Path, reader_notices: list[str]) -> list[dict[str, Any]]:
+    def _build_page_previews(
+        self,
+        doc: fitz.Document,
+        pages_dir: Path,
+        thumbnails_dir: Path,
+        reader_notices: list[str],
+    ) -> list[dict[str, Any]]:
         pages: list[dict[str, Any]] = []
         for page_index, page in enumerate(doc):
             page_no = page_index + 1
             try:
-                pix = page.get_pixmap(matrix=fitz.Matrix(PAGE_PREVIEW_SCALE, PAGE_PREVIEW_SCALE), alpha=False)
-                file_name = f'pages/page_{page_no}.png'
-                path = pages_dir / f'page_{page_no}.png'
-                pix.save(path)
+                page_pix = page.get_pixmap(matrix=fitz.Matrix(PAGE_IMAGE_SCALE, PAGE_IMAGE_SCALE), alpha=False)
+                page_file_name = f'pages/page_{page_no}.png'
+                page_path = pages_dir / f'page_{page_no}.png'
+                page_pix.save(page_path)
+
+                thumb_pix = page.get_pixmap(matrix=fitz.Matrix(PAGE_THUMBNAIL_SCALE, PAGE_THUMBNAIL_SCALE), alpha=False)
+                thumbnail_file_name = f'thumbnails/page_{page_no}.png'
+                thumbnail_path = thumbnails_dir / f'page_{page_no}.png'
+                thumb_pix.save(thumbnail_path)
+
                 pages.append(
                     {
                         'page_no': page_no,
-                        'file_name': file_name,
-                        'width': pix.width,
-                        'height': pix.height,
+                        'file_name': page_file_name,
+                        'thumbnail_file_name': thumbnail_file_name,
+                        'width': page_pix.width,
+                        'height': page_pix.height,
                     }
                 )
             except Exception as exc:
@@ -443,7 +673,6 @@ class PaperReaderService:
                 caption_block = self._find_caption_block(rect, caption_blocks_by_page.get(page_no, []))
                 anchor_paragraph_id = self._find_anchor_paragraph_id(
                     rect,
-                    page_no,
                     paragraph_meta_by_page.get(page_no, []),
                     caption_block['bbox'] if caption_block else None,
                 )
@@ -472,8 +701,8 @@ class PaperReaderService:
             below_distance = y0 - image_rect.y1
             above_distance = image_rect.y0 - y1
             valid = (
-                (0 <= below_distance <= 160 and overlap_ratio >= 0.2)
-                or (0 <= above_distance <= 80 and overlap_ratio >= 0.2)
+                (0 <= below_distance <= 170 and overlap_ratio >= 0.2)
+                or (0 <= above_distance <= 90 and overlap_ratio >= 0.2)
             )
             if not valid:
                 continue
@@ -486,7 +715,6 @@ class PaperReaderService:
     def _find_anchor_paragraph_id(
         self,
         image_rect: fitz.Rect,
-        page_no: int,
         paragraph_meta: list[dict[str, Any]],
         caption_bbox: list[float] | None,
     ) -> int | None:
@@ -518,13 +746,15 @@ class PaperReaderService:
         figures: list[dict[str, Any]],
         reader_notices: list[str],
     ) -> str:
-        if not paragraphs:
-            return 'PDF 已下载，但暂未整理出可稳定阅读的正文内容。你仍可继续使用摘要、心得和研究状态。'
-        if pages and figures and not reader_notices:
-            return '当前为结构化正文阅读视图，已补充页面预览与图片辅助；英文原文始终保持 canonical。'
-        if pages or figures:
-            return '正文已结构化整理；页面预览或图片提取可能部分降级，英文原文始终保持 canonical。'
-        return '当前为整理后的正文文本视图，仍可能存在格式误差；英文原文始终保持 canonical。'
+        if not pages and not paragraphs:
+            return 'PDF 已下载，但暂未整理出可稳定阅读的内容。你仍可继续使用摘要、心得和研究状态。'
+        if pages and paragraphs and not reader_notices:
+            return '原版页面已准备完成；辅助文本可用于搜索定位、选词翻译与批注，公式与版式请以原版页面为准。'
+        if pages and paragraphs:
+            return '原版页面可正常阅读；辅助文本或图像提取有部分降级，公式与复杂版式建议回到原版页面查看。'
+        if pages:
+            return '已生成原版页面阅读视图，但辅助文本整理不完整；建议优先使用原版页面阅读。'
+        return '当前为降级辅助文本模式；排版、公式和复杂图文关系可能不完整，请优先参考原版页面。'
 
 
 paper_reader_service = PaperReaderService()

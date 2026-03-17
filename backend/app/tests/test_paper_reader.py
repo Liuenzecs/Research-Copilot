@@ -78,6 +78,32 @@ def _write_two_column_pdf(path):
     document.close()
 
 
+def _write_pdf_with_repeated_header_and_formula(path):
+    document = fitz.open()
+    for page_index in range(2):
+        page = document.new_page(width=595, height=842)
+        page.insert_textbox(fitz.Rect(60, 30, 540, 65), 'Research Copilot Header', fontsize=11)
+        page.insert_textbox(
+            fitz.Rect(60, 90, 540, 150),
+            f'{page_index + 1} Introduction',
+            fontsize=18,
+            fontname='helv',
+        )
+        page.insert_textbox(
+            fitz.Rect(60, 170, 520, 330),
+            'This paragraph explains the method in plain language and should remain readable in auxiliary text mode.',
+            fontsize=12,
+        )
+        page.insert_textbox(
+            fitz.Rect(80, 360, 520, 420),
+            'softmax(QK^T / sqrt(d_k)) V = Attention(Q, K, V)',
+            fontsize=12,
+        )
+        page.insert_textbox(fitz.Rect(290, 790, 320, 820), str(page_index + 1), fontsize=11)
+    document.save(path)
+    document.close()
+
+
 def test_paper_reader_without_downloaded_pdf_returns_empty_reader(client):
     with SessionLocal() as db:
         paper = _create_paper(db, title='Reader Without PDF')
@@ -111,6 +137,8 @@ def test_paper_reader_returns_paragraphs_for_downloaded_pdf(client, tmp_path):
     assert len(payload['paragraphs']) >= 1
     assert payload['paragraphs'][0]['paragraph_id'] == 1
     assert payload['paragraphs'][0]['page_no'] == 1
+    assert payload['paragraphs'][0]['kind'] in {'body', 'heading'}
+    assert len(payload['paragraphs'][0]['bbox']) == 4
     assert 'paragraph' in payload['paragraphs'][0]['text'].lower()
 
 
@@ -148,6 +176,7 @@ def test_paper_reader_returns_pages_and_figures_with_controlled_urls(client, tmp
     assert len(payload['pages']) == 1
     assert payload['pages'][0]['page_no'] == 1
     assert payload['pages'][0]['image_url'] == f'/papers/{paper_id}/reader/pages/1'
+    assert payload['pages'][0]['thumbnail_url'] == f'/papers/{paper_id}/reader/pages/1/thumbnail'
 
     assert len(payload['figures']) >= 1
     figure = payload['figures'][0]
@@ -161,9 +190,38 @@ def test_paper_reader_returns_pages_and_figures_with_controlled_urls(client, tmp
     assert page_image_response.status_code == 200
     assert page_image_response.headers['content-type'].startswith('image/png')
 
+    thumbnail_response = client.get(payload['pages'][0]['thumbnail_url'])
+    assert thumbnail_response.status_code == 200
+    assert thumbnail_response.headers['content-type'].startswith('image/png')
+
     figure_image_response = client.get(figure['image_url'])
     assert figure_image_response.status_code == 200
     assert figure_image_response.headers['content-type'].startswith('image/png')
+
+
+def test_paper_reader_classifies_heading_formula_and_drops_repeated_header(client, tmp_path):
+    pdf_path = tmp_path / 'reader-formula.pdf'
+    _write_pdf_with_repeated_header_and_formula(pdf_path)
+
+    with SessionLocal() as db:
+        paper = _create_paper(db, title='Reader Formula Paper', pdf_local_path=str(pdf_path))
+        paper_id = paper.id
+
+    response = client.get(f'/papers/{paper_id}/reader')
+    assert response.status_code == 200
+    payload = response.json()
+
+    texts = [item['text'] for item in payload['paragraphs']]
+    assert all('Research Copilot Header' not in text for text in texts)
+
+    heading = next(item for item in payload['paragraphs'] if 'Introduction' in item['text'])
+    assert heading['kind'] == 'heading'
+
+    formula = next(item for item in payload['paragraphs'] if 'Attention(Q, K, V)' in item['text'])
+    assert formula['kind'] == 'formula'
+
+    body = next(item for item in payload['paragraphs'] if 'plain language' in item['text'])
+    assert body['kind'] == 'body'
 
 
 def test_create_paper_annotation_and_reader_returns_annotations(client, tmp_path):

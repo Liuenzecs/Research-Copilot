@@ -83,11 +83,14 @@ export type PaperReaderParagraph = {
   paragraph_id: number;
   text: string;
   page_no: number;
+  kind: 'heading' | 'body' | 'formula' | 'caption';
+  bbox: number[];
 };
 
 export type PaperReaderPagePreview = {
   page_no: number;
   image_url: string;
+  thumbnail_url: string;
   width: number;
   height: number;
 };
