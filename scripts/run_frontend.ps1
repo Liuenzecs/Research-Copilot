@@ -59,6 +59,10 @@ try {
         Write-Host "Cleaning .next cache"
         Remove-Item -Recurse -Force ".next"
     }
+    if (Test-Path "tsconfig.tsbuildinfo") {
+        Write-Host "Cleaning tsconfig.tsbuildinfo"
+        Remove-Item -Force "tsconfig.tsbuildinfo"
+    }
 
     Write-Host "Starting frontend on $frontendUrl"
     npm run dev -- --hostname $bindHost --port $port
