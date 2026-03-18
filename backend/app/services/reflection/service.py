@@ -4,12 +4,13 @@ import json
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.db.reflection_record import ReflectionRecord
 from app.models.db.task_record import TaskRecord
 from app.services.memory.service import memory_service
+from app.services.project.scopes import get_project_scope_ids
 from app.services.reflection.templates import get_template
 from app.services.reflection.timeline import build_timeline_item
 
@@ -102,6 +103,7 @@ class ReflectionService:
         related_repo_id: int | None = None,
         related_reproduction_id: int | None = None,
         related_task_id: int | None = None,
+        project_id: int | None = None,
     ) -> list[ReflectionRecord]:
         stmt = select(ReflectionRecord)
         if reflection_type:
@@ -124,6 +126,25 @@ class ReflectionService:
             stmt = stmt.where(ReflectionRecord.related_reproduction_id == related_reproduction_id)
         if related_task_id:
             stmt = stmt.where(ReflectionRecord.related_task_id == related_task_id)
+        if project_id is not None:
+            scope = get_project_scope_ids(db, project_id)
+            if not (
+                scope.paper_ids
+                or scope.summary_ids
+                or scope.repo_ids
+                or scope.reproduction_ids
+            ):
+                return []
+            project_filters = []
+            if scope.paper_ids:
+                project_filters.append(ReflectionRecord.related_paper_id.in_(scope.paper_ids))
+            if scope.summary_ids:
+                project_filters.append(ReflectionRecord.related_summary_id.in_(scope.summary_ids))
+            if scope.repo_ids:
+                project_filters.append(ReflectionRecord.related_repo_id.in_(scope.repo_ids))
+            if scope.reproduction_ids:
+                project_filters.append(ReflectionRecord.related_reproduction_id.in_(scope.reproduction_ids))
+            stmt = stmt.where(or_(*project_filters))
         stmt = stmt.order_by(ReflectionRecord.event_date.desc(), ReflectionRecord.created_at.desc())
         return db.execute(stmt).scalars().all()
 

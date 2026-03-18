@@ -9,8 +9,8 @@ import HelpDrawer from '@/components/layout/HelpDrawer';
 import { NAV_ITEMS } from '@/lib/constants';
 
 function isActivePath(href: string, pathname: string): boolean {
-  if (href === '/dashboard') {
-    return pathname === '/dashboard';
+  if (href === '/projects') {
+    return pathname === '/' || pathname === '/dashboard' || pathname === '/projects' || pathname.startsWith('/projects/');
   }
 
   if (href === '/library') {
@@ -38,12 +38,12 @@ export default function Topbar() {
   return (
     <>
       <header className="topbar">
-        <Link href="/dashboard" className="topbar-brand">
+        <Link href="/projects" className="topbar-brand">
           <strong>Research Copilot</strong>
-          <span className="subtle">本地优先的单人研究工作台</span>
+          <span className="subtle">项目制 notebook 工作台，围绕研究问题推进</span>
         </Link>
 
-        <nav className="topbar-nav" aria-label="主导航">
+        <nav className="topbar-nav" aria-label="Primary">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
@@ -63,10 +63,10 @@ export default function Topbar() {
             className={`topbar-icon-button ${searchActive ? 'active' : ''}`.trim()}
             onClick={() => router.push('/search')}
           >
-            🔍
+            Search
           </button>
           <Button className="secondary" type="button" onClick={() => setHelpOpen(true)}>
-            功能说明
+            Help
           </Button>
           <div className="subtle topbar-time">{now || '--'}</div>
         </div>

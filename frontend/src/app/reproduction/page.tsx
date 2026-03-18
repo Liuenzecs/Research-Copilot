@@ -21,6 +21,7 @@ import {
   updateReproduction,
   updateReproductionStep,
 } from '@/lib/api';
+import { projectPath } from '@/lib/routes';
 import { Paper, ReproductionDetail, ReproductionListItem, RepoCandidate } from '@/lib/types';
 
 type ContextMode = 'idle' | 'ready_new' | 'continuing_recent' | 'detail';
@@ -33,13 +34,16 @@ function parsePositiveInt(value: string | null): number | null {
   return parsed;
 }
 
-function buildReproductionUrl(params: { paperId?: number | null; reproductionId?: number | null }) {
+function buildReproductionUrl(params: { paperId?: number | null; reproductionId?: number | null; projectId?: number | null }) {
   const search = new URLSearchParams();
   if (params.paperId) {
     search.set('paper_id', String(params.paperId));
   }
   if (params.reproductionId) {
     search.set('reproduction_id', String(params.reproductionId));
+  }
+  if (params.projectId) {
+    search.set('project_id', String(params.projectId));
   }
   const query = search.toString();
   return query ? `/reproduction?${query}` : '/reproduction';
@@ -86,6 +90,7 @@ function ReproductionPageContent() {
 
   const queryPaperId = parsePositiveInt(searchParams.get('paper_id'));
   const queryReproductionId = parsePositiveInt(searchParams.get('reproduction_id'));
+  const projectId = parsePositiveInt(searchParams.get('project_id'));
 
   const [paperLookupQuery, setPaperLookupQuery] = useState('');
   const [paperLookupResults, setPaperLookupResults] = useState<Paper[]>([]);
@@ -259,7 +264,7 @@ function ReproductionPageContent() {
 
     async function loadRecentReproductions() {
       try {
-        const rows = await listReproductions({ limit: 8 });
+        const rows = await listReproductions({ limit: 8, project_id: projectId || undefined });
         if (cancelled) return;
 
         const paperIds = Array.from(
@@ -301,7 +306,7 @@ function ReproductionPageContent() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   async function refreshDetail() {
     if (!detail) return;
@@ -393,6 +398,14 @@ function ReproductionPageContent() {
       <Card>
         <h2 className="title">复现工作区</h2>
         <p className="subtle">流程：paper 上下文 → repo 候选 → 计划生成 → 步骤跟踪 → blocker/log 记录 → 复现心得。</p>
+        {projectId ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <span className="subtle">当前为项目上下文复现视图</span>
+            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
+              返回项目工作台
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 12 }}>
@@ -420,7 +433,7 @@ function ReproductionPageContent() {
                 type="button"
                 className="reader-meta-card"
                 style={{ textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => router.push(buildReproductionUrl({ paperId: paper.id }))}
+                onClick={() => router.push(buildReproductionUrl({ paperId: paper.id, projectId }))}
               >
                 <strong>{paper.title_en}</strong>
                 <div className="subtle">{paper.source} · {paper.year ?? 'N/A'}</div>
@@ -437,7 +450,7 @@ function ReproductionPageContent() {
                 type="button"
                 className="reader-meta-card"
                 style={{ textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => router.push(buildReproductionUrl({ reproductionId: item.reproduction_id }))}
+                onClick={() => router.push(buildReproductionUrl({ reproductionId: item.reproduction_id, projectId }))}
               >
                 <strong>{item.paperTitle || '未绑定论文'}</strong>
                 <div className="subtle">
@@ -519,7 +532,7 @@ function ReproductionPageContent() {
                     repo_id: selectedRepoId,
                   });
                   setNotice(selectedRepoId ? '已基于选中代码仓创建新的复现记录。' : '已按仅论文上下文创建新的复现记录。');
-                  router.push(buildReproductionUrl({ paperId: activePaper.id, reproductionId: result.reproduction_id }));
+                  router.push(buildReproductionUrl({ paperId: activePaper.id, reproductionId: result.reproduction_id, projectId }));
                 })
               }
             >

@@ -10,6 +10,7 @@ import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
 import PaperWorkspaceView from "@/components/papers/PaperWorkspace";
 import {
+  createProjectEvidence,
   createPaperAnnotation,
   downloadPaper,
   getPaperPdfUrl,
@@ -18,7 +19,7 @@ import {
   translateSegmentStream,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/presentation";
-import { paperReaderPath } from "@/lib/routes";
+import { paperReaderPath, projectPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
 import {
   PaperAnnotation,
@@ -91,7 +92,7 @@ function renderParagraph(
 ) {
   if (paragraph.kind === "heading") {
     return (
-      <div ref={refCallback} data-paragraph-id={paragraph.paragraph_id} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
         <h3 className="reader-text-heading">{paragraph.text}</h3>
       </div>
     );
@@ -99,7 +100,7 @@ function renderParagraph(
 
   if (paragraph.kind === "formula") {
     return (
-      <div ref={refCallback} data-paragraph-id={paragraph.paragraph_id} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
         <div className="reader-text-formula-label">公式区</div>
         <pre className="reader-text-formula">{paragraph.text}</pre>
         <div className="subtle">公式与复杂排版请以原版页面为准。</div>
@@ -109,14 +110,14 @@ function renderParagraph(
 
   if (paragraph.kind === "caption") {
     return (
-      <div ref={refCallback} data-paragraph-id={paragraph.paragraph_id} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
         <p className="reader-text-caption">{paragraph.text}</p>
       </div>
     );
   }
 
   return (
-    <div ref={refCallback} data-paragraph-id={paragraph.paragraph_id} className={className} onClick={onClick}>
+    <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
       <p className="reader-text-body">{paragraph.text}</p>
     </div>
   );
@@ -126,10 +127,12 @@ export default function PaperReaderScreen({
   paperId,
   requestedSummaryId = null,
   requestedParagraphId = null,
+  projectId = null,
 }: {
   paperId: number;
   requestedSummaryId?: number | null;
   requestedParagraphId?: number | null;
+  projectId?: number | null;
 }) {
   const router = useRouter();
   const articleRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +158,7 @@ export default function PaperReaderScreen({
   const [locatorError, setLocatorError] = useState("");
   const [annotationDraft, setAnnotationDraft] = useState("");
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [projectEvidenceSaving, setProjectEvidenceSaving] = useState(false);
   const [translationDrawerOpen, setTranslationDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
@@ -286,7 +290,7 @@ export default function PaperReaderScreen({
   }, [viewMode, currentPageIndex, pageNumbers]);
 
   function updateReaderUrl(paragraphId?: number | null) {
-    router.replace(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined), { scroll: false });
+    router.replace(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined, projectId ?? undefined), { scroll: false });
   }
 
   function goToPage(pageNo: number) {
@@ -450,6 +454,39 @@ export default function PaperReaderScreen({
     }
   }
 
+  async function handleAddEvidenceToProject() {
+    if (!projectId) {
+      return;
+    }
+
+    const paragraphId = activeParagraphId ?? selection?.paragraphId ?? null;
+    const excerpt = (selectedQuoteForAnnotation || selection?.text || activeParagraph?.text || "").trim();
+
+    if (!paragraphId || !excerpt) {
+      setLocatorError("请先选中文本，或先激活一个段落。");
+      return;
+    }
+
+    setProjectEvidenceSaving(true);
+    setLocatorError("");
+    try {
+      await createProjectEvidence(projectId, {
+        paper_id: paperId,
+        paragraph_id: paragraphId,
+        kind: "claim",
+        excerpt,
+        note_text: annotationDraft.trim(),
+        source_label: activeParagraph ? `Reader paragraph p.${activeParagraph.page_no}` : "Reader selection",
+      });
+      setNotice("已加入当前项目证据板。");
+      setAnnotationDraft("");
+    } catch (projectError) {
+      setLocatorError((projectError as Error).message || "加入项目证据板失败，请稍后重试。");
+    } finally {
+      setProjectEvidenceSaving(false);
+    }
+  }
+
   function handleLocateParagraph() {
     const query = locatorQuery.trim();
     if (!query || !reader) {
@@ -527,15 +564,21 @@ export default function PaperReaderScreen({
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button className={viewMode === "page" ? "" : "secondary"} type="button" onClick={() => setViewMode("page")}>
+            {projectId ? (
+              <Button className="secondary" type="button" data-testid="reader-return-project" onClick={() => router.push(projectPath(projectId))}>
+                返回项目工作台
+              </Button>
+            ) : null}
+            <Button className={viewMode === "page" ? "" : "secondary"} type="button" data-testid="reader-mode-page" onClick={() => setViewMode("page")}>
               原版页面
             </Button>
-            <Button className={viewMode === "text" ? "" : "secondary"} type="button" onClick={() => setViewMode("text")}>
+            <Button className={viewMode === "text" ? "" : "secondary"} type="button" data-testid="reader-mode-text" onClick={() => setViewMode("text")}>
               辅助文本
             </Button>
             <Button
               className={viewMode === "workspace" ? "" : "secondary"}
               type="button"
+              data-testid="reader-mode-workspace"
               onClick={() => setViewMode("workspace")}
             >
               论文工作区
@@ -730,7 +773,7 @@ export default function PaperReaderScreen({
         <Card>
           {currentPageParagraphs.length > 0 ? (
             <div className="paper-reader-text-shell">
-              <div ref={articleRef} className="paper-reader-text-article" onMouseUp={captureSelection} onKeyUp={captureSelection}>
+              <div ref={articleRef} className="paper-reader-text-article" data-testid="reader-text-article" onMouseUp={captureSelection} onKeyUp={captureSelection}>
                 <div className="paper-reader-text-meta">
                   第 {effectivePageNo} 页 · 当前为辅助文本模式，可选词翻译、搜索定位与记录批注
                 </div>
@@ -809,6 +852,20 @@ export default function PaperReaderScreen({
                     </Button>
                   </div>
 
+                  {projectId ? (
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <Button
+                        className="secondary"
+                        type="button"
+                        data-testid="reader-add-project-evidence"
+                        onClick={() => void handleAddEvidenceToProject()}
+                        disabled={projectEvidenceSaving}
+                      >
+                        {projectEvidenceSaving ? "加入项目中..." : "加入当前项目证据板"}
+                      </Button>
+                    </div>
+                  ) : null}
+
                   {currentPageAnnotations.length > 0 ? (
                     <div className="paper-reader-annotation-list">
                       {currentPageAnnotations.map((item: PaperAnnotation) => (
@@ -847,6 +904,7 @@ export default function PaperReaderScreen({
           initialWorkspace={reader}
           onWorkspaceChanged={loadReader}
           showPaperHeader={false}
+          projectId={projectId}
         />
       ) : null}
 
@@ -858,6 +916,19 @@ export default function PaperReaderScreen({
           onClick={() => void handleTranslateSelection()}
         >
           {translationLoading ? "翻译中..." : "英译中"}
+        </button>
+      ) : null}
+
+      {selection && viewMode === "text" && projectId ? (
+        <button
+          type="button"
+          className="reader-selection-toolbar reader-selection-toolbar-secondary"
+          data-testid="reader-add-project-evidence-selection"
+          style={{ top: selection.top + 44, left: selection.left }}
+          onClick={() => void handleAddEvidenceToProject()}
+          disabled={projectEvidenceSaving}
+        >
+          {projectEvidenceSaving ? "加入中..." : "加入当前项目证据板"}
         </button>
       ) : null}
 

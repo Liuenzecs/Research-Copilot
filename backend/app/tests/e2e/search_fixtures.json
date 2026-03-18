@@ -1,0 +1,32 @@
+[
+  {
+    "source": "arxiv",
+    "source_id": "e2e-retrieval-study",
+    "title_en": "E2E Retrieval Study for Evidence Synthesis",
+    "abstract_en": "This paper studies retrieval-augmented evidence synthesis for long context literature review agents. We compare datasets, metrics, and evidence extraction behavior.",
+    "authors": "A. Researcher, B. Analyst",
+    "year": 2025,
+    "venue": "arXiv",
+    "pdf_url": "https://arxiv.org/pdf/e2e-retrieval-study.pdf"
+  },
+  {
+    "source": "arxiv",
+    "source_id": "e2e-long-context-benchmark",
+    "title_en": "E2E Long Context Benchmark for Literature Agents",
+    "abstract_en": "We benchmark long context methods for agentic literature review with explicit evidence boards, comparison tables, and reproducibility notes.",
+    "authors": "C. Scientist, D. Engineer",
+    "year": 2024,
+    "venue": "arXiv",
+    "pdf_url": "https://arxiv.org/pdf/e2e-long-context-benchmark.pdf"
+  },
+  {
+    "source": "arxiv",
+    "source_id": "hidden-control-paper",
+    "title_en": "Hidden Control Paper for Unrelated Vision Tasks",
+    "abstract_en": "This control paper focuses on unrelated vision experiments and should stay outside the project-scoped views during E2E checks.",
+    "authors": "E. Baseline",
+    "year": 2023,
+    "venue": "arXiv",
+    "pdf_url": "https://arxiv.org/pdf/hidden-control-paper.pdf"
+  }
+]

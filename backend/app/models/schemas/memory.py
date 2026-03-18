@@ -13,6 +13,7 @@ class MemoryQueryRequest(BaseModel):
     memory_types: list[str] = Field(default_factory=list)
     layers: list[str] = Field(default_factory=list)
     top_k: int = 10
+    project_id: int | None = None
 
 
 class MemoryOut(BaseModel):

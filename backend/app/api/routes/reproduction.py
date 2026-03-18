@@ -27,6 +27,7 @@ from app.models.schemas.reproduction import (
     ReproductionUpdateRequest,
 )
 from app.services.memory.service import memory_service
+from app.services.project.scopes import get_project_scope_ids
 from app.services.reflection.service import reflection_service
 from app.services.reproduction.executor import reproduction_executor
 from app.services.reproduction.log_analyzer import analyze_log
@@ -203,10 +204,16 @@ def _build_plan_context(paper: PaperRecord | None, repo: RepoRecord | None) -> s
 def list_reproductions(
     paper_id: int | None = None,
     repo_id: int | None = None,
+    project_id: int | None = None,
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> list[ReproductionListItemOut]:
     stmt = select(ReproductionRecord)
+    if project_id is not None:
+        scope = get_project_scope_ids(db, project_id)
+        if not scope.paper_ids:
+            return []
+        stmt = stmt.where(ReproductionRecord.paper_id.in_(scope.paper_ids))
     if paper_id is not None:
         stmt = stmt.where(ReproductionRecord.paper_id == paper_id)
     if repo_id is not None:

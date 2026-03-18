@@ -1,4 +1,8 @@
-﻿from fastapi import FastAPI
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
@@ -7,6 +11,7 @@ from app.api.routes import (
     library,
     memory,
     papers,
+    projects,
     reflections,
     reports,
     reproduction,
@@ -18,11 +23,24 @@ from app.api.routes import (
 )
 from app.core.logging import setup_logging
 from app.db.init_db import initialize_database
+from app.db.session import SessionLocal
+from app.services.project.runtime import project_task_runtime
+from app.services.project.service import project_service
+
 
 setup_logging()
-initialize_database()
 
-app = FastAPI(title='Research Copilot API', version='0.1.0')
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    initialize_database()
+    with SessionLocal() as db:
+        project_service.mark_interrupted_project_tasks_failed(db)
+    yield
+    await project_task_runtime.shutdown()
+
+
+app = FastAPI(title='Research Copilot API', version='0.1.0', lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +51,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(papers.router)
+app.include_router(projects.router)
 app.include_router(summaries.router)
 app.include_router(translation.router)
 app.include_router(brainstorm.router)

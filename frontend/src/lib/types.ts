@@ -79,6 +79,149 @@ export type PaperWorkspace = {
   recent_tasks: Task[];
 };
 
+export type ResearchProject = {
+  id: number;
+  title: string;
+  research_question: string;
+  goal: string;
+  status: 'active' | 'paused' | 'archived' | string;
+  seed_query: string;
+  last_opened_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchProjectPaper = {
+  id: number;
+  project_id: number;
+  paper: Paper;
+  sort_order: number;
+  pinned: boolean;
+  selection_reason: string;
+  is_downloaded: boolean;
+  summary_count: number;
+  reflection_count: number;
+  reproduction_count: number;
+  latest_summary_id?: number | null;
+  latest_reflection_id?: number | null;
+  latest_reproduction_id?: number | null;
+  latest_reproduction_status?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchProjectEvidenceItem = {
+  id: number;
+  project_id: number;
+  paper_id?: number | null;
+  paper_title?: string | null;
+  summary_id?: number | null;
+  paragraph_id?: number | null;
+  kind: 'claim' | 'method' | 'result' | 'limitation' | 'question' | string;
+  excerpt: string;
+  note_text: string;
+  source_label: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchProjectOutput = {
+  id: number;
+  project_id: number;
+  output_type: 'compare_table' | 'literature_review' | string;
+  title: string;
+  content_json: Record<string, unknown>;
+  content_markdown: string;
+  status: 'draft' | 'finalized' | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchProjectTaskProgressStep = {
+  step_key: string;
+  label: string;
+  status: string;
+  message: string;
+  related_paper_ids: number[];
+  created_at?: string | null;
+};
+
+export type ResearchProjectTask = {
+  id: number;
+  task_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  progress_steps: ResearchProjectTaskProgressStep[];
+};
+
+export type ResearchProjectTaskDetail = ResearchProjectTask & {
+  input_json: Record<string, unknown>;
+  output_json: Record<string, unknown>;
+  error_log: string;
+};
+
+export type ProjectActionLaunchResponse = {
+  task: ResearchProjectTaskDetail;
+  detail_url: string;
+  stream_url: string;
+};
+
+export type ResearchProjectTaskEvent = {
+  type: 'task_started' | 'progress' | 'heartbeat' | 'task_completed' | 'task_failed' | 'workspace_refreshed';
+  task_id?: number;
+  event_id?: number;
+  task?: ResearchProjectTaskDetail;
+  step?: ResearchProjectTaskProgressStep;
+  workspace?: ResearchProjectWorkspace;
+  message?: string;
+};
+
+export type AutoSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+
+export type LinkedSummaryArtifact = {
+  id: number;
+  summary_type: string;
+  provider?: string;
+  model?: string;
+  created_at: string;
+};
+
+export type LinkedReflectionArtifact = {
+  id: number;
+  stage: string;
+  lifecycle_status: string;
+  report_summary: string;
+  event_date?: string | null;
+  created_at: string;
+};
+
+export type LinkedReproductionArtifact = {
+  id: number;
+  status: string;
+  progress_summary: string;
+  progress_percent?: number | null;
+  updated_at: string;
+};
+
+export type ResearchProjectLinkedArtifacts = {
+  paper_id: number;
+  paper_title: string;
+  summaries: LinkedSummaryArtifact[];
+  reflections: LinkedReflectionArtifact[];
+  reproductions: LinkedReproductionArtifact[];
+};
+
+export type ResearchProjectWorkspace = {
+  project: ResearchProject;
+  papers: ResearchProjectPaper[];
+  evidence_items: ResearchProjectEvidenceItem[];
+  outputs: ResearchProjectOutput[];
+  recent_tasks: ResearchProjectTask[];
+  linked_existing_artifacts: ResearchProjectLinkedArtifacts[];
+};
+
 export type PaperReaderParagraph = {
   paragraph_id: number;
   text: string;

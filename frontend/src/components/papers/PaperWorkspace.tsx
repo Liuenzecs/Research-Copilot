@@ -24,6 +24,7 @@ import {
   reproInterestLabel,
   REPRO_INTEREST_OPTIONS,
 } from '@/lib/researchState';
+import { reflectionsPath, reproductionPath } from '@/lib/routes';
 import { PaperWorkspace as PaperWorkspaceData } from '@/lib/types';
 
 type WorthReproducing = 'yes' | 'maybe' | 'no';
@@ -100,6 +101,7 @@ type PaperWorkspaceViewProps = {
   initialWorkspace?: PaperWorkspaceData | null;
   onWorkspaceChanged?: () => Promise<void> | void;
   showPaperHeader?: boolean;
+  projectId?: number | null;
 };
 
 export default function PaperWorkspaceView({
@@ -108,6 +110,7 @@ export default function PaperWorkspaceView({
   initialWorkspace = null,
   onWorkspaceChanged,
   showPaperHeader = true,
+  projectId = null,
 }: PaperWorkspaceViewProps) {
   const router = useRouter();
   const [workspace, setWorkspace] = useState<PaperWorkspaceData | null>(initialWorkspace);
@@ -135,6 +138,7 @@ export default function PaperWorkspaceView({
   const [lastPrefillKey, setLastPrefillKey] = useState('');
   const [appliedRequestedSummaryKey, setAppliedRequestedSummaryKey] = useState('');
   const [streamingSummary, setStreamingSummary] = useState<{ type: 'quick' | 'deep'; content: string } | null>(null);
+  const [lastCreatedReflectionId, setLastCreatedReflectionId] = useState<number | null>(null);
 
   const summaries = workspace?.summaries ?? [];
   const effectiveSummarySelection: Exclude<SummarySelection, 'auto'> =
@@ -195,6 +199,10 @@ export default function PaperWorkspaceView({
 
     void reload();
   }, [initialWorkspace, paperId]);
+
+  useEffect(() => {
+    setLastCreatedReflectionId(null);
+  }, [paperId]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -357,8 +365,11 @@ export default function PaperWorkspaceView({
       >
         {busy === 'memory' ? '处理中...' : '推送到记忆'}
       </Button>
-      <Button className="secondary" type="button" onClick={() => router.push(`/reproduction?paper_id=${currentPaper.id}`)}>
+      <Button className="secondary" type="button" onClick={() => router.push(reproductionPath({ paperId: currentPaper.id, projectId }))}>
         进入复现工作区
+      </Button>
+      <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+        查看这篇论文的心得
       </Button>
     </div>
   );
@@ -371,6 +382,25 @@ export default function PaperWorkspaceView({
           ...(notice ? [{ variant: 'success' as const, message: notice }] : []),
         ]}
       />
+
+      {lastCreatedReflectionId ? (
+        <div className="card">
+          <h4 className="title" style={{ fontSize: 16 }}>
+            刚保存的论文心得
+          </h4>
+          <p className="subtle" style={{ marginTop: 4 }}>
+            已同步到“研究心得”页，也会出现在下方的关联记录里。
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <Button type="button" onClick={() => router.push(reflectionsPath({ reflectionId: lastCreatedReflectionId, paperId: currentPaper.id, projectId }))}>
+              查看刚保存的心得
+            </Button>
+            <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+              查看这篇论文的所有心得
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {showPaperHeader ? (
         <div className="card">
@@ -577,7 +607,7 @@ export default function PaperWorkspaceView({
                     reflectionDraft.freeNotes ? `## Free Notes\n${reflectionDraft.freeNotes}` : '',
                   ].filter(Boolean);
 
-                  await createPaperReflection(currentPaper.id, {
+                  const createdReflection = await createPaperReflection(currentPaper.id, {
                     summary_id: selectedSummaryValue,
                     stage: readingStatus,
                     lifecycle_status: 'draft',
@@ -597,8 +627,9 @@ export default function PaperWorkspaceView({
                     is_report_worthy: reportWorthy,
                     report_summary: reflectionDraft.reportSummary,
                   });
+                  setLastCreatedReflectionId(createdReflection.id);
                   setReflectionDirty(false);
-                  setNotice('论文心得已创建（草稿，可继续编辑）。');
+                  setNotice('论文心得已保存；可以直接打开“研究心得”页继续查看。');
                 })
               }
             >
@@ -614,6 +645,14 @@ export default function PaperWorkspaceView({
         </h4>
         <p className="subtle">心得 {workspace.reflections.length} 条 · 最近任务 {workspace.recent_tasks.length} 条</p>
 
+        <p className="subtle" style={{ marginTop: 4 }}>
+          这里只显示最近 5 条心得；完整记录可以在“研究心得”页里按当前论文筛选查看。
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, marginBottom: 10 }}>
+          <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+            查看这篇论文的全部心得
+          </Button>
+        </div>
         <div style={{ display: 'grid', gap: 8 }}>
           {workspace.reflections.slice(0, 5).map((item) => (
             <div key={item.id} className="reader-meta-card">

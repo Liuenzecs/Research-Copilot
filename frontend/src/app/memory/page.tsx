@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -9,10 +10,21 @@ import StatusStack from '@/components/common/StatusStack';
 import MemoryGraph from '@/components/memory/MemoryGraph';
 import MemoryList from '@/components/memory/MemoryList';
 import ProfilePanel from '@/components/memory/ProfilePanel';
-import { listMemories, queryMemory } from '@/lib/api';
+import { getProject, listMemories, queryMemory } from '@/lib/api';
+import { projectPath } from '@/lib/routes';
 import { MemoryItem } from '@/lib/types';
 
-export default function MemoryPage() {
+function parsePositiveInt(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function MemoryPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = parsePositiveInt(searchParams.get('project_id'));
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [memoryType, setMemoryType] = useState('');
@@ -22,6 +34,18 @@ export default function MemoryPage() {
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'recent' | 'search'>('recent');
+
+  useEffect(() => {
+    if (!projectId) return;
+    void (async () => {
+      try {
+        const project = await getProject(projectId);
+        setQuery((current) => current || project.research_question);
+      } catch {
+        // Ignore prefill failures.
+      }
+    })();
+  }, [projectId]);
 
   async function loadRecentMemories() {
     setLoading(true);
@@ -33,6 +57,7 @@ export default function MemoryPage() {
         limit: 12,
         memory_types: memoryType ? [memoryType] : [],
         layers: layer ? [layer] : [],
+        project_id: projectId || undefined,
       });
       setItems(payload);
       setViewMode('recent');
@@ -70,6 +95,7 @@ export default function MemoryPage() {
         top_k: 10,
         memory_types: memoryType ? [memoryType] : [],
         layers: layer ? [layer] : [],
+        project_id: projectId || undefined,
       });
       setItems(payload);
       setViewMode('search');
@@ -90,6 +116,14 @@ export default function MemoryPage() {
       <Card>
         <h2 className="title">长期记忆</h2>
         <p className="subtle">先看最近写入的记忆，再按问题检索历史研究内容，并精确回跳到论文、复现或心得上下文。</p>
+        {projectId ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <span className="subtle">当前为项目上下文记忆视图</span>
+            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
+              返回项目工作台
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 8 }}>
@@ -151,5 +185,13 @@ export default function MemoryPage() {
       <MemoryGraph />
       <ProfilePanel />
     </>
+  );
+}
+
+export default function MemoryPage() {
+  return (
+    <Suspense fallback={<Loading text="加载记忆页面..." />}>
+      <MemoryPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -11,6 +11,7 @@ import ReflectionEditor from '@/components/reflections/ReflectionEditor';
 import ReflectionTimeline from '@/components/reflections/ReflectionTimeline';
 import { getReflection, listReflections } from '@/lib/api';
 import { reflectionLifecycleLabel } from '@/lib/presentation';
+import { projectPath } from '@/lib/routes';
 import { Reflection } from '@/lib/types';
 
 type PresetKey = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'last_30_days' | 'all' | 'custom';
@@ -68,8 +69,11 @@ function parsePositiveInt(value: string | null): number | null {
 }
 
 function ReflectionsPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedReflectionId = parsePositiveInt(searchParams.get('reflection_id'));
+  const requestedPaperId = parsePositiveInt(searchParams.get('paper_id'));
+  const projectId = parsePositiveInt(searchParams.get('project_id'));
   const initialWeek = useMemo(() => getPresetRange('this_week'), []);
 
   const [items, setItems] = useState<Reflection[]>([]);
@@ -84,6 +88,7 @@ function ReflectionsPageContent() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [highlightedReflectionId, setHighlightedReflectionId] = useState<number | null>(null);
+  const [showComposer, setShowComposer] = useState(() => !requestedReflectionId);
 
   const summary = useMemo(
     () => ({
@@ -115,6 +120,8 @@ function ReflectionsPageContent() {
         is_report_worthy: reportWorthyFilter === 'only' ? true : undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        project_id: projectId || undefined,
+        related_paper_id: requestedPaperId || undefined,
       });
 
       let nextItems = rows as Reflection[];
@@ -133,6 +140,10 @@ function ReflectionsPageContent() {
         }
       }
 
+      if (!requestedReflectionId && requestedPaperId) {
+        setNotice('已切换到当前论文的心得视图。');
+      }
+
       setItems(nextItems);
     } catch (reloadError) {
       setError((reloadError as Error).message);
@@ -143,13 +154,38 @@ function ReflectionsPageContent() {
 
   useEffect(() => {
     void reload();
-  }, [dateFrom, dateTo, reflectionType, reportWorthyFilter, requestedReflectionId, status]);
+  }, [dateFrom, dateTo, reflectionType, reportWorthyFilter, requestedPaperId, requestedReflectionId, status]);
+
+  useEffect(() => {
+    setShowComposer(!requestedReflectionId);
+  }, [requestedReflectionId]);
 
   return (
     <>
       <Card>
         <h2 className="title">研究心得</h2>
         <p className="subtle">按周节奏查看论文心得和复现心得，保留时间线回顾与深链定位能力。</p>
+        {requestedPaperId ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <span className="subtle">当前仅显示论文 #{requestedPaperId} 的心得</span>
+            <Button className="secondary" type="button" onClick={() => router.push('/reflections')}>
+              查看全部心得
+            </Button>
+            {projectId ? (
+              <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
+                返回项目工作台
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {!requestedPaperId && projectId ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <span className="subtle">当前为项目上下文心得视图</span>
+            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
+              返回项目工作台
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 10 }}>
@@ -228,9 +264,28 @@ function ReflectionsPageContent() {
         ]}
       />
 
-      <ReflectionEditor onCreated={reload} />
       {loading ? <Loading text="加载心得时间线..." /> : null}
-      <ReflectionTimeline reflections={items} highlightedReflectionId={highlightedReflectionId} />
+      <ReflectionTimeline reflections={items} highlightedReflectionId={highlightedReflectionId} projectId={projectId} />
+
+      <Card>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <h3 className="title" style={{ fontSize: 16, margin: 0 }}>
+              新建研究心得
+            </h3>
+            <p className="subtle" style={{ margin: '6px 0 0' }}>
+              {requestedReflectionId
+                ? '当前是从记忆或深链定位到已有心得，默认先展示该心得内容。'
+                : '在这里补充新的论文心得或复现心得。'}
+            </p>
+          </div>
+          <Button className="secondary" type="button" onClick={() => setShowComposer((previous) => !previous)}>
+            {showComposer ? '收起新建表单' : '展开新建表单'}
+          </Button>
+        </div>
+      </Card>
+
+      {showComposer ? <ReflectionEditor onCreated={reload} /> : null}
     </>
   );
 }

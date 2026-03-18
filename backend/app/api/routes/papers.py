@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from app.models.schemas.paper import (
     PaperWorkspaceResponse,
 )
 from app.services.paper_search.arxiv import ArxivSearchService
+from app.services.paper_search.base import SearchPaper
 from app.services.paper_search.normalizer import dedupe_and_rank
 from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
@@ -41,6 +43,51 @@ from app.services.workflow.service import workflow_service
 router = APIRouter(prefix='/papers', tags=['papers'])
 
 arxiv_service = ArxivSearchService()
+
+
+def load_search_fixtures(query: str, limit: int) -> list[SearchPaper] | None:
+    fixture_path = (os.getenv('RESEARCH_COPILOT_SEARCH_FIXTURE_PATH') or '').strip()
+    if not fixture_path:
+        return None
+
+    path = Path(fixture_path)
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    if not path.exists():
+        return None
+
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    raw_items = payload if isinstance(payload, list) else payload.get('items', [])
+    if not isinstance(raw_items, list):
+        return None
+
+    ranked_items: list[tuple[int, int, SearchPaper]] = []
+    tokens = [token for token in query.lower().split() if token]
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        paper = SearchPaper(
+            source=str(item.get('source') or 'fixture'),
+            source_id=str(item.get('source_id') or ''),
+            title_en=str(item.get('title_en') or ''),
+            abstract_en=str(item.get('abstract_en') or ''),
+            authors=str(item.get('authors') or ''),
+            year=int(item['year']) if item.get('year') is not None else None,
+            venue=str(item.get('venue') or ''),
+            pdf_url=str(item.get('pdf_url') or ''),
+        )
+        haystack = ' '.join([paper.title_en, paper.abstract_en, paper.authors, paper.venue]).lower()
+        score = sum(1 for token in tokens if token in haystack)
+        if tokens and score == 0:
+            continue
+        ranked_items.append((score, paper.year or 0, paper))
+
+    ranked_items.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+    return [item[2] for item in ranked_items[:limit]]
 
 
 def to_paper_out(p: PaperRecord) -> PaperOut:
@@ -284,10 +331,15 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
     errors: list[str] = []
     effective_sources = ['arxiv']
 
-    try:
-        papers.extend(await arxiv_service.search(payload.query, payload.limit))
-    except Exception as exc:
-        errors.append(format_search_error('arxiv', exc))
+    fixture_papers = load_search_fixtures(payload.query, payload.limit)
+    if fixture_papers is not None:
+        papers.extend(fixture_papers)
+        effective_sources = ['fixture']
+    else:
+        try:
+            papers.extend(await arxiv_service.search(payload.query, payload.limit))
+        except Exception as exc:
+            errors.append(format_search_error('arxiv', exc))
 
     unified = dedupe_and_rank(papers, payload.limit, payload.query)
     stored = [upsert_paper(db, p) for p in unified]

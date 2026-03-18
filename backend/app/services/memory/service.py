@@ -13,11 +13,12 @@ from app.models.db.summary_record import SummaryRecord
 from app.services.memory.linker import memory_linker
 from app.services.memory.ranker import rank_memories
 from app.services.memory.retriever import memory_retriever
+from app.services.project.scopes import append_project_id, get_project_scope_ids, ref_belongs_to_project
 from app.services.rag.ingestor import ingest_memory
 
 
 class MemoryService:
-    def _resolve_jump_target(self, db: Session, ref_table: str, ref_id: int | None) -> dict | None:
+    def _resolve_jump_target(self, db: Session, ref_table: str, ref_id: int | None, project_id: int | None = None) -> dict | None:
         if not ref_id:
             return None
 
@@ -25,31 +26,31 @@ class MemoryService:
             paper = db.get(PaperRecord, ref_id)
             if paper is None:
                 return None
-            return {'kind': 'paper', 'path': f'/search?paper_id={paper.id}'}
+            return {'kind': 'paper', 'path': append_project_id(f'/search?paper_id={paper.id}', project_id)}
 
         if ref_table == 'summaries':
             summary = db.get(SummaryRecord, ref_id)
             if summary is None:
                 return None
-            return {'kind': 'paper', 'path': f'/search?paper_id={summary.paper_id}&summary_id={summary.id}'}
+            return {'kind': 'paper', 'path': append_project_id(f'/search?paper_id={summary.paper_id}&summary_id={summary.id}', project_id)}
 
         if ref_table == 'reproductions':
             reproduction = db.get(ReproductionRecord, ref_id)
             if reproduction is None:
                 return None
-            return {'kind': 'reproduction', 'path': f'/reproduction?reproduction_id={reproduction.id}'}
+            return {'kind': 'reproduction', 'path': append_project_id(f'/reproduction?reproduction_id={reproduction.id}', project_id)}
 
         if ref_table == 'reflections':
             reflection = db.get(ReflectionRecord, ref_id)
             if reflection is None:
                 return None
-            return {'kind': 'reflection', 'path': f'/reflections?reflection_id={reflection.id}'}
+            return {'kind': 'reflection', 'path': append_project_id(f'/reflections?reflection_id={reflection.id}', project_id)}
 
         if ref_table == 'repos':
             repo = db.get(RepoRecord, ref_id)
             if repo is None or repo.paper_id is None:
                 return None
-            return {'kind': 'reproduction', 'path': f'/reproduction?paper_id={repo.paper_id}'}
+            return {'kind': 'reproduction', 'path': append_project_id(f'/reproduction?paper_id={repo.paper_id}', project_id)}
 
         if ref_table == 'ideas':
             idea = db.get(IdeaRecord, ref_id)
@@ -76,9 +77,9 @@ class MemoryService:
             return '关联灵感记录，建议回到灵感页面继续扩展'
         return None
 
-    def _attach_presentation_fields(self, db: Session, row: dict) -> dict:
+    def _attach_presentation_fields(self, db: Session, row: dict, project_id: int | None = None) -> dict:
         payload = dict(row)
-        jump_target = self._resolve_jump_target(db, payload.get('ref_table', ''), payload.get('ref_id'))
+        jump_target = self._resolve_jump_target(db, payload.get('ref_table', ''), payload.get('ref_id'), project_id=project_id)
         retrieval_mode = payload.get('retrieval_mode') or 'fallback'
         payload['jump_target'] = jump_target
         payload['retrieval_mode'] = retrieval_mode
@@ -89,6 +90,12 @@ class MemoryService:
         )
         payload['context_hint'] = self._resolve_context_hint(payload.get('ref_table', ''), jump_target)
         return payload
+
+    def _filter_project_rows(self, db: Session, rows: list[dict], project_id: int | None) -> list[dict]:
+        if project_id is None:
+            return rows
+        scope = get_project_scope_ids(db, project_id)
+        return [row for row in rows if ref_belongs_to_project(scope, str(row.get('ref_table', '')), row.get('ref_id'))]
 
     def create_memory(
         self,
@@ -116,12 +123,28 @@ class MemoryService:
         ingest_memory(item.id, text_content, {'memory_item_id': item.id, 'memory_type': memory_type, 'layer': layer})
         return item
 
-    def query(self, db: Session, query: str, top_k: int, memory_types: list[str], layers: list[str]) -> list[dict]:
+    def query(
+        self,
+        db: Session,
+        query: str,
+        top_k: int,
+        memory_types: list[str],
+        layers: list[str],
+        project_id: int | None = None,
+    ) -> list[dict]:
         rows = memory_retriever.retrieve(db, query, top_k=top_k, memory_types=memory_types, layers=layers)
         ranked_rows = rank_memories(rows)
-        return [self._attach_presentation_fields(db, row) for row in ranked_rows]
+        filtered_rows = self._filter_project_rows(db, ranked_rows, project_id)
+        return [self._attach_presentation_fields(db, row, project_id=project_id) for row in filtered_rows[:top_k]]
 
-    def list_recent(self, db: Session, limit: int, memory_types: list[str], layers: list[str]) -> list[dict]:
+    def list_recent(
+        self,
+        db: Session,
+        limit: int,
+        memory_types: list[str],
+        layers: list[str],
+        project_id: int | None = None,
+    ) -> list[dict]:
         stmt = select(MemoryItemRecord).where(MemoryItemRecord.archived.is_(False))
         if memory_types:
             stmt = stmt.where(MemoryItemRecord.memory_type.in_(memory_types))
@@ -151,7 +174,8 @@ class MemoryService:
                     'match_reason': '当前展示的是最近写入的长期记忆，方便你快速确认记忆是否已保存。',
                 }
             )
-        return [self._attach_presentation_fields(db, row) for row in payloads]
+        filtered_rows = self._filter_project_rows(db, payloads, project_id)
+        return [self._attach_presentation_fields(db, row, project_id=project_id) for row in filtered_rows[:limit]]
 
     def link(self, db: Session, from_memory_id: int, to_memory_id: int, link_type: str, weight: float):
         return memory_linker.link(db, from_memory_id, to_memory_id, link_type, weight)

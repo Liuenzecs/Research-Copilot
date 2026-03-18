@@ -15,6 +15,7 @@ def list_memory(
     limit: int = Query(default=12, ge=1, le=100),
     memory_types: list[str] | None = Query(default=None),
     layers: list[str] | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[MemoryOut]:
     rows = memory_service.list_recent(
@@ -22,6 +23,7 @@ def list_memory(
         limit=limit,
         memory_types=memory_types or [],
         layers=layers or [],
+        project_id=project_id,
     )
     return [MemoryOut(**row) for row in rows]
 
@@ -34,6 +36,7 @@ def memory_query(payload: MemoryQueryRequest, db: Session = Depends(get_db)) -> 
         top_k=payload.top_k,
         memory_types=payload.memory_types,
         layers=payload.layers,
+        project_id=payload.project_id,
     )
     return [MemoryOut(**row) for row in rows]
 

@@ -6,6 +6,14 @@ import {
   Paper,
   PaperReader,
   PaperWorkspace,
+  ProjectActionLaunchResponse,
+  ResearchProject,
+  ResearchProjectEvidenceItem,
+  ResearchProjectOutput,
+  ResearchProjectPaper,
+  ResearchProjectTaskDetail,
+  ResearchProjectTaskEvent,
+  ResearchProjectWorkspace,
   ProviderSettings,
   Reflection,
   ReproductionDetail,
@@ -46,6 +54,71 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function streamNdjson(
+  path: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    signal?: AbortSignal;
+    onEvent: (event: Record<string, unknown>) => void;
+  },
+) {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      cache: 'no-store',
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return;
+    }
+    const message = error instanceof Error ? error.message : '鏈煡缃戠粶閿欒';
+    throw new Error(`鏃犳硶杩炴帴鍚庣鏈嶅姟锛?{API_BASE}銆傚師濮嬮敊璇細${message}`);
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`API error ${response.status}: ${message}`);
+  }
+
+  if (!response.body) {
+    throw new Error('当前浏览器未返回可读取的流式响应。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let newlineIndex = buffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line) {
+        options.onEvent(JSON.parse(line) as Record<string, unknown>);
+      }
+      newlineIndex = buffer.indexOf('\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    options.onEvent(JSON.parse(buffer.trim()) as Record<string, unknown>);
+  }
 }
 
 async function requestStream<T>(
@@ -338,12 +411,203 @@ export async function listLibrary() {
   return request<{ items: LibraryItem[]; total: number }>('/library/list');
 }
 
+export async function createProject(payload: {
+  research_question: string;
+  goal?: string;
+  title?: string;
+  seed_query?: string;
+}) {
+  return request<ResearchProject>('/projects', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listProjects() {
+  return request<ResearchProject[]>('/projects');
+}
+
+export async function getProject(projectId: number) {
+  return request<ResearchProject>(`/projects/${projectId}`);
+}
+
+export async function updateProject(
+  projectId: number,
+  payload: {
+    title?: string;
+    research_question?: string;
+    goal?: string;
+    status?: string;
+    seed_query?: string;
+  },
+) {
+  return request<ResearchProject>(`/projects/${projectId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjectWorkspace(projectId: number) {
+  return request<ResearchProjectWorkspace>(`/projects/${projectId}/workspace`);
+}
+
+export async function addProjectPaper(
+  projectId: number,
+  payload: {
+    paper_id: number;
+    selection_reason?: string;
+  },
+) {
+  return request<ResearchProjectPaper>(`/projects/${projectId}/papers`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function removeProjectPaper(projectId: number, projectPaperId: number) {
+  return request<void>(`/projects/${projectId}/papers/${projectPaperId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function createProjectEvidence(
+  projectId: number,
+  payload: {
+    paper_id?: number | null;
+    summary_id?: number | null;
+    paragraph_id?: number | null;
+    kind?: string;
+    excerpt: string;
+    note_text?: string;
+    source_label?: string;
+    sort_order?: number | null;
+  },
+) {
+  return request<ResearchProjectEvidenceItem>(`/projects/${projectId}/evidence`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProjectEvidence(
+  projectId: number,
+  evidenceId: number,
+  payload: {
+    kind?: string;
+    excerpt?: string;
+    note_text?: string;
+    source_label?: string;
+    sort_order?: number;
+  },
+) {
+  return request<ResearchProjectEvidenceItem>(`/projects/${projectId}/evidence/${evidenceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProjectEvidence(projectId: number, evidenceId: number) {
+  return request<void>(`/projects/${projectId}/evidence/${evidenceId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function reorderProjectEvidence(projectId: number, evidenceIds: number[]) {
+  return request<{ items: ResearchProjectEvidenceItem[] }>(`/projects/${projectId}/evidence/reorder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ evidence_ids: evidenceIds }),
+  });
+}
+
+export async function updateProjectOutput(
+  projectId: number,
+  outputId: number,
+  payload: {
+    title?: string;
+    content_json?: Record<string, unknown>;
+    content_markdown?: string;
+    status?: string;
+  },
+) {
+  return request<ResearchProjectOutput>(`/projects/${projectId}/outputs/${outputId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function extractProjectEvidence(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/extract-evidence`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function generateProjectCompareTable(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/generate-compare-table`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function draftProjectLiteratureReview(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/draft-literature-review`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function getProjectTask(projectId: number, taskId: number) {
+  return request<ResearchProjectTaskDetail>(`/projects/${projectId}/tasks/${taskId}`);
+}
+
+export async function streamProjectTask(
+  projectId: number,
+  taskId: number,
+  options: {
+    signal?: AbortSignal;
+    onEvent: (event: ResearchProjectTaskEvent) => void;
+  },
+) {
+  return streamNdjson(`/projects/${projectId}/tasks/${taskId}/stream`, {
+    signal: options.signal,
+    onEvent: (event) => options.onEvent(event as ResearchProjectTaskEvent),
+  });
+}
+
 export async function listReflections(params?: {
   reflection_type?: string;
   lifecycle_status?: string;
   is_report_worthy?: boolean;
   date_from?: string;
   date_to?: string;
+  project_id?: number;
   related_paper_id?: number;
   related_summary_id?: number;
   related_repo_id?: number;
@@ -394,7 +658,7 @@ export async function findRepos(payload: { paper_id?: number; query?: string }) 
   });
 }
 
-export async function listReproductions(params?: { paper_id?: number; repo_id?: number; limit?: number }) {
+export async function listReproductions(params?: { paper_id?: number; repo_id?: number; project_id?: number; limit?: number }) {
   return request<ReproductionListItem[]>(`/reproduction${qs(params ?? {})}`);
 }
 
@@ -477,7 +741,7 @@ export async function updateWeeklyReportDraft(id: number, payload: { draft_markd
   });
 }
 
-export async function queryMemory(params: { query: string; top_k?: number; memory_types?: string[]; layers?: string[] }) {
+export async function queryMemory(params: { query: string; top_k?: number; memory_types?: string[]; layers?: string[]; project_id?: number }) {
   return request<MemoryItem[]>('/memory/query', {
     method: 'POST',
     body: JSON.stringify({
@@ -485,14 +749,18 @@ export async function queryMemory(params: { query: string; top_k?: number; memor
       top_k: params.top_k ?? 10,
       memory_types: params.memory_types ?? [],
       layers: params.layers ?? [],
+      project_id: params.project_id ?? null,
     }),
   });
 }
 
-export async function listMemories(params?: { limit?: number; memory_types?: string[]; layers?: string[] }) {
+export async function listMemories(params?: { limit?: number; memory_types?: string[]; layers?: string[]; project_id?: number }) {
   const search = new URLSearchParams();
   if (params?.limit) {
     search.set('limit', String(params.limit));
+  }
+  if (params?.project_id) {
+    search.set('project_id', String(params.project_id));
   }
   for (const memoryType of params?.memory_types ?? []) {
     search.append('memory_types', memoryType);
