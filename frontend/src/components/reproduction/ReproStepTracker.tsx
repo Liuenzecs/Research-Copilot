@@ -187,7 +187,7 @@ export default function ReproStepTracker({
                   <option value="in_progress">进行中</option>
                   <option value="done">已完成</option>
                   <option value="blocked">已阻塞</option>
-                  <option value="skipped">skipped</option>
+                  <option value="skipped">已跳过</option>
                 </select>
                 <textarea className="textarea" placeholder="进展记录" value={note} onChange={(event) => setNote(event.target.value)} />
                 <textarea className="textarea" placeholder="阻塞原因（如有）" value={blocker} onChange={(event) => setBlocker(event.target.value)} />
@@ -233,7 +233,7 @@ export default function ReproStepTracker({
                       <div key={log.id} style={{ padding: 10, borderRadius: 8, background: '#f8fafc' }}>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
                           <span style={pillStyle(log.error_type === 'unknown' ? '#f3f4f6' : '#fee2e2', log.error_type === 'unknown' ? '#374151' : '#991b1b')}>
-                            {log.error_type || 'unknown'}
+                            {log.error_type === 'unknown' || !log.error_type ? '未分类' : log.error_type}
                           </span>
                           <span className="subtle">{formatDateTime(log.created_at)}</span>
                         </div>

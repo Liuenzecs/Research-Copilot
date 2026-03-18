@@ -1004,8 +1004,7 @@ textarea {
 }
 
 .project-list-card {
-  cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
 }
 
 .project-list-card:hover,
@@ -1015,10 +1014,6 @@ textarea {
 .project-linked-card:hover {
   border-color: #99f6e4;
   box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
-}
-
-.project-list-card:hover {
-  transform: translateY(-2px);
 }
 
 .project-list-card-head,
@@ -1093,7 +1088,8 @@ textarea {
 
 .project-action-card,
 .project-metadata-editor,
-.project-manual-evidence {
+.project-manual-evidence,
+.project-inline-editor {
   padding: 16px;
   border-radius: 16px;
   border: 1px solid rgba(148, 163, 184, 0.18);

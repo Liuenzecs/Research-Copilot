@@ -50,7 +50,7 @@ function buildReproductionUrl(params: { paperId?: number | null; reproductionId?
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) return 'N/A';
+  if (!value) return '未记录';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString('zh-CN', { hour12: false });
@@ -201,7 +201,7 @@ function ReproductionPageContent() {
             setRepoCandidates(repoResult.value.items);
           } else {
             setRepoCandidates([]);
-            nextWarnings.push(`Repo 自动搜索失败：${(repoResult.reason as Error).message}。你仍可按仅论文上下文继续。`);
+            nextWarnings.push(`代码仓自动搜索失败：${(repoResult.reason as Error).message}。你仍可按仅论文上下文继续。`);
           }
 
           if (reproductionResult.status === 'fulfilled' && reproductionResult.value.length > 0) {
@@ -371,13 +371,13 @@ function ReproductionPageContent() {
 
   const contextSummary = useMemo(() => {
     if (detail?.repo) {
-      return `当前计划绑定 repo：${detail.repo.owner}/${detail.repo.name}`;
+      return `当前计划绑定代码仓：${detail.repo.owner}/${detail.repo.name}`;
     }
     if (detail) {
       return '当前计划未绑定代码仓，按仅论文上下文推进。';
     }
     if (selectedRepo) {
-      return `当前准备使用 repo：${selectedRepo.owner}/${selectedRepo.name}`;
+      return `当前准备使用代码仓：${selectedRepo.owner}/${selectedRepo.name}`;
     }
     if (activePaper) {
       return '当前尚未选择代码仓，你仍可直接按仅论文上下文新建复现。';
@@ -387,17 +387,17 @@ function ReproductionPageContent() {
 
   const planButtonLabel = detail && contextMode === 'continuing_recent'
     ? selectedRepo
-      ? '新建新的复现记录（使用选中 Repo）'
+      ? '新建新的复现记录（使用选中代码仓）'
       : '新建新的复现记录（仅论文上下文）'
     : selectedRepo
-      ? '用选中 Repo 生成复现计划'
+      ? '用选中代码仓生成复现计划'
       : '按仅论文上下文生成复现计划';
 
   return (
     <>
       <Card>
         <h2 className="title">复现工作区</h2>
-        <p className="subtle">流程：paper 上下文 → repo 候选 → 计划生成 → 步骤跟踪 → blocker/log 记录 → 复现心得。</p>
+        <p className="subtle">流程：论文上下文 → 代码仓候选 → 计划生成 → 步骤跟踪 → 阻塞 / 日志记录 → 复现心得。</p>
         {projectId ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
             <span className="subtle">当前为项目上下文复现视图</span>
@@ -416,7 +416,7 @@ function ReproductionPageContent() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
             className="input"
-            placeholder="输入论文标题或关键词，例如 diffusion reproducibility"
+            placeholder="输入论文标题或关键词，例如扩散模型复现"
             value={paperLookupQuery}
             onChange={(event) => setPaperLookupQuery(event.target.value)}
             style={{ flex: '1 1 320px' }}
@@ -436,7 +436,7 @@ function ReproductionPageContent() {
                 onClick={() => router.push(buildReproductionUrl({ paperId: paper.id, projectId }))}
               >
                 <strong>{paper.title_en}</strong>
-                <div className="subtle">{paper.source} · {paper.year ?? 'N/A'}</div>
+                <div className="subtle">{paper.source} · {paper.year ?? '年份未知'}</div>
               </button>
             ))}
           </div>
@@ -508,7 +508,7 @@ function ReproductionPageContent() {
           <p className="subtle" style={{ margin: '6px 0 0 0' }}>{contextSummary}</p>
           {currentRepo ? (
             <p className="subtle" style={{ margin: '6px 0 0 0' }}>
-              Repo：{currentRepo.owner}/{currentRepo.name} · <a href={currentRepo.repo_url} target="_blank" rel="noopener noreferrer">{currentRepo.repo_url}</a>
+              代码仓：{currentRepo.owner}/{currentRepo.name} · <a href={currentRepo.repo_url} target="_blank" rel="noopener noreferrer">{currentRepo.repo_url}</a>
             </p>
           ) : detail ? (
             <p className="subtle" style={{ margin: '6px 0 0 0' }}>代码仓：当前计划未绑定代码仓，按仅论文上下文推进。</p>
@@ -518,7 +518,7 @@ function ReproductionPageContent() {
 
       {activePaper ? (
         <Card>
-          <h3 className="title" style={{ fontSize: 16 }}>Repo 候选与新建复现</h3>
+          <h3 className="title" style={{ fontSize: 16 }}>代码仓候选与新建复现</h3>
           <p className="subtle">
             默认使用当前论文标题自动搜索代码仓。你可以选择某个代码仓生成新计划，也可以不选代码仓，直接按仅论文上下文推进。
           </p>
@@ -539,7 +539,7 @@ function ReproductionPageContent() {
               {busy === 'plan' ? '生成中...' : planButtonLabel}
             </Button>
             <Button className="secondary" disabled={busy !== ''} onClick={() => setSelectedRepoId(null)}>
-              清空 Repo 选择
+              清空代码仓选择
             </Button>
           </div>
 
@@ -565,10 +565,10 @@ function ReproductionPageContent() {
                       onChange={() => setSelectedRepoId(repo.id)}
                     />
                     <strong>{repo.owner}/{repo.name}</strong>
-                    <span className="subtle">⭐ {repo.stars} · Forks {repo.forks}</span>
+                    <span className="subtle">⭐ {repo.stars} · 复刻 {repo.forks}</span>
                   </div>
                   <a href={repo.repo_url} target="_blank" rel="noopener noreferrer">{repo.repo_url}</a>
-                  <p className="subtle" style={{ margin: 0 }}>{repo.readme_summary || '暂无 README 摘要。'}</p>
+                  <p className="subtle" style={{ margin: 0 }}>{repo.readme_summary || '暂无代码仓说明摘要。'}</p>
                 </label>
               ))}
             </div>

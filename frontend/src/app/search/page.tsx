@@ -117,7 +117,7 @@ function SearchPageContent() {
           ) : null}
           <strong>{paper.title_en}</strong>
           <div className="subtle">
-            {paper.authors || "Unknown"} · {paper.year ?? "N/A"} · {paper.pdf_local_path ? "已下载 PDF" : "未下载 PDF"}
+            {paper.authors || "作者未知"} · {paper.year ?? "年份未知"} · {paper.pdf_local_path ? "已下载 PDF" : "未下载 PDF"}
           </div>
           <div className="projects-inline-actions">
             <LinkButton href={paperReaderPath(paper.id, undefined, undefined, projectId)}>打开阅读器</LinkButton>

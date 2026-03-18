@@ -105,7 +105,7 @@ def _repro_value_label(state: PaperResearchStateRecord | None, latest_reproducti
 def _default_project_title(research_question: str) -> str:
     normalized = ' '.join(research_question.split()).strip()
     if not normalized:
-        return 'Untitled Research Project'
+        return '未命名研究项目'
     return normalized[:80]
 
 
@@ -208,6 +208,27 @@ class ProjectService:
         db.commit()
         db.refresh(row)
         return row
+
+    def _project_task_rows(self, db: Session, project_id: int) -> list[TaskRecord]:
+        return db.execute(
+            select(TaskRecord)
+            .join(TaskArtifactRecord, TaskArtifactRecord.task_id == TaskRecord.id)
+            .where(TaskArtifactRecord.artifact_ref_type == 'projects')
+            .where(TaskArtifactRecord.artifact_ref_id == project_id)
+            .order_by(TaskRecord.created_at.desc())
+            .distinct()
+        ).scalars().all()
+
+    def delete_project(self, db: Session, row: ResearchProjectRecord) -> None:
+        task_rows = self._project_task_rows(db, row.id)
+        running_task = next((task for task in task_rows if task.status == 'running'), None)
+        if running_task is not None:
+            raise ValueError('Project has running tasks and cannot be deleted yet')
+
+        for task in task_rows:
+            db.delete(task)
+        db.delete(row)
+        db.commit()
 
     def touch_project(self, db: Session, row: ResearchProjectRecord) -> ResearchProjectRecord:
         row.last_opened_at = datetime.now(timezone.utc)
@@ -577,15 +598,7 @@ class ProjectService:
         return row
 
     def _recent_tasks(self, db: Session, project_id: int) -> list[ResearchProjectTaskOut]:
-        rows = db.execute(
-            select(TaskRecord)
-            .join(TaskArtifactRecord, TaskArtifactRecord.task_id == TaskRecord.id)
-            .where(TaskArtifactRecord.artifact_ref_type == 'projects')
-            .where(TaskArtifactRecord.artifact_ref_id == project_id)
-            .order_by(TaskRecord.created_at.desc())
-            .distinct()
-            .limit(6)
-        ).scalars().all()
+        rows = self._project_task_rows(db, project_id)[:6]
         return [self.to_task_out(db, row) for row in rows]
 
     def build_workspace(self, db: Session, project: ResearchProjectRecord) -> ResearchProjectWorkspaceResponse:
@@ -763,9 +776,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='screening_papers',
-            label='Screening project papers',
+            label='筛选项目论文',
             status='completed',
-            message=f'Using {len(selected_ids)} linked papers from this project.',
+            message=f'已使用该项目下关联的 {len(selected_ids)} 篇论文。',
             related_paper_ids=selected_ids,
         )
         return task
@@ -855,9 +868,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='running',
-            message='Checking for reusable paper summaries.',
+            message='正在检查可复用的论文摘要。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -870,9 +883,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='completed',
-            message='Summaries are available for all selected papers.',
+            message='所选论文都已具备可用摘要。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -881,9 +894,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='extracting_evidence',
-            label='Extracting evidence',
+            label='提取证据',
             status='running',
-            message='Generating project evidence cards.',
+            message='正在生成项目证据卡。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -925,9 +938,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='extracting_evidence',
-            label='Extracting evidence',
+            label='提取证据',
             status='completed',
-            message=f'Created {len(created_ids)} new evidence cards.',
+            message=f'已创建 {len(created_ids)} 张新证据卡。',
             related_paper_ids=selected_ids,
         )
         return {'created_evidence_ids': created_ids}
@@ -947,9 +960,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='running',
-            message='Checking summary coverage before comparison.',
+            message='正在检查生成对比表前的摘要覆盖情况。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -964,9 +977,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='completed',
-            message='Summaries are ready for the comparison table.',
+            message='对比表所需摘要已准备完成。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -975,9 +988,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='building_compare_table',
-            label='Building compare table',
+            label='生成对比表',
             status='running',
-            message='Synthesizing structured rows for side-by-side review.',
+            message='正在整理并排对比所需的结构化条目。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -1042,9 +1055,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='building_compare_table',
-            label='Building compare table',
+            label='生成对比表',
             status='completed',
-            message='Comparison table is ready to edit.',
+            message='对比表已生成，可继续编辑。',
             related_paper_ids=selected_ids,
         )
         return {'project_output_id': output.id}
@@ -1064,9 +1077,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='running',
-            message='Checking summary coverage before drafting.',
+            message='正在检查起草综述前的摘要覆盖情况。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -1079,9 +1092,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='ensuring_summaries',
-            label='Ensuring summaries',
+            label='补齐摘要',
             status='completed',
-            message='Summary coverage is complete for the selected papers.',
+            message='所选论文的摘要覆盖已完成。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -1090,9 +1103,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='drafting_review',
-            label='Drafting review',
+            label='起草综述',
             status='running',
-            message='Drafting a literature review from project evidence and summaries.',
+            message='正在基于项目证据与摘要起草综述。',
             related_paper_ids=selected_ids,
         )
         await self._maybe_pause_for_progress()
@@ -1187,9 +1200,9 @@ class ProjectService:
             task_id=task.id,
             project_id=project.id,
             step_key='drafting_review',
-            label='Drafting review',
+            label='起草综述',
             status='completed',
-            message='Literature review draft is ready to edit.',
+            message='综述稿已生成，可继续编辑。',
             related_paper_ids=selected_ids,
         )
         return {'project_output_id': output.id}

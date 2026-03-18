@@ -116,6 +116,12 @@ def test_project_crud_reorder_and_manual_evidence(client, monkeypatch):
     assert ws_after.status_code == 200
     assert ws_after.json()['papers'] == []
 
+    delete_project = client.delete(f'/projects/{project_id}')
+    assert delete_project.status_code == 204
+
+    missing_project = client.get(f'/projects/{project_id}')
+    assert missing_project.status_code == 404
+
 
 def test_project_actions_launch_background_task_and_stream(client, monkeypatch):
     _search_payload(
@@ -343,6 +349,9 @@ def test_project_filters_and_restart_cleanup(client, monkeypatch):
     memories = client.get(f'/memory?project_id={project_id}').json()
     assert memories
     assert all(item['jump_target']['path'].endswith(f'project_id={project_id}') for item in memories if item.get('jump_target'))
+
+    delete_while_running = client.delete(f'/projects/{project_id}')
+    assert delete_while_running.status_code == 409
 
     with SessionLocal() as db:
         marked = project_service.mark_interrupted_project_tasks_failed(db)

@@ -106,6 +106,12 @@ export function taskTypeLabel(taskType?: string | null): string {
       return '关键字段翻译';
     case 'translation_segment':
       return '分段翻译';
+    case 'project_extract_evidence':
+      return '项目证据提取';
+    case 'project_generate_compare_table':
+      return '项目对比表生成';
+    case 'project_draft_literature_review':
+      return '项目综述起草';
     default:
       return taskType || '未命名任务';
   }
@@ -152,6 +158,17 @@ export function reproductionStatusLabel(status?: string | null): string {
       return '已跳过';
     default:
       return status || '未设置';
+  }
+}
+
+export function summaryTypeLabel(summaryType?: string | null): string {
+  switch (summaryType) {
+    case 'quick':
+      return '快速摘要';
+    case 'deep':
+      return '深度摘要';
+    default:
+      return summaryType || '未标注摘要';
   }
 }
 

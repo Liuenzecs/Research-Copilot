@@ -24,6 +24,7 @@ import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
+import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
   addProjectPaper,
   createProjectEvidence,
@@ -48,7 +49,6 @@ import type {
   ResearchProjectEvidenceItem,
   ResearchProjectLinkedArtifacts,
   ResearchProjectOutput,
-  ResearchProjectPaper,
   ResearchProjectTask,
   ResearchProjectTaskDetail,
   ResearchProjectTaskEvent,
@@ -79,6 +79,17 @@ const DEFAULT_COMPARE_COLUMNS = [
 
 const EVIDENCE_AUTOSAVE_DELAY = 1200;
 const OUTPUT_AUTOSAVE_DELAY = 1500;
+const COMPARE_COLUMN_LABELS: Record<string, string> = {
+  Paper: "论文",
+  "Research Question": "研究问题",
+  Method: "方法",
+  "Dataset / Setting": "数据集 / 场景",
+  Metrics: "指标",
+  "Main Result": "主要结果",
+  Limitations: "局限",
+  "Reproduction Value": "复现价值",
+  "User Note": "用户备注",
+};
 
 function formatDateTime(value?: string | null) {
   if (!value) return "刚刚";
@@ -147,6 +158,14 @@ function autosaveLabel(state: AutoSaveState) {
   }
 }
 
+function compareColumnLabel(column: string) {
+  return COMPARE_COLUMN_LABELS[column] ?? column;
+}
+
+function taskTypeLabel(taskType: string) {
+  return sharedTaskTypeLabel(taskType);
+}
+
 function parseCompareTable(output: ResearchProjectOutput | null | undefined): CompareTableDraft {
   const payload = output?.content_json ?? {};
   const columns = Array.isArray(payload.columns) && payload.columns.length > 0
@@ -183,7 +202,7 @@ function buildComparePayload(draft: CompareTableDraft) {
 }
 
 function linkedArtifactSummary(artifact: ResearchProjectLinkedArtifacts) {
-  return `${artifact.summaries.length} summaries / ${artifact.reflections.length} reflections / ${artifact.reproductions.length} reproductions`;
+  return `摘要 ${artifact.summaries.length} · 心得 ${artifact.reflections.length} · 复现 ${artifact.reproductions.length}`;
 }
 
 function defaultEvidenceExcerpt(paper: Paper) {
@@ -330,7 +349,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [manualEvidenceKind, setManualEvidenceKind] = useState("claim");
   const [manualEvidenceExcerpt, setManualEvidenceExcerpt] = useState("");
   const [manualEvidenceNote, setManualEvidenceNote] = useState("");
-  const [manualEvidenceSourceLabel, setManualEvidenceSourceLabel] = useState("Manual note");
+  const [manualEvidenceSourceLabel, setManualEvidenceSourceLabel] = useState("手动记录");
   const [creatingEvidence, setCreatingEvidence] = useState(false);
   const [evidenceItems, setEvidenceItems] = useState<ResearchProjectEvidenceItem[]>([]);
   const [evidenceSaveState, setEvidenceSaveState] = useState<Record<number, AutoSaveState>>({});
@@ -386,13 +405,6 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     [workspace],
   );
   const projectPaperIds = useMemo(() => new Set((workspace?.papers ?? []).map((item) => item.paper.id)), [workspace]);
-  const paperIdToProjectPaper = useMemo(() => {
-    const map = new Map<number, ResearchProjectPaper>();
-    for (const item of workspace?.papers ?? []) {
-      map.set(item.paper.id, item);
-    }
-    return map;
-  }, [workspace]);
   const activePaperIds = useMemo(
     () => (selectedPaperIds.length > 0 ? selectedPaperIds : (workspace?.papers ?? []).map((item) => item.paper.id)),
     [selectedPaperIds, workspace],
@@ -400,7 +412,18 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   function setEvidenceState(id: number, state: AutoSaveState) {
+    evidenceSaveStateRef.current = { ...evidenceSaveStateRef.current, [id]: state };
     setEvidenceSaveState((current) => ({ ...current, [id]: state }));
+  }
+
+  function setCompareState(state: AutoSaveState) {
+    compareSaveStateRef.current = state;
+    setCompareSaveState(state);
+  }
+
+  function setReviewState(state: AutoSaveState) {
+    reviewSaveStateRef.current = state;
+    setReviewSaveState(state);
   }
 
   function mergeDirtyEvidence(nextWorkspace: ResearchProjectWorkspace) {
@@ -417,6 +440,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   function applyWorkspace(nextWorkspace: ResearchProjectWorkspace) {
     const mergedWorkspace = mergeDirtyEvidence(nextWorkspace);
     setWorkspace(mergedWorkspace);
+    evidenceItemsRef.current = mergedWorkspace.evidence_items;
     setEvidenceItems(mergedWorkspace.evidence_items);
     setTitleDraft(mergedWorkspace.project.title);
     setQuestionDraft(mergedWorkspace.project.research_question);
@@ -438,25 +462,34 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       const compareMirror = window.localStorage.getItem(compareDraftStorageKey(projectId));
       if (compareMirror) {
         try {
-          setCompareDraft(JSON.parse(compareMirror) as CompareTableDraft);
-          setCompareSaveState("dirty");
+          const mirroredDraft = JSON.parse(compareMirror) as CompareTableDraft;
+          compareDraftRef.current = mirroredDraft;
+          setCompareDraft(mirroredDraft);
+          setCompareState("dirty");
         } catch {
-          setCompareDraft(parseCompareTable(mergedWorkspace.outputs.find((item) => item.output_type === "compare_table") ?? null));
-          setCompareSaveState(mergedWorkspace.outputs.some((item) => item.output_type === "compare_table") ? "saved" : "idle");
+          const nextDraft = parseCompareTable(mergedWorkspace.outputs.find((item) => item.output_type === "compare_table") ?? null);
+          compareDraftRef.current = nextDraft;
+          setCompareDraft(nextDraft);
+          setCompareState(mergedWorkspace.outputs.some((item) => item.output_type === "compare_table") ? "saved" : "idle");
         }
       } else {
-        setCompareDraft(parseCompareTable(mergedWorkspace.outputs.find((item) => item.output_type === "compare_table") ?? null));
-        setCompareSaveState(mergedWorkspace.outputs.some((item) => item.output_type === "compare_table") ? "saved" : "idle");
+        const nextDraft = parseCompareTable(mergedWorkspace.outputs.find((item) => item.output_type === "compare_table") ?? null);
+        compareDraftRef.current = nextDraft;
+        setCompareDraft(nextDraft);
+        setCompareState(mergedWorkspace.outputs.some((item) => item.output_type === "compare_table") ? "saved" : "idle");
       }
 
       const reviewMirror = window.localStorage.getItem(reviewDraftStorageKey(projectId));
       if (reviewMirror !== null) {
+        reviewDraftRef.current = reviewMirror;
         setReviewDraft(reviewMirror);
-        setReviewSaveState("dirty");
+        setReviewState("dirty");
       } else {
         const nextReviewOutput = mergedWorkspace.outputs.find((item) => item.output_type === "literature_review");
-        setReviewDraft(nextReviewOutput?.content_markdown ?? "");
-        setReviewSaveState(nextReviewOutput ? "saved" : "idle");
+        const nextReviewDraft = nextReviewOutput?.content_markdown ?? "";
+        reviewDraftRef.current = nextReviewDraft;
+        setReviewDraft(nextReviewDraft);
+        setReviewState(nextReviewOutput ? "saved" : "idle");
       }
     }
   }
@@ -526,6 +559,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }, [compareSaveState, evidenceSaveState, reviewSaveState]);
 
   function syncWorkspaceEvidence(nextEvidence: ResearchProjectEvidenceItem[]) {
+    evidenceItemsRef.current = nextEvidence;
     setWorkspace((current) => (current ? { ...current, evidence_items: nextEvidence } : current));
     setEvidenceItems(nextEvidence);
   }
@@ -706,7 +740,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
         kind: "claim",
         excerpt,
         note_text: "",
-        source_label: "Paper abstract",
+        source_label: "论文摘要",
       });
       await loadWorkspace({ quiet: true });
       setNotice("已把摘要加入证据板。");
@@ -757,6 +791,11 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }
 
   async function flushEvidenceSave(id: number) {
+    const timerId = evidenceTimersRef.current[id];
+    if (timerId) {
+      window.clearTimeout(timerId);
+      evidenceTimersRef.current[id] = null;
+    }
     const item = evidenceItemsRef.current.find((entry) => entry.id === id);
     if (!item) return;
     const currentState = evidenceSaveStateRef.current[id];
@@ -792,15 +831,17 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     setError("");
     try {
       const timerId = evidenceTimersRef.current[id];
-      if (timerId) window.clearTimeout(timerId);
+      if (timerId) {
+        window.clearTimeout(timerId);
+        evidenceTimersRef.current[id] = null;
+      }
       await deleteProjectEvidence(projectId, id);
       const nextEvidence = evidenceItemsRef.current.filter((item) => item.id !== id);
       syncWorkspaceEvidence(nextEvidence);
-      setEvidenceSaveState((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
+      const nextSaveState = { ...evidenceSaveStateRef.current };
+      delete nextSaveState[id];
+      evidenceSaveStateRef.current = nextSaveState;
+      setEvidenceSaveState(nextSaveState);
       setNotice("证据卡已删除。");
     } catch (deleteError) {
       setError((deleteError as Error).message || "删除证据卡失败");
@@ -856,56 +897,64 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }
 
   async function flushCompareSave() {
+    if (compareTimerRef.current) {
+      window.clearTimeout(compareTimerRef.current);
+      compareTimerRef.current = null;
+    }
     if (!compareOutput) return;
     if (compareSaveStateRef.current !== "dirty" && compareSaveStateRef.current !== "error") return;
-    setCompareSaveState("saving");
+    setCompareState("saving");
     try {
       const saved = await updateProjectOutput(projectId, compareOutput.id, {
         content_json: buildComparePayload(compareDraftRef.current),
       });
       syncWorkspaceOutput(saved);
       if (typeof window !== "undefined") window.localStorage.removeItem(compareDraftStorageKey(projectId));
-      setCompareSaveState("saved");
+      setCompareState("saved");
     } catch (saveError) {
-      setCompareSaveState("error");
+      setCompareState("error");
       setError((saveError as Error).message || "对比表自动保存失败");
     }
   }
 
   async function flushReviewSave() {
+    if (reviewTimerRef.current) {
+      window.clearTimeout(reviewTimerRef.current);
+      reviewTimerRef.current = null;
+    }
     if (!reviewOutput) return;
     if (reviewSaveStateRef.current !== "dirty" && reviewSaveStateRef.current !== "error") return;
-    setReviewSaveState("saving");
+    setReviewState("saving");
     try {
       const saved = await updateProjectOutput(projectId, reviewOutput.id, {
         content_markdown: reviewDraftRef.current,
       });
       syncWorkspaceOutput(saved);
       if (typeof window !== "undefined") window.localStorage.removeItem(reviewDraftStorageKey(projectId));
-      setReviewSaveState("saved");
+      setReviewState("saved");
     } catch (saveError) {
-      setReviewSaveState("error");
+      setReviewState("error");
       setError((saveError as Error).message || "综述稿自动保存失败");
     }
   }
 
   function updateCompareCell(rowIndex: number, column: string, value: string) {
-    setCompareDraft((current) => {
-      const nextDraft = {
-        ...current,
-        rows: current.rows.map((row, index) => (index === rowIndex ? { ...row, [column]: value } : row)),
-      };
-      persistCompareMirror(nextDraft);
-      return nextDraft;
-    });
-    setCompareSaveState("dirty");
+    const nextDraft = {
+      ...compareDraftRef.current,
+      rows: compareDraftRef.current.rows.map((row, index) => (index === rowIndex ? { ...row, [column]: value } : row)),
+    };
+    compareDraftRef.current = nextDraft;
+    setCompareDraft(nextDraft);
+    persistCompareMirror(nextDraft);
+    setCompareState("dirty");
     queueCompareSave();
   }
 
   function updateReview(value: string) {
+    reviewDraftRef.current = value;
     setReviewDraft(value);
     persistReviewMirror(value);
-    setReviewSaveState("dirty");
+    setReviewState("dirty");
     queueReviewSave();
   }
 
@@ -942,7 +991,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       <Card className="project-workspace-hero">
         <div className="project-workspace-title-row">
           <div>
-            <div className="projects-kicker">Project Workspace</div>
+            <div className="projects-kicker">项目工作台</div>
             <h1 className="project-workspace-title">{workspace.project.title}</h1>
             <p className="project-workspace-question">{workspace.project.research_question}</p>
             {workspace.project.goal ? <p className="subtle">目标输出：{workspace.project.goal}</p> : null}
@@ -972,9 +1021,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             <label className="projects-field">
               <span>状态</span>
               <select className="select" value={statusDraft} onChange={(event) => setStatusDraft(event.target.value)}>
-                <option value="active">active</option>
-                <option value="paused">paused</option>
-                <option value="archived">archived</option>
+                <option value="active">进行中</option>
+                <option value="paused">暂停</option>
+                <option value="archived">已归档</option>
               </select>
             </label>
             <div className="projects-inline-actions">
@@ -1062,7 +1111,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
             {activeTaskForPanel ? (
               <div className="project-task-live-banner">
-                <strong>{activeTaskForPanel.task_type}</strong>
+                <strong>{taskTypeLabel(activeTaskForPanel.task_type)}</strong>
                 <span className={`project-step-status status-${activeTaskForPanel.status}`.trim()}>{taskStatusLabel(activeTaskForPanel.status)}</span>
                 <span className="subtle">更新于 {formatDateTime(activeTaskForPanel.updated_at)}</span>
                 {activeTaskForPanel.error_log === "interrupted_by_backend_restart" ? (
@@ -1162,7 +1211,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                       </label>
                       <strong>{paper.title_en}</strong>
                       <div className="subtle">
-                        {paper.authors || "Unknown"} · {paper.year ?? "N/A"} · {paper.pdf_local_path ? "已下载 PDF" : "未下载 PDF"}
+                        {paper.authors || "作者未知"} · {paper.year ?? "年份未知"} · {paper.pdf_local_path ? "已下载 PDF" : "未下载 PDF"}
                       </div>
                       <div className="projects-inline-actions">
                         {inProject ? (
@@ -1229,13 +1278,13 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                         </div>
                         <strong>{item.paper.title_en}</strong>
                         <div className="subtle">
-                          {item.paper.authors || "Unknown"} · {item.paper.year ?? "N/A"}
+                          {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
                         </div>
                         <div className="subtle">
-                          PDF {item.is_downloaded ? "已下载" : "未下载"} · Summary {item.summary_count} · Reflection {item.reflection_count}
+                          PDF {item.is_downloaded ? "已下载" : "未下载"} · 摘要 {item.summary_count} · 心得 {item.reflection_count}
                         </div>
                         <div className="subtle">
-                          Reproduction {item.latest_reproduction_status || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
+                          复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
                         </div>
                         <div className="projects-inline-actions">
                           <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} href={paperReaderPath(item.paper.id, undefined, undefined, projectId)}>
@@ -1277,11 +1326,11 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 ))}
               </select>
               <select className="select" value={manualEvidenceKind} onChange={(event) => setManualEvidenceKind(event.target.value)}>
-                <option value="claim">claim</option>
-                <option value="method">method</option>
-                <option value="result">result</option>
-                <option value="limitation">limitation</option>
-                <option value="question">question</option>
+                <option value="claim">主张</option>
+                <option value="method">方法</option>
+                <option value="result">结果</option>
+                <option value="limitation">局限</option>
+                <option value="question">问题</option>
               </select>
               <input className="input" value={manualEvidenceSourceLabel} onChange={(event) => setManualEvidenceSourceLabel(event.target.value)} placeholder="来源标签" />
               <textarea className="textarea" value={manualEvidenceExcerpt} onChange={(event) => setManualEvidenceExcerpt(event.target.value)} placeholder="证据摘录" />
@@ -1339,7 +1388,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <thead>
                     <tr>
                       {compareDraft.columns.map((column) => (
-                        <th key={column}>{column}</th>
+                        <th key={column}>{compareColumnLabel(column)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1405,7 +1454,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             ) : (
               <div className="project-progress-panel" data-testid="task-progress-panel">
                 <div className="project-progress-summary">
-                  <strong>{activeTaskForPanel.task_type}</strong>
+                  <strong>{taskTypeLabel(activeTaskForPanel.task_type)}</strong>
                   <span className="subtle">{taskStatusLabel(activeTaskForPanel.status)}</span>
                   <span className="subtle">{formatDateTime(activeTaskForPanel.updated_at)}</span>
                 </div>
@@ -1454,7 +1503,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               <div>
                 <h2 className="title">历史工作聚合</h2>
                 <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  这里直接聚合 linked paper 既有的 summary / reflection / reproduction，不迁移也不丢历史。
+                  这里会直接聚合已关联论文既有的摘要、心得和复现记录，不迁移也不丢历史。
                 </p>
               </div>
             </div>
@@ -1467,11 +1516,11 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div key={artifact.paper_id} className="project-linked-card">
                     <strong>{artifact.paper_title}</strong>
                     <div className="subtle">{linkedArtifactSummary(artifact)}</div>
-                    {artifact.summaries[0] ? <div className="subtle">最新 summary：{artifact.summaries[0].summary_type}</div> : null}
+                    {artifact.summaries[0] ? <div className="subtle">最新摘要：{summaryTypeLabel(artifact.summaries[0].summary_type)}</div> : null}
                     {artifact.reflections[0] ? <div className="subtle">最新心得：{artifact.reflections[0].report_summary || artifact.reflections[0].stage}</div> : null}
                     {artifact.reproductions[0] ? (
                       <div className="subtle">
-                        最新复现：{artifact.reproductions[0].status} · {artifact.reproductions[0].progress_summary || "暂无摘要"}
+                        最新复现：{reproductionStatusLabel(artifact.reproductions[0].status)} · {artifact.reproductions[0].progress_summary || "暂无摘要"}
                       </div>
                     ) : null}
                   </div>

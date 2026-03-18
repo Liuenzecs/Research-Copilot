@@ -476,7 +476,7 @@ export default function PaperReaderScreen({
         kind: "claim",
         excerpt,
         note_text: annotationDraft.trim(),
-        source_label: activeParagraph ? `Reader paragraph p.${activeParagraph.page_no}` : "Reader selection",
+        source_label: activeParagraph ? `阅读器段落 p.${activeParagraph.page_no}` : "阅读器选区",
       });
       setNotice("已加入当前项目证据板。");
       setAnnotationDraft("");

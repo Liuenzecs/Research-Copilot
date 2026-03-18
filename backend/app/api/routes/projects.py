@@ -88,6 +88,16 @@ def update_project(project_id: int, payload: ResearchProjectUpdateRequest, db: S
     return project_service.to_project_out(row)
 
 
+@router.delete('/{project_id}', status_code=204, response_class=Response)
+def delete_project(project_id: int, db: Session = Depends(get_db)) -> Response:
+    project = _project_or_404(db, project_id)
+    try:
+        project_service.delete_project(db, project)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get('/{project_id}/workspace', response_model=ResearchProjectWorkspaceResponse)
 def get_project_workspace(project_id: int, db: Session = Depends(get_db)) -> ResearchProjectWorkspaceResponse:
     project = project_service.touch_project(db, _project_or_404(db, project_id))

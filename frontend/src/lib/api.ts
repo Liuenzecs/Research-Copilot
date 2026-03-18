@@ -447,6 +447,12 @@ export async function updateProject(
   });
 }
 
+export async function deleteProject(projectId: number) {
+  return request<void>(`/projects/${projectId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getProjectWorkspace(projectId: number) {
   return request<ResearchProjectWorkspace>(`/projects/${projectId}/workspace`);
 }

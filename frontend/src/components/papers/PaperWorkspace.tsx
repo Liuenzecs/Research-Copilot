@@ -17,7 +17,7 @@ import {
   quickSummaryStream,
   updatePaperResearchState,
 } from '@/lib/api';
-import { formatDateTime, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
+import { formatDateTime, summaryTypeLabel, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
 import {
   readingStatusLabel,
   READING_STATUS_OPTIONS,
@@ -407,9 +407,9 @@ export default function PaperWorkspaceView({
           <h3 className="title" style={{ fontSize: 18 }}>
             {currentPaper.title_en}
           </h3>
-          <p className="subtle">{currentPaper.authors || 'Unknown authors'}</p>
+          <p className="subtle">{currentPaper.authors || '作者未知'}</p>
           <p className="subtle">
-            {currentPaper.source} · {currentPaper.year ?? 'N/A'} · PDF：{currentPaper.pdf_local_path || '未下载'}
+            {currentPaper.source} · {currentPaper.year ?? '年份未知'} · PDF：{currentPaper.pdf_local_path || '未下载'}
           </p>
           {actionButtons}
         </div>
@@ -506,7 +506,7 @@ export default function PaperWorkspaceView({
         ) : selectedSummary ? (
           <>
             <p className="subtle">
-              当前摘要：{selectedSummary.summary_type} · 生成方式：
+              当前摘要：{summaryTypeLabel(selectedSummary.summary_type)} · 生成方式：
               {selectedSummary.provider || 'heuristic'}/{selectedSummary.model || 'local'}
             </p>
             {selectedSummary.provider === 'heuristic' ? (
@@ -517,7 +517,7 @@ export default function PaperWorkspaceView({
             <p style={{ whiteSpace: 'pre-wrap' }}>{selectedSummary.content_en}</p>
           </>
         ) : summaries.length > 0 ? (
-          <p className="subtle">当前选择为“不绑定摘要”。这里不显示 summary 内容；心得预填会回退到论文标题和 abstract。</p>
+          <p className="subtle">当前选择为“不绑定摘要”。这里不显示摘要内容；心得预填会回退到论文标题和摘要。</p>
         ) : (
           <p className="subtle">暂无摘要，请先执行快速总结或深度总结。</p>
         )}
@@ -542,7 +542,7 @@ export default function PaperWorkspaceView({
             <option value="none">不绑定摘要</option>
             {summaries.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.summary_type} 摘要
+                {summaryTypeLabel(item.summary_type)}
               </option>
             ))}
           </select>
