@@ -40,10 +40,10 @@ export default function Topbar() {
       <header className="topbar">
         <Link href="/projects" className="topbar-brand">
           <strong>Research Copilot</strong>
-          <span className="subtle">项目制 notebook 工作台，围绕研究问题推进</span>
+          <span className="subtle">项目制 notebook 工作台，围绕研究问题持续推进</span>
         </Link>
 
-        <nav className="topbar-nav" aria-label="Primary">
+        <nav className="topbar-nav" aria-label="主导航">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
@@ -63,10 +63,10 @@ export default function Topbar() {
             className={`topbar-icon-button ${searchActive ? 'active' : ''}`.trim()}
             onClick={() => router.push('/search')}
           >
-            Search
+            搜索
           </button>
           <Button className="secondary" type="button" onClick={() => setHelpOpen(true)}>
-            Help
+            帮助
           </Button>
           <div className="subtle topbar-time">{now || '--'}</div>
         </div>
