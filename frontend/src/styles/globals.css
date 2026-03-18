@@ -981,6 +981,36 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+.project-context-banner,
+.projects-empty-explainer {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.projects-empty-links,
+.project-list-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.project-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .projects-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

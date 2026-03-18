@@ -34,6 +34,7 @@ def provider_settings() -> ProviderSettingsOut:
         notes.append('当前未配置大模型；选词翻译会直接回退到本地辅助结果。')
     if LEGACY_RUNTIME_DATA_ROOT.exists():
         notes.append('检测到历史 runtime 目录 backend/backend/data；当前版本已统一使用 backend/data。')
+    notes.append('pytest 与 Playwright E2E 默认使用临时数据库，不会污染当前开发库。')
 
     return ProviderSettingsOut(
         openai_enabled=openai_enabled,

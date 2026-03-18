@@ -21,6 +21,7 @@ from app.models.schemas.project import (
     ResearchProjectEvidenceReorderRequest,
     ResearchProjectEvidenceReorderResponse,
     ResearchProjectEvidenceUpdateRequest,
+    ResearchProjectListItemOut,
     ResearchProjectOut,
     ResearchProjectOutputOut,
     ResearchProjectOutputUpdateRequest,
@@ -71,9 +72,9 @@ def create_project(payload: ResearchProjectCreateRequest, db: Session = Depends(
     return project_service.to_project_out(row)
 
 
-@router.get('', response_model=list[ResearchProjectOut])
-def list_projects(db: Session = Depends(get_db)) -> list[ResearchProjectOut]:
-    return [project_service.to_project_out(item) for item in project_service.list_projects(db)]
+@router.get('', response_model=list[ResearchProjectListItemOut])
+def list_projects(db: Session = Depends(get_db)) -> list[ResearchProjectListItemOut]:
+    return project_service.list_project_list_items(db)
 
 
 @router.get('/{project_id}', response_model=ResearchProjectOut)

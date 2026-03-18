@@ -10,6 +10,7 @@ import ReportDraftEditor from '@/components/reporting/ReportDraftEditor';
 import WeeklyReportPanel from '@/components/reporting/WeeklyReportPanel';
 import { createWeeklyReportDraft, getWeeklyReportContext, listWeeklyReportDrafts, updateWeeklyReportDraft } from '@/lib/api';
 import { formatDateTime, weekRangeLabel, weeklyReportStatusLabel } from '@/lib/presentation';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { WeeklyReportContext, WeeklyReportDraft } from '@/lib/types';
 
 type ContextSource = 'live' | 'snapshot';
@@ -50,6 +51,8 @@ function normalizeWeeklyReportContext(
 }
 
 export default function WeeklyReportPage() {
+  usePageTitle('周报');
+
   const currentWeek = useMemo(() => currentWeekRange(), []);
   const [weekStart, setWeekStart] = useState(currentWeek.weekStart);
   const [weekEnd, setWeekEnd] = useState(currentWeek.weekEnd);

@@ -11,6 +11,7 @@ import { listLibrary } from '@/lib/api';
 import { formatDateTime } from '@/lib/presentation';
 import { paperReaderPath } from '@/lib/routes';
 import { readingStatusLabel, READING_STATUS_OPTIONS, reproInterestLabel, REPRO_INTEREST_OPTIONS } from '@/lib/researchState';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { LibraryItem } from '@/lib/types';
 
 function buildItemTags(item: LibraryItem): string[] {
@@ -25,6 +26,8 @@ function buildItemTags(item: LibraryItem): string[] {
 }
 
 export default function LibraryPage() {
+  usePageTitle('文库');
+
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -64,8 +67,8 @@ export default function LibraryPage() {
   return (
     <>
       <Card>
-        <h2 className="title">阅读</h2>
-        <p className="subtle">这里优先展示你已经处理过、值得继续推进的论文。需要找新论文时，使用右上角搜索入口。</p>
+        <h2 className="title">文库</h2>
+        <p className="subtle">这里优先展示你已经积累下来的论文资产。需要找新论文时，使用右上角“搜索论文”入口。</p>
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 10 }}>

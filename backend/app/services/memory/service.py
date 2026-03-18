@@ -26,13 +26,13 @@ class MemoryService:
             paper = db.get(PaperRecord, ref_id)
             if paper is None:
                 return None
-            return {'kind': 'paper', 'path': append_project_id(f'/search?paper_id={paper.id}', project_id)}
+            return {'kind': 'paper', 'path': append_project_id(f'/papers/{paper.id}', project_id)}
 
         if ref_table == 'summaries':
             summary = db.get(SummaryRecord, ref_id)
             if summary is None:
                 return None
-            return {'kind': 'paper', 'path': append_project_id(f'/search?paper_id={summary.paper_id}&summary_id={summary.id}', project_id)}
+            return {'kind': 'paper', 'path': append_project_id(f'/papers/{summary.paper_id}?summary_id={summary.id}', project_id)}
 
         if ref_table == 'reproductions':
             reproduction = db.get(ReproductionRecord, ref_id)

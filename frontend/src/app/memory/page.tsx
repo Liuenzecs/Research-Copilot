@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -10,8 +10,9 @@ import StatusStack from '@/components/common/StatusStack';
 import MemoryGraph from '@/components/memory/MemoryGraph';
 import MemoryList from '@/components/memory/MemoryList';
 import ProfilePanel from '@/components/memory/ProfilePanel';
+import ProjectContextBanner from '@/components/projects/ProjectContextBanner';
 import { getProject, listMemories, queryMemory } from '@/lib/api';
-import { projectPath } from '@/lib/routes';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { MemoryItem } from '@/lib/types';
 
 function parsePositiveInt(value: string | null): number | null {
@@ -22,7 +23,6 @@ function parsePositiveInt(value: string | null): number | null {
 }
 
 function MemoryPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = parsePositiveInt(searchParams.get('project_id'));
   const [query, setQuery] = useState('');
@@ -34,6 +34,8 @@ function MemoryPageContent() {
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'recent' | 'search'>('recent');
+
+  usePageTitle(projectId ? '项目记忆' : '长期记忆');
 
   useEffect(() => {
     if (!projectId) return;
@@ -116,14 +118,7 @@ function MemoryPageContent() {
       <Card>
         <h2 className="title">长期记忆</h2>
         <p className="subtle">先看最近写入的记忆，再按问题检索历史研究内容，并精确回跳到论文、复现或心得上下文。</p>
-        {projectId ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            <span className="subtle">当前为项目上下文记忆视图</span>
-            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
-              返回项目工作台
-            </Button>
-          </div>
-        ) : null}
+        <ProjectContextBanner projectId={projectId} message="当前为项目上下文记忆视图。" />
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 8 }}>

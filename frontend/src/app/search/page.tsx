@@ -9,8 +9,10 @@ import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
+import ProjectContextBanner from "@/components/projects/ProjectContextBanner";
 import { addProjectPaper, getProject, searchPapers } from "@/lib/api";
-import { paperReaderPath, projectPath } from "@/lib/routes";
+import { paperReaderPath } from "@/lib/routes";
+import { usePageTitle } from "@/lib/usePageTitle";
 import type { Paper, ResearchProject } from "@/lib/types";
 
 function parsePositiveInt(raw: string | null) {
@@ -36,6 +38,8 @@ function SearchPageContent() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [adding, setAdding] = useState(false);
+
+  usePageTitle(projectId ? "项目内论文搜索" : "论文搜索");
 
   useEffect(() => {
     if (!projectId) return;
@@ -134,19 +138,16 @@ function SearchPageContent() {
   return (
     <>
       <Card>
-        <h2 className="title">搜索论文</h2>
+        <h2 className="title">论文搜索</h2>
         <p className="subtle">
-          {projectId && project
-            ? `当前正在为项目“${project.title}”收集论文。`
+          {projectId
+            ? "这里会作为当前项目的论文收集台使用；搜索结果只有加入项目后才会持久化。"
             : "这里是独立搜索页；点开论文后会进入高级阅读器。"}
         </p>
-        <div className="projects-inline-actions" style={{ marginTop: 10 }}>
-          {projectId ? (
-            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
-              返回项目
-            </Button>
-          ) : null}
-        </div>
+        <ProjectContextBanner
+          projectId={projectId}
+          message={project ? `当前正在为项目“${project.title}”收集论文。` : "当前为项目上下文论文收集视图。"}
+        />
       </Card>
 
       <Card>

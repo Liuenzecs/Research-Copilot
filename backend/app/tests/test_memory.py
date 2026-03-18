@@ -166,11 +166,11 @@ def test_memory_query_returns_precise_jump_targets(client, monkeypatch):
     assert response.status_code == 200
     payload = {item['id']: item for item in response.json()}
 
-    assert payload[paper_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/search?paper_id={paper_id}'}
+    assert payload[paper_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/papers/{paper_id}'}
     assert payload[paper_memory_id]['retrieval_mode'] == 'fallback'
     assert payload[paper_memory_id]['match_reason'] == '当前语义召回不足，按记忆重要度与最近性回退展示'
     assert payload[paper_memory_id]['context_hint'] == '关联论文，建议回到论文工作区继续阅读'
-    assert payload[summary_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/search?paper_id={paper_id}&summary_id={summary_id}'}
+    assert payload[summary_memory_id]['jump_target'] == {'kind': 'paper', 'path': f'/papers/{paper_id}?summary_id={summary_id}'}
     assert payload[summary_memory_id]['context_hint'] == '关联摘要，建议回到所属论文工作区继续阅读'
     assert payload[repro_memory_id]['jump_target'] == {'kind': 'reproduction', 'path': f'/reproduction?reproduction_id={reproduction_id}'}
     assert payload[repro_memory_id]['context_hint'] == '关联复现记录，建议回到复现工作区继续推进'

@@ -21,6 +21,7 @@ import {
 import { formatDateTime } from "@/lib/presentation";
 import { paperReaderPath, projectPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
+import { usePageTitle } from "@/lib/usePageTitle";
 import {
   PaperAnnotation,
   PaperReader,
@@ -135,6 +136,8 @@ export default function PaperReaderScreen({
   projectId?: number | null;
 }) {
   const router = useRouter();
+  usePageTitle("论文阅读器");
+
   const articleRef = useRef<HTMLDivElement | null>(null);
   const paragraphRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const initialTargetAppliedRef = useRef(false);
@@ -561,6 +564,7 @@ export default function PaperReaderScreen({
               {reader.paper.authors || "暂无作者信息"}
               {reader.paper.updated_at ? ` · 最近更新 ${formatDateTime(reader.paper.updated_at)}` : ""}
             </div>
+            {projectId ? <div className="subtle" style={{ marginTop: 8 }}>当前为项目上下文阅读视图，可随时返回项目工作台继续整理证据。</div> : null}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

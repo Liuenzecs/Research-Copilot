@@ -33,6 +33,12 @@ class ResearchProjectOut(BaseModel):
     updated_at: datetime
 
 
+class ResearchProjectListItemOut(ResearchProjectOut):
+    paper_count: int = 0
+    evidence_count: int = 0
+    output_count: int = 0
+
+
 class ResearchProjectPaperAddRequest(BaseModel):
     paper_id: int
     selection_reason: str = ''

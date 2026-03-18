@@ -8,6 +8,7 @@ import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
+import ProjectContextBanner from '@/components/projects/ProjectContextBanner';
 import ReproStepTracker from '@/components/reproduction/ReproStepTracker';
 import {
   createReproductionReflection,
@@ -21,7 +22,7 @@ import {
   updateReproduction,
   updateReproductionStep,
 } from '@/lib/api';
-import { projectPath } from '@/lib/routes';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Paper, ReproductionDetail, ReproductionListItem, RepoCandidate } from '@/lib/types';
 
 type ContextMode = 'idle' | 'ready_new' | 'continuing_recent' | 'detail';
@@ -119,6 +120,8 @@ function ReproductionPageContent() {
   const [nextStep, setNextStep] = useState('');
   const [reportSummary, setReportSummary] = useState('');
   const [reportWorthy, setReportWorthy] = useState(false);
+
+  usePageTitle(projectId ? '项目复现' : '复现工作区');
 
   function applyDetail(data: ReproductionDetail) {
     setDetail(data);
@@ -398,14 +401,7 @@ function ReproductionPageContent() {
       <Card>
         <h2 className="title">复现工作区</h2>
         <p className="subtle">流程：论文上下文 → 代码仓候选 → 计划生成 → 步骤跟踪 → 阻塞 / 日志记录 → 复现心得。</p>
-        {projectId ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            <span className="subtle">当前为项目上下文复现视图</span>
-            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
-              返回项目工作台
-            </Button>
-          </div>
-        ) : null}
+        <ProjectContextBanner projectId={projectId} message="当前为项目上下文复现视图。" />
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 12 }}>

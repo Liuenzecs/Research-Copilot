@@ -55,6 +55,13 @@ def test_project_crud_reorder_and_manual_evidence(client, monkeypatch):
     assert create_resp.status_code == 200
     project_id = create_resp.json()['id']
 
+    list_resp = client.get('/projects')
+    assert list_resp.status_code == 200
+    assert list_resp.json()[0]['id'] == project_id
+    assert list_resp.json()[0]['paper_count'] == 0
+    assert list_resp.json()[0]['evidence_count'] == 0
+    assert list_resp.json()[0]['output_count'] == 0
+
     update_resp = client.patch(f'/projects/{project_id}', json={'status': 'paused', 'title': 'Transformer Comparison'})
     assert update_resp.status_code == 200
     assert update_resp.json()['status'] == 'paused'
@@ -105,6 +112,12 @@ def test_project_crud_reorder_and_manual_evidence(client, monkeypatch):
     ws_resp = client.get(f'/projects/{project_id}/workspace')
     assert ws_resp.status_code == 200
     assert [item['id'] for item in ws_resp.json()['evidence_items']] == [second_id, first_id]
+
+    list_after_evidence = client.get('/projects')
+    assert list_after_evidence.status_code == 200
+    assert list_after_evidence.json()[0]['paper_count'] == 1
+    assert list_after_evidence.json()[0]['evidence_count'] == 2
+    assert list_after_evidence.json()[0]['output_count'] == 0
 
     delete_evidence = client.delete(f'/projects/{project_id}/evidence/{first_id}')
     assert delete_evidence.status_code == 204
@@ -361,3 +374,28 @@ def test_project_filters_and_restart_cleanup(client, monkeypatch):
     assert repaired_task is not None
     assert repaired_task.status == 'failed'
     assert repaired_task.error_log == 'interrupted_by_backend_restart'
+
+
+def test_project_list_sorting_and_counts_follow_last_opened(client):
+    first_resp = client.post('/projects', json={'research_question': 'First project question'})
+    assert first_resp.status_code == 200
+    first_id = first_resp.json()['id']
+
+    time.sleep(0.02)
+
+    second_resp = client.post('/projects', json={'research_question': 'Second project question'})
+    assert second_resp.status_code == 200
+    second_id = second_resp.json()['id']
+
+    listed = client.get('/projects')
+    assert listed.status_code == 200
+    listed_ids = [item['id'] for item in listed.json()]
+    assert listed_ids[:2] == [second_id, first_id]
+    assert all(item['paper_count'] == 0 for item in listed.json()[:2])
+
+    touched = client.get(f'/projects/{first_id}')
+    assert touched.status_code == 200
+
+    listed_after_touch = client.get('/projects')
+    assert listed_after_touch.status_code == 200
+    assert listed_after_touch.json()[0]['id'] == first_id

@@ -9,6 +9,7 @@ import {
   ProjectActionLaunchResponse,
   ResearchProject,
   ResearchProjectEvidenceItem,
+  ResearchProjectListItem,
   ResearchProjectOutput,
   ResearchProjectPaper,
   ResearchProjectTaskDetail,
@@ -46,7 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`API error ${response.status}: ${message}`);
+    throw new Error(`接口请求失败（${response.status}）：${message}`);
   }
 
   if (response.status === 204) {
@@ -80,13 +81,13 @@ async function streamNdjson(
     if (error instanceof DOMException && error.name === 'AbortError') {
       return;
     }
-    const message = error instanceof Error ? error.message : '鏈煡缃戠粶閿欒';
-    throw new Error(`鏃犳硶杩炴帴鍚庣鏈嶅姟锛?{API_BASE}銆傚師濮嬮敊璇細${message}`);
+    const message = error instanceof Error ? error.message : '未知网络错误';
+    throw new Error(`无法连接后端服务：${API_BASE}。原始错误：${message}`);
   }
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`API error ${response.status}: ${message}`);
+    throw new Error(`接口请求失败（${response.status}）：${message}`);
   }
 
   if (!response.body) {
@@ -146,7 +147,7 @@ async function requestStream<T>(
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`API error ${response.status}: ${message}`);
+    throw new Error(`接口请求失败（${response.status}）：${message}`);
   }
 
   if (!response.body) {
@@ -424,7 +425,7 @@ export async function createProject(payload: {
 }
 
 export async function listProjects() {
-  return request<ResearchProject[]>('/projects');
+  return request<ResearchProjectListItem[]>('/projects');
 }
 
 export async function getProject(projectId: number) {

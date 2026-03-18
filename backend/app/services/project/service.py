@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -28,6 +28,7 @@ from app.models.schemas.project import (
     LinkedReproductionArtifactOut,
     LinkedSummaryArtifactOut,
     ResearchProjectEvidenceOut,
+    ResearchProjectListItemOut,
     ResearchProjectLinkedArtifactsOut,
     ResearchProjectOut,
     ResearchProjectOutputOut,
@@ -139,6 +140,21 @@ class ProjectService:
             updated_at=row.updated_at,
         )
 
+    def to_project_list_item_out(
+        self,
+        row: ResearchProjectRecord,
+        *,
+        paper_count: int = 0,
+        evidence_count: int = 0,
+        output_count: int = 0,
+    ) -> ResearchProjectListItemOut:
+        return ResearchProjectListItemOut(
+            **self.to_project_out(row).model_dump(),
+            paper_count=paper_count,
+            evidence_count=evidence_count,
+            output_count=output_count,
+        )
+
     def to_paper_out(self, row: PaperRecord) -> PaperOut:
         return PaperOut(
             id=row.id,
@@ -190,6 +206,47 @@ class ProjectService:
         return db.execute(
             select(ResearchProjectRecord).order_by(desc(ResearchProjectRecord.last_opened_at), desc(ResearchProjectRecord.updated_at))
         ).scalars().all()
+
+    def list_project_list_items(self, db: Session) -> list[ResearchProjectListItemOut]:
+        rows = self.list_projects(db)
+        if not rows:
+            return []
+
+        project_ids = [row.id for row in rows]
+        paper_counts = {
+            int(project_id): int(total)
+            for project_id, total in db.execute(
+                select(ResearchProjectPaperRecord.project_id, func.count(ResearchProjectPaperRecord.id))
+                .where(ResearchProjectPaperRecord.project_id.in_(project_ids))
+                .group_by(ResearchProjectPaperRecord.project_id)
+            ).all()
+        }
+        evidence_counts = {
+            int(project_id): int(total)
+            for project_id, total in db.execute(
+                select(ResearchProjectEvidenceItemRecord.project_id, func.count(ResearchProjectEvidenceItemRecord.id))
+                .where(ResearchProjectEvidenceItemRecord.project_id.in_(project_ids))
+                .group_by(ResearchProjectEvidenceItemRecord.project_id)
+            ).all()
+        }
+        output_counts = {
+            int(project_id): int(total)
+            for project_id, total in db.execute(
+                select(ResearchProjectOutputRecord.project_id, func.count(ResearchProjectOutputRecord.id))
+                .where(ResearchProjectOutputRecord.project_id.in_(project_ids))
+                .group_by(ResearchProjectOutputRecord.project_id)
+            ).all()
+        }
+
+        return [
+            self.to_project_list_item_out(
+                row,
+                paper_count=paper_counts.get(row.id, 0),
+                evidence_count=evidence_counts.get(row.id, 0),
+                output_count=output_counts.get(row.id, 0),
+            )
+            for row in rows
+        ]
 
     def update_project(self, db: Session, row: ResearchProjectRecord, **changes: Any) -> ResearchProjectRecord:
         if changes.get('title') is not None:

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import Button from '@/components/common/Button';
 import HelpDrawer from '@/components/layout/HelpDrawer';
+import { APP_BRAND } from '@/lib/branding';
 import { NAV_ITEMS } from '@/lib/constants';
 
 function isActivePath(href: string, pathname: string): boolean {
@@ -39,8 +40,8 @@ export default function Topbar() {
     <>
       <header className="topbar">
         <Link href="/projects" className="topbar-brand">
-          <strong>Research Copilot</strong>
-          <span className="subtle">项目制 notebook 工作台，围绕研究问题持续推进</span>
+          <strong>{APP_BRAND}</strong>
+          <span className="subtle">项目制研究工作台，围绕研究问题持续推进</span>
         </Link>
 
         <nav className="topbar-nav" aria-label="主导航">
@@ -63,10 +64,10 @@ export default function Topbar() {
             className={`topbar-icon-button ${searchActive ? 'active' : ''}`.trim()}
             onClick={() => router.push('/search')}
           >
-            搜索
+            搜索论文
           </button>
           <Button className="secondary" type="button" onClick={() => setHelpOpen(true)}>
-            帮助
+            使用说明
           </Button>
           <div className="subtle topbar-time">{now || '--'}</div>
         </div>

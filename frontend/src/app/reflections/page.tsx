@@ -7,11 +7,13 @@ import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
+import ProjectContextBanner from '@/components/projects/ProjectContextBanner';
 import ReflectionEditor from '@/components/reflections/ReflectionEditor';
 import ReflectionTimeline from '@/components/reflections/ReflectionTimeline';
 import { getReflection, listReflections } from '@/lib/api';
 import { reflectionLifecycleLabel } from '@/lib/presentation';
 import { projectPath } from '@/lib/routes';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Reflection } from '@/lib/types';
 
 type PresetKey = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'last_30_days' | 'all' | 'custom';
@@ -90,6 +92,8 @@ function ReflectionsPageContent() {
   const [highlightedReflectionId, setHighlightedReflectionId] = useState<number | null>(null);
   const [showComposer, setShowComposer] = useState(() => !requestedReflectionId);
 
+  usePageTitle(projectId ? '项目心得' : '研究心得');
+
   const summary = useMemo(
     () => ({
       total: items.length,
@@ -165,24 +169,24 @@ function ReflectionsPageContent() {
       <Card>
         <h2 className="title">研究心得</h2>
         <p className="subtle">按周节奏查看论文心得和复现心得，保留时间线回顾与深链定位能力。</p>
-        {requestedPaperId ? (
+        {projectId ? (
+          <ProjectContextBanner
+            projectId={projectId}
+            message={requestedPaperId ? `当前为项目上下文心得视图，并已聚焦到论文 #${requestedPaperId}。` : '当前为项目上下文心得视图。'}
+            actions={
+              requestedPaperId ? (
+                <Button className="secondary" type="button" onClick={() => router.push(`/reflections?project_id=${projectId}`)}>
+                  查看项目全部心得
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : null}
+        {requestedPaperId && !projectId ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
             <span className="subtle">当前仅显示论文 #{requestedPaperId} 的心得</span>
             <Button className="secondary" type="button" onClick={() => router.push('/reflections')}>
               查看全部心得
-            </Button>
-            {projectId ? (
-              <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
-                返回项目工作台
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-        {!requestedPaperId && projectId ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            <span className="subtle">当前为项目上下文心得视图</span>
-            <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
-              返回项目工作台
             </Button>
           </div>
         ) : null}

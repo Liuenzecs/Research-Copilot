@@ -91,6 +91,12 @@ export type ResearchProject = {
   updated_at: string;
 };
 
+export type ResearchProjectListItem = ResearchProject & {
+  paper_count: number;
+  evidence_count: number;
+  output_count: number;
+};
+
 export type ResearchProjectPaper = {
   id: number;
   project_id: number;

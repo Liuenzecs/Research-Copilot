@@ -42,6 +42,7 @@ import {
   updateProjectOutput,
 } from "@/lib/api";
 import { memoryPath, paperReaderPath, projectPath, reflectionsPath, reproductionPath } from "@/lib/routes";
+import { usePageTitle } from "@/lib/usePageTitle";
 import type {
   AutoSaveState,
   Paper,
@@ -311,6 +312,8 @@ function SortableEvidenceCard({
 
 export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const router = useRouter();
+  usePageTitle("项目工作台");
+
   const paperPoolRef = useRef<HTMLDivElement | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const fallbackPollRef = useRef<number | null>(null);
