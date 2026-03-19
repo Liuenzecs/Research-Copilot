@@ -26,12 +26,36 @@ from app.models.schemas.project import (
 )
 from app.services.paper_search.recommender import paper_search_recommender
 from app.services.paper_search.service import paper_search_service
+from app.services.project.activity import project_activity_service
 
 
 SEARCH_RUN_LIMIT = 24
 
 
 class ProjectSearchService:
+    def _log_activity(
+        self,
+        db: Session,
+        *,
+        project_id: int,
+        event_type: str,
+        title: str,
+        message: str,
+        ref_type: str = '',
+        ref_id: int | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        project_activity_service.record(
+            db,
+            project_id=project_id,
+            event_type=event_type,
+            title=title,
+            message=message,
+            ref_type=ref_type,
+            ref_id=ref_id,
+            metadata=metadata or {},
+        )
+
     def _serialize_filters(self, filters: ProjectSearchFilters) -> str:
         return json.dumps(filters.model_dump(), ensure_ascii=False)
 
@@ -127,6 +151,16 @@ class ProjectSearchService:
         db.refresh(row)
 
         items = [item.model_copy(update={'run_id': row.id}) for item in result.items]
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='search_run_created',
+            title='运行项目搜索',
+            message=f'以“{normalized_query[:80]}”运行了一次项目搜索，返回 {len(items)} 条结果。',
+            ref_type='research_project_search_runs',
+            ref_id=row.id,
+            metadata={'query': normalized_query, 'result_count': len(items), 'sort_mode': payload.sort_mode},
+        )
         return ResearchProjectSearchRunDetailOut(run=self._to_run_out(row), items=items)
 
     def list_search_runs(self, db: Session, project_id: int) -> list[ResearchProjectSearchRunOut]:
@@ -161,6 +195,16 @@ class ProjectSearchService:
         db.add(row)
         db.commit()
         db.refresh(row)
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='saved_search_created',
+            title='保存搜索',
+            message=f'已保存搜索“{row.title[:80]}”。',
+            ref_type='research_project_saved_searches',
+            ref_id=row.id,
+            metadata={'query': normalized_query, 'sort_mode': payload.sort_mode},
+        )
         return await self.rerun_saved_search(db, project=project, saved_search=row)
 
     def list_saved_searches(self, db: Session, project_id: int) -> list[ResearchProjectSavedSearchOut]:
@@ -268,11 +312,34 @@ class ProjectSearchService:
         db.add(row)
         db.commit()
         db.refresh(row)
+        self._log_activity(
+            db,
+            project_id=row.project_id,
+            event_type='saved_search_updated',
+            title='更新保存搜索',
+            message=f'已更新保存搜索“{row.title[:80]}”。',
+            ref_type='research_project_saved_searches',
+            ref_id=row.id,
+            metadata={'query': row.query, 'sort_mode': row.sort_mode},
+        )
         return row
 
     def delete_saved_search(self, db: Session, row: ResearchProjectSavedSearchRecord) -> None:
+        project_id = row.project_id
+        search_id = row.id
+        title = row.title
         db.delete(row)
         db.commit()
+        self._log_activity(
+            db,
+            project_id=project_id,
+            event_type='saved_search_deleted',
+            title='删除保存搜索',
+            message=f'已删除保存搜索“{title[:80]}”。',
+            ref_type='research_project_saved_searches',
+            ref_id=search_id,
+            metadata={'title': title},
+        )
 
     async def rerun_saved_search(
         self,
@@ -332,6 +399,16 @@ class ProjectSearchService:
         db.add(saved_search)
         db.commit()
         db.refresh(saved_search)
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='saved_search_rerun',
+            title='重跑保存搜索',
+            message=f'已重跑“{saved_search.title[:80]}”，本次命中 {len(result.items)} 条结果。',
+            ref_type='research_project_saved_searches',
+            ref_id=saved_search.id,
+            metadata={'saved_search_id': saved_search.id, 'run_id': run.id, 'result_count': len(result.items)},
+        )
         return self.get_saved_search_detail(db, project_id=project.id, saved_search=saved_search)
 
     def update_candidate(
@@ -348,6 +425,18 @@ class ProjectSearchService:
         db.add(row)
         db.commit()
         db.refresh(row)
+        saved_search = db.get(ResearchProjectSavedSearchRecord, row.saved_search_id)
+        if saved_search is not None:
+            self._log_activity(
+                db,
+                project_id=saved_search.project_id,
+                event_type='search_candidate_triage_updated',
+                title='更新候选状态',
+                message=f'已将候选论文“{row.paper.title_en[:80]}”标记为 {normalized}。',
+                ref_type='research_project_saved_search_candidates',
+                ref_id=row.id,
+                metadata={'triage_status': normalized, 'paper_id': row.paper_id, 'saved_search_id': row.saved_search_id},
+            )
         return row
 
     async def generate_ai_reason(
@@ -364,6 +453,16 @@ class ProjectSearchService:
         db.add(row)
         db.commit()
         db.refresh(row)
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='search_candidate_ai_reason_generated',
+            title='生成候选推荐理由',
+            message=f'已为“{row.paper.title_en[:80]}”生成 AI 推荐理由。',
+            ref_type='research_project_saved_search_candidates',
+            ref_id=row.id,
+            metadata={'paper_id': row.paper_id, 'saved_search_id': saved_search.id},
+        )
         return self._candidate_out_from_row(db, project_id=project.id, saved_search=saved_search, row=row)
 
     def default_selection_reason(self, row: ResearchProjectSavedSearchCandidateRecord) -> str:

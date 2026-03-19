@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -9,6 +11,7 @@ import StatusStack from '@/components/common/StatusStack';
 import ReportDraftEditor from '@/components/reporting/ReportDraftEditor';
 import WeeklyReportPanel from '@/components/reporting/WeeklyReportPanel';
 import { createWeeklyReportDraft, getWeeklyReportContext, listWeeklyReportDrafts, updateWeeklyReportDraft } from '@/lib/api';
+import { projectPath } from '@/lib/routes';
 import { formatDateTime, weekRangeLabel, weeklyReportStatusLabel } from '@/lib/presentation';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { WeeklyReportContext, WeeklyReportDraft } from '@/lib/types';
@@ -34,6 +37,7 @@ function normalizeWeeklyReportContext(
   return {
     week_start: typeof snapshot.week_start === 'string' ? snapshot.week_start : fallback.weekStart,
     week_end: typeof snapshot.week_end === 'string' ? snapshot.week_end : fallback.weekEnd,
+    project_id: typeof snapshot.project_id === 'number' ? snapshot.project_id : null,
     report_worthy_reflections: Array.isArray(snapshot.report_worthy_reflections)
       ? snapshot.report_worthy_reflections as WeeklyReportContext['report_worthy_reflections']
       : [],
@@ -47,11 +51,16 @@ function normalizeWeeklyReportContext(
       ? snapshot.blockers as WeeklyReportContext['blockers']
       : [],
     next_actions: Array.isArray(snapshot.next_actions) ? snapshot.next_actions as string[] : [],
+    project_activity: Array.isArray(snapshot.project_activity) ? snapshot.project_activity as Array<Record<string, unknown>> : [],
   };
 }
 
-export default function WeeklyReportPage() {
-  usePageTitle('周报');
+function WeeklyReportPageContent() {
+  const searchParams = useSearchParams();
+  const projectIdParam = searchParams.get('project_id');
+  const parsedProjectId = projectIdParam ? Number(projectIdParam) : null;
+  const projectId = parsedProjectId && Number.isFinite(parsedProjectId) ? parsedProjectId : null;
+  usePageTitle(projectId ? '项目周报' : '周报');
 
   const currentWeek = useMemo(() => currentWeekRange(), []);
   const [weekStart, setWeekStart] = useState(currentWeek.weekStart);
@@ -67,14 +76,20 @@ export default function WeeklyReportPage() {
   const [showDraftChoice, setShowDraftChoice] = useState(false);
 
   const currentRangeDrafts = useMemo(
-    () => history.filter((item) => item.week_start === weekStart && item.week_end === weekEnd),
-    [history, weekEnd, weekStart],
+    () =>
+      history.filter(
+        (item) =>
+          item.week_start === weekStart &&
+          item.week_end === weekEnd &&
+          (projectId === null ? !item.project_id : item.project_id === projectId),
+      ),
+    [history, projectId, weekEnd, weekStart],
   );
   const latestCurrentRangeDraft = currentRangeDrafts[0] ?? null;
 
   async function reloadHistory() {
     try {
-      const rows = await listWeeklyReportDrafts();
+      const rows = await listWeeklyReportDrafts('', projectId);
       setHistory(rows);
       return rows;
     } catch (reloadError) {
@@ -93,7 +108,7 @@ export default function WeeklyReportPage() {
     setNotice('');
     setLoading(true);
     try {
-      const data = await getWeeklyReportContext(nextWeekStart, nextWeekEnd);
+      const data = await getWeeklyReportContext(nextWeekStart, nextWeekEnd, projectId);
       setContext(data);
       setContextSource('live');
     } catch (loadError) {
@@ -108,17 +123,17 @@ export default function WeeklyReportPage() {
       await reloadHistory();
       await loadContext(currentWeek.weekStart, currentWeek.weekEnd);
     })();
-  }, [currentWeek.weekEnd, currentWeek.weekStart]);
+  }, [currentWeek.weekEnd, currentWeek.weekStart, projectId]);
 
   async function createNewDraft() {
     setError('');
     setNotice('');
     setLoading(true);
     try {
-      const row = await createWeeklyReportDraft({ week_start: weekStart, week_end: weekEnd });
+      const row = await createWeeklyReportDraft({ week_start: weekStart, week_end: weekEnd, project_id: projectId });
       setDraft(row);
       await reloadHistory();
-      const liveContext = await getWeeklyReportContext(weekStart, weekEnd);
+      const liveContext = await getWeeklyReportContext(weekStart, weekEnd, projectId);
       setContext(liveContext);
       setContextSource('live');
       pushNotice('周报草稿已生成，左侧继续显示当前周期的实时上下文。');
@@ -176,8 +191,19 @@ export default function WeeklyReportPage() {
   return (
     <>
       <Card>
-        <h2 className="title">周报工作区</h2>
-        <p className="subtle">先确认本周上下文，再决定继续旧草稿还是新建一份草稿，避免误覆盖。</p>
+        <div className="projects-section-header">
+          <div>
+            <h2 className="title">{projectId ? '项目周报工作区' : '周报工作区'}</h2>
+            <p className="subtle">
+              {projectId ? '当前正在项目上下文下生成周报，只聚合这个项目相关的论文、心得、复现和轨迹。' : '先确认本周上下文，再决定继续旧草稿还是新建一份草稿，避免误覆盖。'}
+            </p>
+          </div>
+          {projectId ? (
+            <Link className="button secondary" href={projectPath(projectId)}>
+              返回项目工作台
+            </Link>
+          ) : null}
+        </div>
       </Card>
 
       <div className="card" style={{ display: 'grid', gap: 8 }}>
@@ -274,5 +300,13 @@ export default function WeeklyReportPage() {
         ]}
       />
     </>
+  );
+}
+
+export default function WeeklyReportPage() {
+  return (
+    <Suspense fallback={<Card><p className="subtle">正在加载周报页面...</p></Card>}>
+      <WeeklyReportPageContent />
+    </Suspense>
   );
 }

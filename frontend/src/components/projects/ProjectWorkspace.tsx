@@ -28,13 +28,20 @@ import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench
 import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
   addProjectPaper,
+  batchUpdateProjectPaperState,
   createProjectEvidence,
   deleteProjectEvidence,
   draftProjectLiteratureReview,
+  ensureProjectSummaries,
   extractProjectEvidence,
+  fetchProjectPdfs,
   generateProjectCompareTable,
   getProjectTask,
   getProjectWorkspace,
+  insertProjectReviewEvidence,
+  listProjectDuplicates,
+  mergeProjectDuplicates,
+  refreshProjectMetadata,
   reorderProjectEvidence,
   searchPapers,
   streamProjectTask,
@@ -42,11 +49,13 @@ import {
   updateProjectEvidence,
   updateProjectOutput,
 } from "@/lib/api";
-import { memoryPath, paperReaderPath, projectPath, reflectionsPath, reproductionPath } from "@/lib/routes";
+import { memoryPath, paperReaderPath, projectPath, reflectionsPath, reproductionPath, weeklyReportPath } from "@/lib/routes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type {
   AutoSaveState,
   Paper,
+  ProjectDuplicateGroup,
+  ProjectReviewCitation,
   ProjectActionLaunchResponse,
   ResearchProjectEvidenceItem,
   ResearchProjectLinkedArtifacts,
@@ -220,6 +229,40 @@ function evidenceSourcePath(projectId: number, item: ResearchProjectEvidenceItem
   return paperReaderPath(item.paper_id, undefined, undefined, projectId);
 }
 
+function pdfStatusLabel(status: string) {
+  switch (status) {
+    case "downloaded":
+      return "已下载";
+    case "remote_pdf":
+      return "可远程获取";
+    case "landing_page_only":
+      return "仅落地页";
+    case "missing":
+      return "缺失";
+    case "error":
+      return "检查失败";
+    default:
+      return status || "未知";
+  }
+}
+
+function integrityStatusLabel(status: string) {
+  switch (status) {
+    case "normal":
+      return "正常";
+    case "updated":
+      return "已更新";
+    case "warning":
+      return "需注意";
+    case "retracted":
+      return "已撤稿";
+    case "error":
+      return "刷新失败";
+    default:
+      return status || "未知";
+  }
+}
+
 function compareDraftStorageKey(projectId: number) {
   return `research-project:${projectId}:compare-draft`;
 }
@@ -249,22 +292,55 @@ function featuredTask(tasks: ResearchProjectTask[]) {
   return tasks.find((task) => task.status === "running") ?? tasks[0] ?? null;
 }
 
+function smartViewMatches(
+  key: string,
+  paper: ResearchProjectWorkspace["papers"][number],
+  citedPaperIds: Set<number>,
+  duplicatePaperIds: Set<number>,
+) {
+  switch (key) {
+    case "missing_pdf":
+      return ["missing", "landing_page_only", "error"].includes(paper.pdf_status);
+    case "pending_summary":
+      return paper.summary_count === 0;
+    case "pending_evidence":
+      return paper.evidence_count === 0;
+    case "pending_writing_citation":
+      return !citedPaperIds.has(paper.paper.id);
+    case "high_reproduction_value":
+      return ["planned", "in_progress", "blocked"].includes(paper.latest_reproduction_status || "");
+    case "reportable":
+      return paper.report_worthy_count > 0 || paper.evidence_count > 0;
+    case "risky":
+      return ["warning", "error", "retracted"].includes(paper.integrity_status);
+    case "duplicate_candidates":
+      return duplicatePaperIds.has(paper.paper.id);
+    case "all_papers":
+    default:
+      return true;
+  }
+}
+
 function SortableEvidenceCard({
   projectId,
   item,
   saveState,
   mutating,
+  inserting,
   onChange,
   onBlur,
   onDelete,
+  onInsert,
 }: {
   projectId: number;
   item: ResearchProjectEvidenceItem;
   saveState: AutoSaveState;
   mutating: boolean;
+  inserting: boolean;
   onChange: (id: number, patch: Partial<ResearchProjectEvidenceItem>) => void;
   onBlur: (id: number) => void;
   onDelete: (id: number) => void;
+  onInsert: (id: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const sourcePath = evidenceSourcePath(projectId, item);
@@ -302,6 +378,9 @@ function SortableEvidenceCard({
               回到来源
             </Link>
           ) : null}
+          <Button className="secondary" type="button" onClick={() => onInsert(item.id)} disabled={inserting}>
+            {inserting ? "插入中..." : "插入综述稿"}
+          </Button>
           <Button className="secondary" type="button" onClick={() => onDelete(item.id)} disabled={mutating}>
             {mutating ? "处理中..." : "删除"}
           </Button>
@@ -348,6 +427,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [runningAction, setRunningAction] = useState("");
   const [activeTask, setActiveTask] = useState<ResearchProjectTaskDetail | null>(null);
   const [taskConnectionNotice, setTaskConnectionNotice] = useState("");
+  const [activeSmartView, setActiveSmartView] = useState("all_papers");
+  const [paperBatchBusy, setPaperBatchBusy] = useState("");
 
   const [manualEvidencePaperId, setManualEvidencePaperId] = useState("");
   const [manualEvidenceKind, setManualEvidenceKind] = useState("claim");
@@ -363,6 +444,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [compareSaveState, setCompareSaveState] = useState<AutoSaveState>("idle");
   const [reviewDraft, setReviewDraft] = useState("");
   const [reviewSaveState, setReviewSaveState] = useState<AutoSaveState>("idle");
+  const [insertingEvidenceIds, setInsertingEvidenceIds] = useState<number[]>([]);
+  const [duplicateGroups, setDuplicateGroups] = useState<ProjectDuplicateGroup[]>([]);
+  const [duplicateBusy, setDuplicateBusy] = useState("");
 
   const workspaceRef = useRef<ResearchProjectWorkspace | null>(workspace);
   const evidenceItemsRef = useRef<ResearchProjectEvidenceItem[]>(evidenceItems);
@@ -461,6 +545,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       if (current && mergedWorkspace.papers.some((item) => String(item.paper.id) === current)) return current;
       return mergedWorkspace.papers[0] ? String(mergedWorkspace.papers[0].paper.id) : "";
     });
+    if (!mergedWorkspace.smart_views.some((item) => item.key === activeSmartView)) {
+      setActiveSmartView("all_papers");
+    }
 
     if (typeof window !== "undefined") {
       const compareMirror = window.localStorage.getItem(compareDraftStorageKey(projectId));
@@ -543,6 +630,13 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }, [activeTask, projectId, workspace]);
 
   useEffect(() => {
+    if (activeSmartView !== "duplicate_candidates") return;
+    if (duplicateGroups.length > 0) return;
+    if ((workspace?.duplicate_summary.group_count ?? 0) === 0) return;
+    void loadDuplicateGroups();
+  }, [activeSmartView, duplicateGroups.length, workspace?.duplicate_summary.group_count]);
+
+  useEffect(() => {
     const hasPendingChanges =
       Object.values(evidenceSaveState).some((state) => state === "dirty" || state === "saving" || state === "error") ||
       compareSaveState === "dirty" ||
@@ -571,9 +665,12 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   function syncWorkspaceOutput(nextOutput: ResearchProjectOutput) {
     setWorkspace((current) => {
       if (!current) return current;
+      const exists = current.outputs.some((item) => item.id === nextOutput.id);
       return {
         ...current,
-        outputs: current.outputs.map((item) => (item.id === nextOutput.id ? nextOutput : item)),
+        outputs: exists
+          ? current.outputs.map((item) => (item.id === nextOutput.id ? nextOutput : item))
+          : [...current.outputs, nextOutput],
       };
     });
   }
@@ -654,7 +751,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     });
   }
 
-  async function launchAction(actionKey: "extract" | "compare" | "review", promise: Promise<ProjectActionLaunchResponse>) {
+  async function launchAction(actionKey: string, promise: Promise<ProjectActionLaunchResponse>) {
     setRunningAction(actionKey);
     setError("");
     setNotice("");
@@ -776,6 +873,94 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       setError((createError as Error).message || "创建证据卡失败");
     } finally {
       setCreatingEvidence(false);
+    }
+  }
+
+  async function handleInsertEvidenceIntoReview(evidenceId: number) {
+    setInsertingEvidenceIds((current) => [...current, evidenceId]);
+    setError("");
+    try {
+      const output = await insertProjectReviewEvidence(projectId, {
+        evidence_ids: [evidenceId],
+        placement: "append",
+      });
+      syncWorkspaceOutput(output);
+      reviewDraftRef.current = output.content_markdown ?? "";
+      setReviewDraft(reviewDraftRef.current);
+      setReviewState("saved");
+      if (typeof window !== "undefined") window.localStorage.removeItem(reviewDraftStorageKey(projectId));
+      setNotice("证据已插入综述稿。");
+    } catch (insertError) {
+      setError((insertError as Error).message || "插入综述稿失败");
+    } finally {
+      setInsertingEvidenceIds((current) => current.filter((id) => id !== evidenceId));
+    }
+  }
+
+  async function handleBatchPaperStateUpdate(payload: {
+    reading_status?: string;
+    repro_interest?: string;
+    is_core_paper?: boolean;
+    notice: string;
+    busyKey: string;
+  }) {
+    if (!activePaperIds.length) {
+      setError("请先在论文池里至少选择一篇论文。");
+      return;
+    }
+    setPaperBatchBusy(payload.busyKey);
+    setError("");
+    try {
+      await batchUpdateProjectPaperState(projectId, {
+        paper_ids: activePaperIds,
+        reading_status: payload.reading_status,
+        repro_interest: payload.repro_interest,
+        is_core_paper: payload.is_core_paper,
+      });
+      await loadWorkspace({ quiet: true });
+      setNotice(payload.notice);
+    } catch (batchError) {
+      setError((batchError as Error).message || "批量更新论文状态失败");
+    } finally {
+      setPaperBatchBusy("");
+    }
+  }
+
+  async function loadDuplicateGroups() {
+    setDuplicateBusy("loading");
+    setError("");
+    try {
+      const payload = await listProjectDuplicates(projectId);
+      setDuplicateGroups(payload.groups);
+      if (!payload.groups.length) setNotice("当前项目里没有待处理的重复论文。");
+    } catch (duplicateError) {
+      setError((duplicateError as Error).message || "重复项面板加载失败");
+    } finally {
+      setDuplicateBusy("");
+    }
+  }
+
+  async function handleMergeDuplicateGroup(group: ProjectDuplicateGroup) {
+    const canonicalPaper = group.papers[0]?.paper;
+    const mergedPaperIds = group.papers.slice(1).map((item) => item.paper.id);
+    if (!canonicalPaper || !mergedPaperIds.length) {
+      setError("当前重复组至少需要两篇论文才能合并。");
+      return;
+    }
+    setDuplicateBusy(group.key);
+    setError("");
+    try {
+      const payload = await mergeProjectDuplicates(projectId, {
+        canonical_paper_id: canonicalPaper.id,
+        merged_paper_ids: mergedPaperIds,
+      });
+      setDuplicateGroups(payload.groups);
+      await loadWorkspace({ quiet: true });
+      setNotice(`已将重复组软合并到《${canonicalPaper.title_en}》。`);
+    } catch (mergeError) {
+      setError((mergeError as Error).message || "合并重复论文失败");
+    } finally {
+      setDuplicateBusy("");
     }
   }
 
@@ -982,6 +1167,28 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     return task ? taskFromRecent(task) : null;
   }, [activeTask, workspace]);
 
+  const reviewCitations = useMemo(() => {
+    const raw = reviewOutput?.content_json?.citations;
+    return Array.isArray(raw) ? (raw as ProjectReviewCitation[]) : [];
+  }, [reviewOutput]);
+  const citedPaperIds = useMemo(() => new Set(reviewCitations.map((item) => Number(item.paper_id)).filter(Boolean)), [reviewCitations]);
+  const duplicatePaperIds = useMemo(
+    () => new Set(duplicateGroups.flatMap((group) => group.papers.map((item) => item.paper.id))),
+    [duplicateGroups],
+  );
+  const filteredProjectPapers = useMemo(
+    () => (workspace?.papers ?? []).filter((item) => smartViewMatches(activeSmartView, item, citedPaperIds, duplicatePaperIds)),
+    [activeSmartView, citedPaperIds, duplicatePaperIds, workspace?.papers],
+  );
+  const unusedEvidenceItems = useMemo(() => {
+    const insertedIds = new Set(
+      Array.isArray(reviewOutput?.content_json?.inserted_evidence_ids)
+        ? (reviewOutput?.content_json?.inserted_evidence_ids as Array<number | string>).map((item) => Number(item)).filter(Boolean)
+        : [],
+    );
+    return evidenceItems.filter((item) => !insertedIds.has(item.id));
+  }, [evidenceItems, reviewOutput]);
+
   if (loading && !workspace) {
     return <Loading text="正在加载项目工作台..." />;
   }
@@ -1059,6 +1266,22 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
             <div className="project-action-buttons">
               <Button
+                className="secondary"
+                type="button"
+                disabled={runningAction !== ""}
+                onClick={() =>
+                  void launchAction(
+                    "summaries",
+                    ensureProjectSummaries(projectId, {
+                      paper_ids: activePaperIds,
+                      instruction: actionInstruction.trim(),
+                    }),
+                  )
+                }
+              >
+                {runningAction === "summaries" ? "启动中..." : "补齐摘要"}
+              </Button>
+              <Button
                 type="button"
                 disabled={runningAction !== ""}
                 data-testid="project-action-extract"
@@ -1111,6 +1334,38 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               <Link className="button secondary" href={`/search?project_id=${projectId}`}>
                 搜索论文
               </Link>
+              <Button
+                className="secondary"
+                type="button"
+                disabled={runningAction !== ""}
+                onClick={() =>
+                  void launchAction(
+                    "pdfs",
+                    fetchProjectPdfs(projectId, {
+                      paper_ids: activePaperIds,
+                      instruction: actionInstruction.trim(),
+                    }),
+                  )
+                }
+              >
+                {runningAction === "pdfs" ? "启动中..." : "补全 PDF"}
+              </Button>
+              <Button
+                className="secondary"
+                type="button"
+                disabled={runningAction !== ""}
+                onClick={() =>
+                  void launchAction(
+                    "metadata",
+                    refreshProjectMetadata(projectId, {
+                      paper_ids: activePaperIds,
+                      instruction: actionInstruction.trim(),
+                    }),
+                  )
+                }
+              >
+                {runningAction === "metadata" ? "启动中..." : "刷新可信度"}
+              </Button>
             </div>
 
             {activeTaskForPanel ? (
@@ -1157,11 +1412,76 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 </div>
               </div>
 
+              <div className="project-chip-row" style={{ marginBottom: 12 }}>
+                {workspace.smart_views.map((view) => (
+                  <button
+                    key={view.key}
+                    type="button"
+                    className={`project-filter-chip${activeSmartView === view.key ? " is-active" : ""}`.trim()}
+                    onClick={() => {
+                      setActiveSmartView(view.key);
+                      setSelectedPaperIds(
+                        workspace.papers
+                          .filter((item) => smartViewMatches(view.key, item, citedPaperIds, duplicatePaperIds))
+                          .map((item) => item.paper.id),
+                      );
+                    }}
+                  >
+                    {view.label} {view.count}
+                  </button>
+                ))}
+              </div>
+
+              <div className="projects-inline-actions" style={{ marginBottom: 12 }}>
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() =>
+                    void handleBatchPaperStateUpdate({
+                      reading_status: "deep_read",
+                      notice: "已把所选论文标记为精读。",
+                      busyKey: "deep-read",
+                    })
+                  }
+                  disabled={paperBatchBusy !== ""}
+                >
+                  {paperBatchBusy === "deep-read" ? "处理中..." : "标记为精读"}
+                </Button>
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() =>
+                    void handleBatchPaperStateUpdate({
+                      repro_interest: "high",
+                      notice: "已把所选论文标记为高复现价值。",
+                      busyKey: "high-repro",
+                    })
+                  }
+                  disabled={paperBatchBusy !== ""}
+                >
+                  {paperBatchBusy === "high-repro" ? "处理中..." : "标记高复现价值"}
+                </Button>
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() =>
+                    void handleBatchPaperStateUpdate({
+                      is_core_paper: true,
+                      notice: "已把所选论文标记为核心论文。",
+                      busyKey: "core-paper",
+                    })
+                  }
+                  disabled={paperBatchBusy !== ""}
+                >
+                  {paperBatchBusy === "core-paper" ? "处理中..." : "标记核心论文"}
+                </Button>
+              </div>
+
               <div className="project-paper-list" data-testid="project-paper-pool">
-                {workspace.papers.length === 0 ? (
+                {filteredProjectPapers.length === 0 ? (
                   <EmptyState title="项目里还没有论文" hint="先把候选论文加入项目，再继续提取证据和起草综述。" />
                 ) : (
-                  workspace.papers.map((item) => {
+                  filteredProjectPapers.map((item) => {
                     const checked = selectedPaperIds.includes(item.paper.id);
                     return (
                       <div key={item.id} className="project-paper-card">
@@ -1186,10 +1506,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                           {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
                         </div>
                         <div className="subtle">
-                          PDF {item.is_downloaded ? "已下载" : "未下载"} · 摘要 {item.summary_count} · 心得 {item.reflection_count}
+                          PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
                         </div>
                         <div className="subtle">
                           复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
+                        </div>
+                        <div className="subtle">
+                          可信度 {integrityStatusLabel(item.integrity_status)}
+                          {item.integrity_note ? ` · ${item.integrity_note}` : ""}
                         </div>
                         <div className="projects-inline-actions">
                           <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} href={paperReaderPath(item.paper.id, undefined, undefined, projectId)}>
@@ -1263,9 +1587,11 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                           item={item}
                           saveState={evidenceSaveState[item.id] ?? "idle"}
                           mutating={mutatingEvidenceId === item.id}
+                          inserting={insertingEvidenceIds.includes(item.id)}
                           onChange={updateEvidenceDraft}
                           onBlur={(id) => void flushEvidenceSave(id)}
                           onDelete={(id) => void handleDeleteEvidence(id)}
+                          onInsert={(id) => void handleInsertEvidenceIntoReview(id)}
                         />
                       ))}
                   </div>
@@ -1344,9 +1670,109 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               />
             )}
           </Card>
+
+          <Card>
+            <div className="projects-section-header">
+              <div>
+                <h2 className="title">引用管理</h2>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  这里会列出综述稿已使用的引用，以及还没写进稿件的证据卡。
+                </p>
+              </div>
+            </div>
+
+            <div className="project-linked-artifacts">
+              {reviewCitations.length === 0 ? (
+                <EmptyState title="综述稿还没有引用" hint="从证据卡点击“插入综述稿”后，这里会自动登记引用。" />
+              ) : (
+                reviewCitations.map((citation, index) => (
+                  <div key={`citation-${citation.evidence_id ?? index}`} className="project-linked-card">
+                    <strong>{citation.paper_title || `论文 ${citation.paper_id ?? "-"}`}</strong>
+                    <div className="subtle">
+                      来源 {citation.source_label || "未标注"} · 可信度 {integrityStatusLabel(citation.integrity_status || "")}
+                    </div>
+                    {citation.paper_id ? (
+                      <Link
+                        className="button secondary"
+                        href={paperReaderPath(citation.paper_id, citation.summary_id ?? undefined, citation.paragraph_id ?? undefined, projectId)}
+                      >
+                        回到阅读器
+                      </Link>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="projects-section-header" style={{ marginTop: 20 }}>
+              <div>
+                <h3 className="title" style={{ fontSize: 16 }}>待写入证据</h3>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  这些证据卡还没有进入综述稿。
+                </p>
+              </div>
+            </div>
+            <div className="project-linked-artifacts">
+              {unusedEvidenceItems.length === 0 ? (
+                <div className="subtle">当前所有证据卡都已经进入综述稿。</div>
+              ) : (
+                unusedEvidenceItems.slice(0, 8).map((item) => (
+                  <div key={`unused-evidence-${item.id}`} className="project-linked-card">
+                    <strong>{item.paper_title || "未绑定论文"}</strong>
+                    <div className="subtle">{item.excerpt}</div>
+                    <Button
+                      className="secondary"
+                      type="button"
+                      onClick={() => void handleInsertEvidenceIntoReview(item.id)}
+                      disabled={insertingEvidenceIds.includes(item.id)}
+                    >
+                      {insertingEvidenceIds.includes(item.id) ? "插入中..." : "插入综述稿"}
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
         </div>
 
         <div className="project-sidebar-right">
+          <Card>
+            <div className="projects-section-header">
+              <div>
+                <h2 className="title">状态中心</h2>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  用来快速发现缺 PDF、可信度风险、重复项和最近写作引用情况。
+                </p>
+              </div>
+            </div>
+            <div className="project-linked-artifacts">
+              <div className="project-linked-card">
+                <strong>缺 PDF</strong>
+                <div className="subtle">{workspace.smart_views.find((item) => item.key === "missing_pdf")?.count ?? 0} 篇待补全</div>
+              </div>
+              <div className="project-linked-card">
+                <strong>可信度风险</strong>
+                <div className="subtle">{workspace.smart_views.find((item) => item.key === "risky")?.count ?? 0} 篇需要复查</div>
+              </div>
+              <div className="project-linked-card">
+                <strong>重复待合并</strong>
+                <div className="subtle">{workspace.duplicate_summary.group_count} 组 / {workspace.duplicate_summary.paper_count} 篇</div>
+              </div>
+              <div className="project-linked-card">
+                <strong>写作引用</strong>
+                <div className="subtle">已写入 {reviewCitations.length} 条引用</div>
+              </div>
+            </div>
+            <div className="projects-inline-actions">
+              <Button className="secondary" type="button" onClick={() => void loadDuplicateGroups()} disabled={duplicateBusy !== ""}>
+                {duplicateBusy === "loading" ? "加载中..." : "查看重复项"}
+              </Button>
+              <Link className="button secondary" href={weeklyReportPath(projectId)}>
+                生成本项目周报
+              </Link>
+            </div>
+          </Card>
+
           <Card>
             <div className="projects-section-header">
               <div>
@@ -1394,6 +1820,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               <Link className="button secondary" data-testid="quick-link-search" href={`/search?project_id=${projectId}`}>
                 打开搜索页
               </Link>
+              <Link className="button secondary" href={weeklyReportPath(projectId)}>
+                打开项目周报
+              </Link>
               <Link className="button secondary" data-testid="quick-link-reflections" href={reflectionsPath({ projectId })}>
                 打开心得页
               </Link>
@@ -1404,6 +1833,39 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 打开复现页
               </Link>
             </div>
+          </Card>
+
+          <Card>
+            <div className="projects-section-header">
+              <div>
+                <h2 className="title">重复项面板</h2>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  采用软合并，不直接删除原始记录。
+                </p>
+              </div>
+            </div>
+
+            {duplicateGroups.length === 0 ? (
+              <EmptyState title="还没有加载重复组" hint="点击状态中心里的“查看重复项”后，这里会列出待合并候选。" />
+            ) : (
+              <div className="project-linked-artifacts">
+                {duplicateGroups.map((group) => (
+                  <div key={group.key} className="project-linked-card">
+                    <strong>{group.reason}</strong>
+                    <div className="subtle">{group.papers.map((item) => item.paper.title_en).join(" / ")}</div>
+                    <div className="subtle">默认保留第一篇为 canonical，其余软合并过去。</div>
+                    <Button
+                      className="secondary"
+                      type="button"
+                      onClick={() => void handleMergeDuplicateGroup(group)}
+                      disabled={duplicateBusy !== ""}
+                    >
+                      {duplicateBusy === group.key ? "合并中..." : "执行软合并"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card>
@@ -1435,6 +1897,30 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 ))
               )}
             </div>
+          </Card>
+
+          <Card>
+            <div className="projects-section-header">
+              <div>
+                <h2 className="title">研究轨迹</h2>
+                <p className="subtle" style={{ margin: "6px 0 0" }}>
+                  帮你回看这个项目是怎么一步步推进到现在的。
+                </p>
+              </div>
+            </div>
+            {workspace.activity_timeline_preview.length === 0 ? (
+              <EmptyState title="还没有项目轨迹" hint="后续的搜索、加论文、提证据、生成周报等动作都会出现在这里。" />
+            ) : (
+              <div className="project-linked-artifacts">
+                {workspace.activity_timeline_preview.map((event) => (
+                  <div key={event.id} className="project-linked-card">
+                    <strong>{event.title}</strong>
+                    <div className="subtle">{event.message}</div>
+                    <div className="subtle">{formatDateTime(event.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>

@@ -176,6 +176,14 @@ export type ResearchProjectPaper = {
   latest_reflection_id?: number | null;
   latest_reproduction_id?: number | null;
   latest_reproduction_status?: string;
+  evidence_count: number;
+  report_worthy_count: number;
+  pdf_status: 'downloaded' | 'remote_pdf' | 'landing_page_only' | 'missing' | 'error' | string;
+  pdf_status_message: string;
+  pdf_last_checked_at?: string | null;
+  integrity_status: 'normal' | 'warning' | 'updated' | 'retracted' | 'error' | string;
+  integrity_note: string;
+  metadata_last_checked_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -206,6 +214,16 @@ export type ResearchProjectOutput = {
   status: 'draft' | 'finalized' | string;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectReviewCitation = {
+  paper_id?: number | null;
+  evidence_id?: number | null;
+  paragraph_id?: number | null;
+  summary_id?: number | null;
+  source_label?: string;
+  paper_title?: string;
+  integrity_status?: string;
 };
 
 export type ResearchProjectTaskProgressStep = {
@@ -283,6 +301,45 @@ export type ResearchProjectLinkedArtifacts = {
   reproductions: LinkedReproductionArtifact[];
 };
 
+export type ResearchProjectSmartView = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+export type ProjectActivityEvent = {
+  id: number;
+  project_id: number;
+  event_type: string;
+  title: string;
+  message: string;
+  ref_type: string;
+  ref_id?: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ProjectDuplicatePaper = {
+  paper: Paper;
+  evidence_count: number;
+  summary_count: number;
+  reflection_count: number;
+  reproduction_count: number;
+  is_in_project: boolean;
+  merged: boolean;
+};
+
+export type ProjectDuplicateGroup = {
+  key: string;
+  reason: string;
+  papers: ProjectDuplicatePaper[];
+};
+
+export type ProjectDuplicateSummary = {
+  group_count: number;
+  paper_count: number;
+};
+
 export type ResearchProjectWorkspace = {
   project: ResearchProject;
   papers: ResearchProjectPaper[];
@@ -290,6 +347,9 @@ export type ResearchProjectWorkspace = {
   outputs: ResearchProjectOutput[];
   recent_tasks: ResearchProjectTask[];
   linked_existing_artifacts: ResearchProjectLinkedArtifacts[];
+  smart_views: ResearchProjectSmartView[];
+  activity_timeline_preview: ProjectActivityEvent[];
+  duplicate_summary: ProjectDuplicateSummary;
 };
 
 export type ProjectSearchRun = {
@@ -326,6 +386,16 @@ export type ProjectSavedSearchDetail = {
   saved_search: ProjectSavedSearch;
   last_run?: ProjectSearchRun | null;
   items: SearchCandidate[];
+};
+
+export type PaperAssistantReply = {
+  action: string;
+  answer_markdown: string;
+  provider?: string;
+  model?: string;
+  locator: Record<string, unknown>;
+  suggested_evidence: Record<string, unknown>;
+  suggested_review_snippet: string;
 };
 
 export type PaperReaderParagraph = {
@@ -478,11 +548,13 @@ export type RepoFindResponse = {
 export type WeeklyReportContext = {
   week_start: string;
   week_end: string;
+  project_id?: number | null;
   report_worthy_reflections: WeeklyReportReflectionItem[];
   recent_papers: WeeklyReportPaperActivityItem[];
   reproduction_progress: WeeklyReportReproductionItem[];
   blockers: WeeklyReportBlockerItem[];
   next_actions: string[];
+  project_activity: Array<Record<string, unknown>>;
 };
 
 export type WeeklyReportReflectionItem = {
@@ -532,15 +604,18 @@ export type WeeklyReportBlockerItem = {
 export type WeeklyReportContextSnapshot = {
   week_start: string;
   week_end: string;
+  project_id?: number | null;
   report_worthy_reflections: WeeklyReportReflectionItem[];
   recent_papers: WeeklyReportPaperActivityItem[];
   reproduction_progress: WeeklyReportReproductionItem[];
   blockers: WeeklyReportBlockerItem[];
   next_actions: string[];
+  project_activity: Array<Record<string, unknown>>;
 };
 
 export type WeeklyReportDraft = {
   id: number;
+  project_id?: number | null;
   week_start: string;
   week_end: string;
   title: string;

@@ -112,6 +112,12 @@ export function taskTypeLabel(taskType?: string | null): string {
       return '项目对比表生成';
     case 'project_draft_literature_review':
       return '项目综述起草';
+    case 'project_fetch_pdfs':
+      return '项目补全 PDF';
+    case 'project_refresh_metadata':
+      return '项目刷新元数据';
+    case 'project_ensure_summaries':
+      return '项目补齐摘要';
     default:
       return taskType || '未命名任务';
   }

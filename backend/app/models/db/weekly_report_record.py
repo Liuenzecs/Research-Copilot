@@ -12,6 +12,7 @@ class WeeklyReportRecord(TimestampMixin, Base):
     __tablename__ = 'weekly_reports'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey('research_projects.id'), nullable=True, index=True)
     week_start: Mapped[date] = mapped_column(Date, index=True)
     week_end: Mapped[date] = mapped_column(Date, index=True)
     title: Mapped[str] = mapped_column(String(255), default='周报草稿')

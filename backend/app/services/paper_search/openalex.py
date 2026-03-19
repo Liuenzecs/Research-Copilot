@@ -61,6 +61,12 @@ class OpenAlexSearchService:
         payload = await self._get_json(f'{OPENALEX_API}/{normalized}')
         return self._to_search_paper(payload)
 
+    async def fetch_work_payload(self, openalex_id: str) -> dict[str, Any] | None:
+        normalized = openalex_id.strip()
+        if not normalized:
+            return None
+        return await self._get_json(f'{OPENALEX_API}/{normalized}')
+
     async def resolve_work(self, paper: PaperRecord) -> SearchPaper | None:
         if paper.openalex_id:
             return await self.fetch_work(paper.openalex_id)
@@ -68,6 +74,14 @@ class OpenAlexSearchService:
             results = await self.search(paper.title_en.strip(), limit=3)
             if results:
                 return results[0]
+        return None
+
+    async def resolve_work_payload(self, paper: PaperRecord) -> dict[str, Any] | None:
+        if paper.openalex_id:
+            return await self.fetch_work_payload(paper.openalex_id)
+        resolved = await self.resolve_work(paper)
+        if resolved and resolved.openalex_id:
+            return await self.fetch_work_payload(resolved.openalex_id)
         return None
 
     async def fetch_references(self, openalex_ids: list[str]) -> list[SearchPaper]:

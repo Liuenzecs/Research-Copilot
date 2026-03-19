@@ -14,6 +14,8 @@ from app.db.session import SessionLocal
 from app.models.db.research_project_record import ResearchProjectEvidenceItemRecord, ResearchProjectOutputRecord
 from app.models.schemas.paper import SearchCandidateOut
 from app.models.schemas.project import (
+    ProjectDuplicateListResponse,
+    ProjectDuplicateMergeRequest,
     ProjectActionLaunchResponse,
     ResearchProjectSavedSearchAiReasonResponse,
     ResearchProjectSavedSearchCandidateUpdateRequest,
@@ -33,7 +35,10 @@ from app.models.schemas.project import (
     ResearchProjectOutputOut,
     ResearchProjectOutputUpdateRequest,
     ResearchProjectPaperAddRequest,
+    ResearchProjectPaperBatchStateRequest,
+    ResearchProjectPaperBatchStateResponse,
     ResearchProjectPaperOut,
+    ResearchProjectReviewInsertRequest,
     ResearchProjectSearchRunCreateRequest,
     ResearchProjectSearchRunDetailOut,
     ResearchProjectSearchRunOut,
@@ -66,6 +71,15 @@ def _project_task_or_404(db: Session, project_id: int, task_id: int) -> Research
 
 def _stream_line(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False) + '\n'
+
+
+def _launch_project_action_response(db: Session, project_id: int, task) -> ProjectActionLaunchResponse:
+    project_task_runtime.launch(task.id, lambda: project_service.execute_task(task.id))
+    return ProjectActionLaunchResponse(
+        task=project_service.to_task_detail_out(db, task),
+        detail_url=f'/projects/{project_id}/tasks/{task.id}',
+        stream_url=f'/projects/{project_id}/tasks/{task.id}/stream',
+    )
 
 
 @router.post('', response_model=ResearchProjectOut)
@@ -239,6 +253,26 @@ def delete_project_paper(project_id: int, project_paper_id: int, db: Session = D
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.patch('/{project_id}/papers/batch-state', response_model=ResearchProjectPaperBatchStateResponse)
+def batch_update_project_paper_state(
+    project_id: int,
+    payload: ResearchProjectPaperBatchStateRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectPaperBatchStateResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        return project_service.batch_update_paper_state(
+            db,
+            project=project,
+            paper_ids=payload.paper_ids,
+            reading_status=payload.reading_status,
+            repro_interest=payload.repro_interest,
+            is_core_paper=payload.is_core_paper,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post('/{project_id}/evidence', response_model=ResearchProjectEvidenceOut)
 def create_project_evidence(
     project_id: int,
@@ -319,6 +353,51 @@ def update_project_output(
         raise HTTPException(status_code=404, detail='Project output not found')
     row = project_service.update_output(db, row, **payload.model_dump(exclude_none=True))
     return project_service._to_output_out(row)
+
+
+@router.post('/{project_id}/outputs/literature-review/insert-evidence', response_model=ResearchProjectOutputOut)
+def insert_project_review_evidence(
+    project_id: int,
+    payload: ResearchProjectReviewInsertRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectOutputOut:
+    project = _project_or_404(db, project_id)
+    try:
+        row = project_service.insert_review_evidence(
+            db,
+            project=project,
+            evidence_ids=payload.evidence_ids,
+            placement=payload.placement,
+            cursor_index=payload.cursor_index,
+            target_heading=payload.target_heading,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return project_service._to_output_out(row)
+
+
+@router.get('/{project_id}/duplicates', response_model=ProjectDuplicateListResponse)
+def list_project_duplicates(project_id: int, db: Session = Depends(get_db)) -> ProjectDuplicateListResponse:
+    project = _project_or_404(db, project_id)
+    return project_service.list_duplicates(db, project)
+
+
+@router.post('/{project_id}/duplicates/merge', response_model=ProjectDuplicateListResponse)
+def merge_project_duplicates(
+    project_id: int,
+    payload: ProjectDuplicateMergeRequest,
+    db: Session = Depends(get_db),
+) -> ProjectDuplicateListResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        return project_service.merge_duplicates(
+            db,
+            project=project,
+            canonical_paper_id=payload.canonical_paper_id,
+            merged_paper_ids=payload.merged_paper_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch('/{project_id}/saved-searches/{search_id}/candidates/{candidate_id}', response_model=SearchCandidateOut)
@@ -450,12 +529,7 @@ async def extract_project_evidence(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    project_task_runtime.launch(task.id, lambda: project_service.execute_task(task.id))
-    return ProjectActionLaunchResponse(
-        task=project_service.to_task_detail_out(db, task),
-        detail_url=f'/projects/{project_id}/tasks/{task.id}',
-        stream_url=f'/projects/{project_id}/tasks/{task.id}/stream',
-    )
+    return _launch_project_action_response(db, project_id, task)
 
 
 @router.post('/{project_id}/actions/generate-compare-table', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -475,12 +549,7 @@ async def generate_project_compare_table(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    project_task_runtime.launch(task.id, lambda: project_service.execute_task(task.id))
-    return ProjectActionLaunchResponse(
-        task=project_service.to_task_detail_out(db, task),
-        detail_url=f'/projects/{project_id}/tasks/{task.id}',
-        stream_url=f'/projects/{project_id}/tasks/{task.id}/stream',
-    )
+    return _launch_project_action_response(db, project_id, task)
 
 
 @router.post('/{project_id}/actions/draft-literature-review', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -500,9 +569,64 @@ async def draft_project_literature_review(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    project_task_runtime.launch(task.id, lambda: project_service.execute_task(task.id))
-    return ProjectActionLaunchResponse(
-        task=project_service.to_task_detail_out(db, task),
-        detail_url=f'/projects/{project_id}/tasks/{task.id}',
-        stream_url=f'/projects/{project_id}/tasks/{task.id}/stream',
-    )
+    return _launch_project_action_response(db, project_id, task)
+
+
+@router.post('/{project_id}/actions/fetch-pdfs', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
+async def fetch_project_pdfs(
+    project_id: int,
+    payload: ResearchProjectActionRequest,
+    db: Session = Depends(get_db),
+) -> ProjectActionLaunchResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        task = project_service.launch_action(
+            db,
+            project=project,
+            action='fetch_pdfs',
+            paper_ids=payload.paper_ids,
+            instruction=payload.instruction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _launch_project_action_response(db, project_id, task)
+
+
+@router.post('/{project_id}/actions/refresh-metadata', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
+async def refresh_project_metadata(
+    project_id: int,
+    payload: ResearchProjectActionRequest,
+    db: Session = Depends(get_db),
+) -> ProjectActionLaunchResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        task = project_service.launch_action(
+            db,
+            project=project,
+            action='refresh_metadata',
+            paper_ids=payload.paper_ids,
+            instruction=payload.instruction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _launch_project_action_response(db, project_id, task)
+
+
+@router.post('/{project_id}/actions/ensure-summaries', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ensure_project_summaries(
+    project_id: int,
+    payload: ResearchProjectActionRequest,
+    db: Session = Depends(get_db),
+) -> ProjectActionLaunchResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        task = project_service.launch_action(
+            db,
+            project=project,
+            action='ensure_summaries',
+            paper_ids=payload.paper_ids,
+            instruction=payload.instruction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _launch_project_action_response(db, project_id, task)

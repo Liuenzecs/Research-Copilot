@@ -29,6 +29,13 @@ class PaperRecord(TimestampMixin, Base):
     reference_count: Mapped[int] = mapped_column(Integer, default=0)
     pdf_url: Mapped[str] = mapped_column(Text, default='')
     pdf_local_path: Mapped[str] = mapped_column(Text, default='')
+    merged_into_paper_id: Mapped[Optional[int]] = mapped_column(ForeignKey('papers.id'), nullable=True, index=True)
+    pdf_status: Mapped[str] = mapped_column(String(30), default='missing', index=True)
+    pdf_status_message: Mapped[str] = mapped_column(Text, default='')
+    pdf_last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    integrity_status: Mapped[str] = mapped_column(String(30), default='warning', index=True)
+    integrity_note: Mapped[str] = mapped_column(Text, default='')
+    metadata_last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     research_state = relationship('PaperResearchStateRecord', back_populates='paper', uselist=False, cascade='all,delete-orphan')
@@ -39,6 +46,7 @@ class PaperRecord(TimestampMixin, Base):
     repos = relationship('RepoRecord', back_populates='paper')
     reproductions = relationship('ReproductionRecord', back_populates='paper')
     reflections = relationship('ReflectionRecord', back_populates='paper')
+    merged_into = relationship('PaperRecord', remote_side='PaperRecord.id')
 
 
 class PaperResearchStateRecord(TimestampMixin, Base):

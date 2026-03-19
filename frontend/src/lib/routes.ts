@@ -68,3 +68,12 @@ export function memoryPath(projectId?: number | string | null): string {
   const query = params.toString();
   return `/memory${query ? `?${query}` : ''}`;
 }
+
+export function weeklyReportPath(projectId?: number | string | null): string {
+  const params = new URLSearchParams();
+  if (projectId) {
+    params.set('project_id', String(projectId));
+  }
+  const query = params.toString();
+  return `/dashboard/weekly-report${query ? `?${query}` : ''}`;
+}

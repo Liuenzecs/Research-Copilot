@@ -51,16 +51,19 @@ class WeeklyReportBlockerItem(BaseModel):
 class WeeklyReportContextResponse(BaseModel):
     week_start: date
     week_end: date
+    project_id: int | None = None
     report_worthy_reflections: list[WeeklyReportReflectionItem]
     recent_papers: list[WeeklyReportPaperActivityItem]
     reproduction_progress: list[WeeklyReportReproductionItem]
     blockers: list[WeeklyReportBlockerItem]
     next_actions: list[str]
+    project_activity: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WeeklyReportDraftCreateRequest(BaseModel):
     week_start: date
     week_end: date
+    project_id: int | None = None
     title: str | None = None
 
 
@@ -72,6 +75,7 @@ class WeeklyReportDraftUpdateRequest(BaseModel):
 
 class WeeklyReportOut(BaseModel):
     id: int
+    project_id: int | None = None
     week_start: date
     week_end: date
     title: str

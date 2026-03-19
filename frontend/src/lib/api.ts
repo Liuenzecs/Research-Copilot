@@ -4,6 +4,7 @@ import {
   LibraryItem,
   MemoryItem,
   Paper,
+  PaperAssistantReply,
   PaperCitationTrail,
   PaperSearchFilters,
   PaperSearchResponse,
@@ -15,6 +16,7 @@ import {
   ProjectSearchRun,
   ProjectSearchRunDetail,
   ProjectActionLaunchResponse,
+  ProjectDuplicateGroup,
   ResearchProject,
   ResearchProjectEvidenceItem,
   ResearchProjectListItem,
@@ -373,6 +375,48 @@ export async function createPaperAnnotation(
   });
 }
 
+export async function askPaperAssistantForSelection(
+  paperId: number,
+  payload: {
+    action: string;
+    selected_text?: string;
+    paragraph_id?: number | null;
+    project_id?: number | null;
+    evidence_ids?: number[];
+  },
+) {
+  return request<PaperAssistantReply>(`/papers/${paperId}/assistant/selection`, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: payload.action,
+      selected_text: payload.selected_text ?? '',
+      paragraph_id: payload.paragraph_id ?? null,
+      project_id: payload.project_id ?? null,
+      evidence_ids: payload.evidence_ids ?? [],
+    }),
+  });
+}
+
+export async function askPaperAssistantForSection(
+  paperId: number,
+  payload: {
+    action: string;
+    paragraph_id?: number | null;
+    project_id?: number | null;
+    evidence_ids?: number[];
+  },
+) {
+  return request<PaperAssistantReply>(`/papers/${paperId}/assistant/section`, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: payload.action,
+      paragraph_id: payload.paragraph_id ?? null,
+      project_id: payload.project_id ?? null,
+      evidence_ids: payload.evidence_ids ?? [],
+    }),
+  });
+}
+
 export async function updatePaperResearchState(
   paperId: number,
   payload: {
@@ -624,6 +668,21 @@ export async function removeProjectPaper(projectId: number, projectPaperId: numb
   });
 }
 
+export async function batchUpdateProjectPaperState(
+  projectId: number,
+  payload: {
+    paper_ids: number[];
+    reading_status?: string;
+    repro_interest?: string;
+    is_core_paper?: boolean;
+  },
+) {
+  return request<{ updated_paper_ids: number[] }>(`/projects/${projectId}/papers/batch-state`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createProjectEvidence(
   projectId: number,
   payload: {
@@ -689,6 +748,26 @@ export async function updateProjectOutput(
   });
 }
 
+export async function insertProjectReviewEvidence(
+  projectId: number,
+  payload: {
+    evidence_ids: number[];
+    placement?: 'append' | 'cursor' | string;
+    cursor_index?: number | null;
+    target_heading?: string;
+  },
+) {
+  return request<ResearchProjectOutput>(`/projects/${projectId}/outputs/literature-review/insert-evidence`, {
+    method: 'POST',
+    body: JSON.stringify({
+      evidence_ids: payload.evidence_ids,
+      placement: payload.placement ?? 'append',
+      cursor_index: payload.cursor_index ?? null,
+      target_heading: payload.target_heading ?? '',
+    }),
+  });
+}
+
 export async function extractProjectEvidence(
   projectId: number,
   payload: {
@@ -734,6 +813,71 @@ export async function draftProjectLiteratureReview(
       paper_ids: payload.paper_ids ?? [],
       instruction: payload.instruction ?? '',
     }),
+  });
+}
+
+export async function fetchProjectPdfs(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/fetch-pdfs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function refreshProjectMetadata(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/refresh-metadata`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function ensureProjectSummaries(
+  projectId: number,
+  payload: {
+    paper_ids?: number[];
+    instruction?: string;
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/ensure-summaries`, {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: payload.paper_ids ?? [],
+      instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function listProjectDuplicates(projectId: number) {
+  return request<{ groups: ProjectDuplicateGroup[] }>(`/projects/${projectId}/duplicates`);
+}
+
+export async function mergeProjectDuplicates(
+  projectId: number,
+  payload: {
+    canonical_paper_id: number;
+    merged_paper_ids: number[];
+  },
+) {
+  return request<{ groups: ProjectDuplicateGroup[] }>(`/projects/${projectId}/duplicates/merge`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
@@ -869,19 +1013,19 @@ export async function createReproductionReflection(reproductionId: number, paylo
   });
 }
 
-export async function getWeeklyReportContext(weekStart: string, weekEnd: string) {
-  return request<WeeklyReportContext>(`/reports/weekly/context${qs({ week_start: weekStart, week_end: weekEnd })}`);
+export async function getWeeklyReportContext(weekStart: string, weekEnd: string, projectId?: number | null) {
+  return request<WeeklyReportContext>(`/reports/weekly/context${qs({ week_start: weekStart, week_end: weekEnd, project_id: projectId ?? null })}`);
 }
 
-export async function createWeeklyReportDraft(payload: { week_start: string; week_end: string; title?: string }) {
+export async function createWeeklyReportDraft(payload: { week_start: string; week_end: string; title?: string; project_id?: number | null }) {
   return request<WeeklyReportDraft>('/reports/weekly/drafts', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 }
 
-export async function listWeeklyReportDrafts(status = '') {
-  return request<WeeklyReportDraft[]>(`/reports/weekly/drafts${qs({ status })}`);
+export async function listWeeklyReportDrafts(status = '', projectId?: number | null) {
+  return request<WeeklyReportDraft[]>(`/reports/weekly/drafts${qs({ status, project_id: projectId ?? null })}`);
 }
 
 export async function getWeeklyReportDraft(id: number) {

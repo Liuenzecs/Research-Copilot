@@ -21,6 +21,7 @@ from app.models.db import note_record  # noqa: F401
 from app.models.db import paper_annotation_record  # noqa: F401
 from app.models.db import paper_record  # noqa: F401
 from app.models.db import profile_record  # noqa: F401
+from app.models.db import project_activity_record  # noqa: F401
 from app.models.db import reflection_record  # noqa: F401
 from app.models.db import research_project_record  # noqa: F401
 from app.models.db import repo_record  # noqa: F401
@@ -37,6 +38,7 @@ POST_BASELINE_TABLES = {
     'research_project_saved_searches',
     'research_project_search_runs',
     'research_project_saved_search_candidates',
+    'project_activity_events',
 }
 POST_BASELINE_INDEXES = {
     'ix_research_project_saved_searches_last_run_id',
@@ -52,6 +54,22 @@ POST_BASELINE_INDEXES = {
     'ix_research_project_saved_search_candidates_triage_status',
     'ix_papers_openalex_id',
     'ix_papers_semantic_scholar_id',
+    'ix_papers_merged_into_paper_id',
+    'ix_papers_pdf_status',
+    'ix_papers_integrity_status',
+    'ix_weekly_reports_project_id',
+    'ix_project_activity_events_project_id',
+    'ix_project_activity_events_event_type',
+    'ix_project_activity_events_ref_type',
+    'ix_project_activity_events_ref_id',
+}
+POST_BASELINE_FKS = {
+    'fk_papers_merged_into_paper_id',
+    'fk_weekly_reports_project_id',
+}
+POST_BASELINE_FK_COLUMNS = {
+    ('papers', ('merged_into_paper_id',), 'papers'),
+    ('weekly_reports', ('project_id',), 'research_projects'),
 }
 POST_BASELINE_COLUMNS = {
     ('papers', 'doi'),
@@ -60,6 +78,14 @@ POST_BASELINE_COLUMNS = {
     ('papers', 'semantic_scholar_id'),
     ('papers', 'citation_count'),
     ('papers', 'reference_count'),
+    ('papers', 'merged_into_paper_id'),
+    ('papers', 'pdf_status'),
+    ('papers', 'pdf_status_message'),
+    ('papers', 'pdf_last_checked_at'),
+    ('papers', 'integrity_status'),
+    ('papers', 'integrity_note'),
+    ('papers', 'metadata_last_checked_at'),
+    ('weekly_reports', 'project_id'),
 }
 
 
@@ -109,6 +135,18 @@ def _is_known_post_baseline_diff(diff: tuple) -> bool:
         table_name = diff[2]
         column = diff[3]
         return (str(table_name), getattr(column, 'name', '')) in POST_BASELINE_COLUMNS
+    if operation == 'add_fk':
+        constraint = diff[1]
+        if getattr(constraint, 'name', '') in POST_BASELINE_FKS:
+            return True
+        table_name = getattr(getattr(constraint, 'table', None), 'name', '')
+        constrained_columns = tuple(element.parent.name for element in getattr(constraint, 'elements', []))
+        referred_table = ''
+        elements = getattr(constraint, 'elements', [])
+        if elements:
+            referred_table = getattr(getattr(elements[0], 'column', None), 'table', None)
+            referred_table = getattr(referred_table, 'name', '')
+        return (table_name, constrained_columns, referred_table) in POST_BASELINE_FK_COLUMNS
     return False
 
 

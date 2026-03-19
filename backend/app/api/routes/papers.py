@@ -22,6 +22,9 @@ from app.models.db.task_record import TaskRecord
 from app.models.schemas.paper import (
     PaperAnnotationCreateRequest,
     PaperAnnotationOut,
+    PaperAssistantReply,
+    PaperAssistantSectionRequest,
+    PaperAssistantSelectionRequest,
     PaperCitationTrailResponse,
     PaperContextReflectionCreateRequest,
     PaperDownloadRequest,
@@ -35,6 +38,7 @@ from app.models.schemas.paper import (
     PaperWorkspaceResponse,
     SearchCandidateOut,
 )
+from app.services.papers.assistant_service import paper_assistant_service
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.base import SearchPaper
 from app.services.paper_search.openalex import OpenAlexSearchService
@@ -555,6 +559,60 @@ def get_paper_reader(paper_id: int, db: Session = Depends(get_db)) -> PaperReade
         **reader_payload,
         annotations=[annotation_to_out(item) for item in annotations],
     )
+
+
+@router.post('/{paper_id}/assistant/selection', response_model=PaperAssistantReply)
+async def paper_assistant_selection(
+    paper_id: int,
+    payload: PaperAssistantSelectionRequest,
+    db: Session = Depends(get_db),
+) -> PaperAssistantReply:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+    task = workflow_service.create_task(db, task_type='paper_context_assistant', input_json=payload.model_dump(), status='running')
+    try:
+        reply = await paper_assistant_service.run(
+            db,
+            paper=paper,
+            action=payload.action,
+            selected_text=payload.selected_text,
+            paragraph_id=payload.paragraph_id,
+            project_id=payload.project_id,
+            evidence_ids=payload.evidence_ids,
+        )
+    except ValueError as exc:
+        workflow_service.update_task(db, task, status='failed', error_log=str(exc), output_json={'error': str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    workflow_service.update_task(db, task, status='completed', output_json=reply.model_dump(mode='json'))
+    return reply
+
+
+@router.post('/{paper_id}/assistant/section', response_model=PaperAssistantReply)
+async def paper_assistant_section(
+    paper_id: int,
+    payload: PaperAssistantSectionRequest,
+    db: Session = Depends(get_db),
+) -> PaperAssistantReply:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+    task = workflow_service.create_task(db, task_type='paper_context_assistant', input_json=payload.model_dump(), status='running')
+    try:
+        reply = await paper_assistant_service.run(
+            db,
+            paper=paper,
+            action=payload.action,
+            selected_text='',
+            paragraph_id=payload.paragraph_id,
+            project_id=payload.project_id,
+            evidence_ids=payload.evidence_ids,
+        )
+    except ValueError as exc:
+        workflow_service.update_task(db, task, status='failed', error_log=str(exc), output_json={'error': str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    workflow_service.update_task(db, task, status='completed', output_json=reply.model_dump(mode='json'))
+    return reply
 
 
 @router.get('/{paper_id}/reader/pages/{page_no}')

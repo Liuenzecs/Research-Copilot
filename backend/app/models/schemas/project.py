@@ -60,6 +60,14 @@ class ResearchProjectPaperOut(BaseModel):
     latest_reflection_id: int | None = None
     latest_reproduction_id: int | None = None
     latest_reproduction_status: str = ''
+    evidence_count: int = 0
+    report_worthy_count: int = 0
+    pdf_status: str = 'missing'
+    pdf_status_message: str = ''
+    pdf_last_checked_at: datetime | None = None
+    integrity_status: str = 'warning'
+    integrity_note: str = ''
+    metadata_last_checked_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +128,13 @@ class ResearchProjectOutputUpdateRequest(BaseModel):
     content_json: dict[str, Any] | None = None
     content_markdown: str | None = None
     status: str | None = None
+
+
+class ResearchProjectReviewInsertRequest(BaseModel):
+    evidence_ids: list[int] = Field(default_factory=list)
+    placement: str = 'append'
+    cursor_index: int | None = None
+    target_heading: str = ''
 
 
 class ResearchProjectActionRequest(BaseModel):
@@ -190,6 +205,65 @@ class ResearchProjectLinkedArtifactsOut(BaseModel):
     reproductions: list[LinkedReproductionArtifactOut] = Field(default_factory=list)
 
 
+class ResearchProjectSmartViewOut(BaseModel):
+    key: str
+    label: str
+    count: int = 0
+
+
+class ProjectDuplicatePaperOut(BaseModel):
+    paper: PaperOut
+    evidence_count: int = 0
+    summary_count: int = 0
+    reflection_count: int = 0
+    reproduction_count: int = 0
+    is_in_project: bool = False
+    merged: bool = False
+
+
+class ProjectDuplicateGroupOut(BaseModel):
+    key: str
+    reason: str
+    papers: list[ProjectDuplicatePaperOut] = Field(default_factory=list)
+
+
+class ProjectDuplicateSummaryOut(BaseModel):
+    group_count: int = 0
+    paper_count: int = 0
+
+
+class ProjectDuplicateMergeRequest(BaseModel):
+    canonical_paper_id: int
+    merged_paper_ids: list[int] = Field(default_factory=list)
+
+
+class ProjectDuplicateListResponse(BaseModel):
+    groups: list[ProjectDuplicateGroupOut] = Field(default_factory=list)
+
+
+class ProjectActivityEventOut(BaseModel):
+    id: int
+    project_id: int
+    event_type: str
+    title: str
+    message: str
+    ref_type: str = ''
+    ref_id: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ResearchProjectPaperBatchStateRequest(BaseModel):
+    paper_ids: list[int] = Field(default_factory=list)
+    reading_status: str | None = None
+    repro_interest: str | None = None
+    is_core_paper: bool | None = None
+
+
+class ResearchProjectPaperBatchStateResponse(BaseModel):
+    updated_paper_ids: list[int] = Field(default_factory=list)
+
+
 class ResearchProjectWorkspaceResponse(BaseModel):
     project: ResearchProjectOut
     papers: list[ResearchProjectPaperOut] = Field(default_factory=list)
@@ -197,6 +271,9 @@ class ResearchProjectWorkspaceResponse(BaseModel):
     outputs: list[ResearchProjectOutputOut] = Field(default_factory=list)
     recent_tasks: list[ResearchProjectTaskOut] = Field(default_factory=list)
     linked_existing_artifacts: list[ResearchProjectLinkedArtifactsOut] = Field(default_factory=list)
+    smart_views: list[ResearchProjectSmartViewOut] = Field(default_factory=list)
+    activity_timeline_preview: list[ProjectActivityEventOut] = Field(default_factory=list)
+    duplicate_summary: ProjectDuplicateSummaryOut = Field(default_factory=ProjectDuplicateSummaryOut)
 
 
 class ResearchProjectEvidenceReorderResponse(BaseModel):

@@ -170,6 +170,31 @@ class PaperReaderResponse(BaseModel):
     text_notice: str = ''
 
 
+class PaperAssistantSelectionRequest(BaseModel):
+    action: str
+    selected_text: str = ''
+    paragraph_id: int | None = None
+    project_id: int | None = None
+    evidence_ids: list[int] = Field(default_factory=list)
+
+
+class PaperAssistantSectionRequest(BaseModel):
+    action: str
+    paragraph_id: int | None = None
+    project_id: int | None = None
+    evidence_ids: list[int] = Field(default_factory=list)
+
+
+class PaperAssistantReply(BaseModel):
+    action: str
+    answer_markdown: str
+    provider: str = ''
+    model: str = ''
+    locator: dict[str, Any] = Field(default_factory=dict)
+    suggested_evidence: dict[str, Any] = Field(default_factory=dict)
+    suggested_review_snippet: str = ''
+
+
 class PaperContextReflectionCreateRequest(BaseModel):
     summary_id: int | None = None
     stage: str = 'initial'

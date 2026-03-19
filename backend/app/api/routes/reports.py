@@ -14,6 +14,7 @@ from app.models.schemas.report import (
     WeeklyReportDraftUpdateRequest,
     WeeklyReportOut,
 )
+from app.services.project.activity import project_activity_service
 from app.services.reporting.service import reporting_service
 from app.services.workflow.service import workflow_service
 
@@ -23,6 +24,7 @@ router = APIRouter(prefix='/reports', tags=['reports'])
 def to_report_out(row: WeeklyReportRecord) -> WeeklyReportOut:
     return WeeklyReportOut(
         id=row.id,
+        project_id=row.project_id,
         week_start=row.week_start,
         week_end=row.week_end,
         title=row.title,
@@ -39,11 +41,12 @@ def to_report_out(row: WeeklyReportRecord) -> WeeklyReportOut:
 def weekly_context(
     week_start: date | None = Query(default=None),
     week_end: date | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> WeeklyReportContextResponse:
     if week_start is None or week_end is None:
         week_start, week_end = reporting_service.default_week_range()
-    context = reporting_service.get_context(db, week_start=week_start, week_end=week_end)
+    context = reporting_service.get_context(db, week_start=week_start, week_end=week_end, project_id=project_id)
     return WeeklyReportContextResponse(**context)
 
 
@@ -61,6 +64,7 @@ def create_weekly_draft(payload: WeeklyReportDraftCreateRequest, db: Session = D
         week_end=payload.week_end,
         title=payload.title or f"周报草稿 {payload.week_start}~{payload.week_end}",
         generated_task_id=task.id,
+        project_id=payload.project_id,
     )
     workflow_service.add_artifact(
         db,
@@ -71,12 +75,23 @@ def create_weekly_draft(payload: WeeklyReportDraftCreateRequest, db: Session = D
         snapshot_json={'week_start': row.week_start.isoformat(), 'week_end': row.week_end.isoformat()},
     )
     workflow_service.update_task(db, task, status='completed', output_json={'weekly_report_id': row.id})
+    if row.project_id is not None:
+        project_activity_service.record(
+            db,
+            project_id=row.project_id,
+            event_type='weekly_report_created',
+            title='生成项目周报',
+            message=f'已生成项目周报草稿《{row.title[:80]}》。',
+            ref_type='weekly_reports',
+            ref_id=row.id,
+            metadata={'week_start': row.week_start.isoformat(), 'week_end': row.week_end.isoformat()},
+        )
     return to_report_out(row)
 
 
 @router.get('/weekly/drafts', response_model=list[WeeklyReportOut])
-def list_weekly_drafts(status: str | None = None, db: Session = Depends(get_db)) -> list[WeeklyReportOut]:
-    rows = reporting_service.list_drafts(db, status=status)
+def list_weekly_drafts(status: str | None = None, project_id: int | None = None, db: Session = Depends(get_db)) -> list[WeeklyReportOut]:
+    rows = reporting_service.list_drafts(db, status=status, project_id=project_id)
     return [to_report_out(row) for row in rows]
 
 
@@ -100,4 +115,15 @@ def update_weekly_draft(draft_id: int, payload: WeeklyReportDraftUpdateRequest, 
         draft_markdown=payload.draft_markdown,
         status=payload.status,
     )
+    if row.project_id is not None:
+        project_activity_service.record(
+            db,
+            project_id=row.project_id,
+            event_type='weekly_report_updated',
+            title='更新项目周报',
+            message=f'已更新项目周报草稿《{row.title[:80]}》。',
+            ref_type='weekly_reports',
+            ref_id=row.id,
+            metadata={'status': row.status},
+        )
     return to_report_out(row)

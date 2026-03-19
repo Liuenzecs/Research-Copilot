@@ -218,6 +218,14 @@ class PaperSearchService:
         return True
 
     def upsert_paper(self, db: Session, paper: SearchPaper) -> PaperRecord:
+        def canonical(row: PaperRecord | None) -> PaperRecord | None:
+            current = row
+            visited: set[int] = set()
+            while current is not None and current.merged_into_paper_id and current.id not in visited:
+                visited.add(current.id)
+                current = db.get(PaperRecord, current.merged_into_paper_id)
+            return current
+
         row = None
         if paper.doi:
             row = db.execute(select(PaperRecord).where(func.lower(PaperRecord.doi) == paper.doi.lower())).scalar_one_or_none()
@@ -229,6 +237,7 @@ class PaperSearchService:
             row = db.execute(
                 select(PaperRecord).where(PaperRecord.source == paper.source, PaperRecord.source_id == paper.source_id)
             ).scalar_one_or_none()
+        row = canonical(row)
 
         if row is None:
             row = PaperRecord(
@@ -246,6 +255,10 @@ class PaperSearchService:
                 citation_count=paper.citation_count,
                 reference_count=paper.reference_count,
                 pdf_url=paper.pdf_url,
+                pdf_status='remote_pdf' if paper.pdf_url else 'missing',
+                pdf_status_message='Found remote PDF URL' if paper.pdf_url else 'No PDF downloaded yet',
+                integrity_status='warning',
+                integrity_note='Metadata has not been refreshed yet.',
                 published_at=datetime(paper.year, 1, 1, tzinfo=timezone.utc) if paper.year else None,
             )
             db.add(row)
@@ -267,6 +280,9 @@ class PaperSearchService:
         row.reference_count = max(row.reference_count or 0, paper.reference_count or 0)
         if paper.pdf_url and (not row.pdf_url or 'arxiv.org/pdf' in paper.pdf_url):
             row.pdf_url = paper.pdf_url
+            if not row.pdf_local_path:
+                row.pdf_status = 'remote_pdf'
+                row.pdf_status_message = 'Found remote PDF URL'
         if paper.year and row.published_at is None:
             row.published_at = datetime(paper.year, 1, 1, tzinfo=timezone.utc)
         db.add(row)
@@ -424,10 +440,15 @@ class PaperSearchService:
         filtered_raw = [paper for paper in raw_papers if self._paper_matches_metadata_filters(paper, payload)]
         ranked_papers = dedupe_and_rank(filtered_raw, payload.limit * 3, payload.query, sort_mode=payload.sort_mode)
 
-        stored_ranked: list[tuple[PaperRecord, RankedSearchPaper]] = []
+        stored_ranked_by_paper_id: dict[int, tuple[PaperRecord, RankedSearchPaper]] = {}
         for ranked in ranked_papers:
             row = self.upsert_paper(db, ranked.paper)
-            stored_ranked.append((row, ranked))
+            existing = stored_ranked_by_paper_id.get(row.id)
+            if existing is None or ranked.rank_score > existing[1].rank_score:
+                stored_ranked_by_paper_id[row.id] = (row, ranked)
+
+        stored_ranked = list(stored_ranked_by_paper_id.values())
+        stored_ranked.sort(key=lambda item: (item[1].rank_score, item[0].year or 0, item[0].citation_count or 0), reverse=True)
 
         paper_ids = [row.id for row, _ in stored_ranked]
         status_maps = self._local_status_maps(db, paper_ids, payload.project_id)
