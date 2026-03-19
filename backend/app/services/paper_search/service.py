@@ -19,7 +19,7 @@ from app.models.db.summary_record import SummaryRecord
 from app.models.schemas.paper import PaperOut, PaperSearchReasonOut, PaperSearchRequest, SearchCandidateOut
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.base import SearchPaper
-from app.services.paper_search.normalizer import RankedSearchPaper, dedupe_and_rank
+from app.services.paper_search.normalizer import RankedSearchPaper, build_provider_queries, dedupe_and_rank
 from app.services.paper_search.openalex import OpenAlexSearchService
 from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
 
@@ -93,7 +93,7 @@ def load_search_fixtures(query: str, limit: int) -> list[SearchPaper] | None:
         return None
 
     ranked_items: list[tuple[int, int, SearchPaper]] = []
-    tokens = [token for token in query.lower().split() if token]
+    tokens = [token for variant in build_provider_queries(query) for token in variant.lower().split() if token]
     for item in raw_items:
         if not isinstance(item, dict):
             continue
@@ -175,19 +175,23 @@ class PaperSearchService:
             effective_sources = sorted({item.source for item in filtered})
             return filtered, [], effective_sources or ['fixture']
 
-        async def invoke(source: str) -> tuple[str, list[SearchPaper], str | None]:
+        provider_queries = build_provider_queries(query)
+        if not provider_queries:
+            return [], [], []
+
+        async def invoke(source: str, provider_query: str) -> tuple[str, list[SearchPaper], str | None]:
             try:
                 if source == 'arxiv':
-                    return source, await self.arxiv.search(query, limit), None
+                    return source, await self.arxiv.search(provider_query, limit), None
                 if source == 'openalex':
-                    return source, await self.openalex.search(query, limit), None
+                    return source, await self.openalex.search(provider_query, limit), None
                 if source == 'semantic_scholar':
-                    return source, await self.semantic_scholar.search(query, limit), None
+                    return source, await self.semantic_scholar.search(provider_query, limit), None
                 return source, [], None
             except Exception as exc:  # pragma: no cover - exercised in route tests via monkeypatch
                 return source, [], self.format_search_error(source, exc)
 
-        results = await asyncio.gather(*[invoke(source) for source in sources])
+        results = await asyncio.gather(*[invoke(source, provider_query) for source in sources for provider_query in provider_queries])
         papers: list[SearchPaper] = []
         warnings: list[str] = []
         effective_sources: list[str] = []
@@ -195,7 +199,7 @@ class PaperSearchService:
             if items:
                 effective_sources.append(source)
                 papers.extend(items)
-            if warning:
+            if warning and warning not in warnings:
                 warnings.append(warning)
         return papers, warnings, effective_sources
 
