@@ -42,11 +42,11 @@ def test_repo_finder_reuses_existing_repo_for_same_paper(client, monkeypatch):
         ]
 
     monkeypatch.setattr('app.services.repo_finder.service.repo_finder_service.find', fake_find)
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
 
     search_response = client.post('/papers/search', json={'query': 'repo', 'sources': ['arxiv'], 'limit': 1})
     assert search_response.status_code == 200
-    paper_id = search_response.json()['items'][0]['id']
+    paper_id = search_response.json()['items'][0]['paper']['id']
 
     first_response = client.post('/repos/find', json={'paper_id': paper_id})
     second_response = client.post('/repos/find', json={'paper_id': paper_id})

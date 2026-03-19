@@ -7,10 +7,74 @@ export type Paper = {
   authors: string;
   year?: number;
   venue?: string;
+  doi?: string;
+  paper_url?: string;
+  openalex_id?: string;
+  semantic_scholar_id?: string;
+  citation_count?: number;
+  reference_count?: number;
   pdf_url?: string;
   pdf_local_path?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+export type PaperSearchSortMode = 'relevance' | 'year_desc' | 'citation_desc';
+
+export type PaperSearchFilters = {
+  sources: string[];
+  year_from?: number | null;
+  year_to?: number | null;
+  venue_query: string;
+  require_pdf?: boolean | null;
+  project_membership: 'all' | 'in_project' | 'not_in_project' | string;
+  has_summary?: boolean | null;
+  has_reflection?: boolean | null;
+  has_reproduction?: boolean | null;
+  reading_status: string;
+  repro_interest: string;
+};
+
+export type PaperSearchReason = {
+  summary: string;
+  matched_terms: string[];
+  matched_fields: string[];
+  source_signals: string[];
+  local_signals: string[];
+  merged_sources: string[];
+  duplicate_count: number;
+  score_breakdown: Record<string, number>;
+};
+
+export type SearchCandidate = {
+  candidate_id?: number | null;
+  saved_search_id?: number | null;
+  run_id?: number | null;
+  paper: Paper;
+  rank_position: number;
+  rank_score: number;
+  reason: PaperSearchReason;
+  ai_reason_text: string;
+  triage_status: 'new' | 'shortlisted' | 'rejected' | string;
+  is_in_project: boolean;
+  is_downloaded: boolean;
+  summary_count: number;
+  reflection_count: number;
+  reproduction_count: number;
+  reading_status: string;
+  repro_interest: string;
+  matched_in_latest_run: boolean;
+};
+
+export type PaperSearchResponse = {
+  items: SearchCandidate[];
+  warnings?: string[];
+};
+
+export type PaperCitationTrail = {
+  paper: Paper;
+  references: SearchCandidate[];
+  cited_by: SearchCandidate[];
 };
 
 export type Summary = {
@@ -226,6 +290,42 @@ export type ResearchProjectWorkspace = {
   outputs: ResearchProjectOutput[];
   recent_tasks: ResearchProjectTask[];
   linked_existing_artifacts: ResearchProjectLinkedArtifacts[];
+};
+
+export type ProjectSearchRun = {
+  id: number;
+  project_id: number;
+  saved_search_id?: number | null;
+  query: string;
+  filters: PaperSearchFilters;
+  sort_mode: PaperSearchSortMode | string;
+  result_count: number;
+  warnings: string[];
+  created_at: string;
+};
+
+export type ProjectSearchRunDetail = {
+  run: ProjectSearchRun;
+  items: SearchCandidate[];
+};
+
+export type ProjectSavedSearch = {
+  id: number;
+  project_id: number;
+  title: string;
+  query: string;
+  filters: PaperSearchFilters;
+  sort_mode: PaperSearchSortMode | string;
+  last_run_id?: number | null;
+  last_result_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectSavedSearchDetail = {
+  saved_search: ProjectSavedSearch;
+  last_run?: ProjectSearchRun | null;
+  items: SearchCandidate[];
 };
 
 export type PaperReaderParagraph = {

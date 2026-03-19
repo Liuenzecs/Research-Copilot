@@ -18,11 +18,11 @@ def test_paper_workspace_flow(client, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
 
     search_resp = client.post('/papers/search', json={'query': 'workspace', 'sources': ['arxiv'], 'limit': 1})
     assert search_resp.status_code == 200
-    paper_id = search_resp.json()['items'][0]['id']
+    paper_id = search_resp.json()['items'][0]['paper']['id']
 
     summary_resp = client.post('/summaries/quick', json={'paper_id': paper_id})
     assert summary_resp.status_code == 200

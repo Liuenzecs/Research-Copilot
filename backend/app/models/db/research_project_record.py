@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.db.base import Base, TimestampMixin
@@ -22,6 +22,8 @@ class ResearchProjectRecord(TimestampMixin, Base):
     papers = relationship('ResearchProjectPaperRecord', back_populates='project', cascade='all,delete-orphan')
     evidence_items = relationship('ResearchProjectEvidenceItemRecord', back_populates='project', cascade='all,delete-orphan')
     outputs = relationship('ResearchProjectOutputRecord', back_populates='project', cascade='all,delete-orphan')
+    saved_searches = relationship('ResearchProjectSavedSearchRecord', back_populates='project', cascade='all,delete-orphan')
+    search_runs = relationship('ResearchProjectSearchRunRecord', back_populates='project', cascade='all,delete-orphan')
 
 
 class ResearchProjectPaperRecord(TimestampMixin, Base):
@@ -70,3 +72,57 @@ class ResearchProjectOutputRecord(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default='draft', index=True)
 
     project = relationship('ResearchProjectRecord', back_populates='outputs')
+
+
+class ResearchProjectSavedSearchRecord(TimestampMixin, Base):
+    __tablename__ = 'research_project_saved_searches'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('research_projects.id'), index=True)
+    title: Mapped[str] = mapped_column(Text, default='')
+    query: Mapped[str] = mapped_column(Text, default='')
+    filters_json: Mapped[str] = mapped_column(Text, default='{}')
+    sort_mode: Mapped[str] = mapped_column(String(30), default='relevance', index=True)
+    last_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    last_result_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    project = relationship('ResearchProjectRecord', back_populates='saved_searches')
+    candidates = relationship('ResearchProjectSavedSearchCandidateRecord', back_populates='saved_search', cascade='all,delete-orphan')
+
+
+class ResearchProjectSearchRunRecord(Base):
+    __tablename__ = 'research_project_search_runs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('research_projects.id'), index=True)
+    saved_search_id: Mapped[int | None] = mapped_column(ForeignKey('research_project_saved_searches.id'), nullable=True, index=True)
+    query: Mapped[str] = mapped_column(Text, default='')
+    filters_json: Mapped[str] = mapped_column(Text, default='{}')
+    sort_mode: Mapped[str] = mapped_column(String(30), default='relevance', index=True)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    warnings_json: Mapped[str] = mapped_column(Text, default='[]')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    project = relationship('ResearchProjectRecord', back_populates='search_runs')
+    saved_search = relationship('ResearchProjectSavedSearchRecord', foreign_keys=[saved_search_id])
+
+
+class ResearchProjectSavedSearchCandidateRecord(TimestampMixin, Base):
+    __tablename__ = 'research_project_saved_search_candidates'
+    __table_args__ = (UniqueConstraint('saved_search_id', 'paper_id', name='uq_research_project_saved_search_candidate'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    saved_search_id: Mapped[int] = mapped_column(ForeignKey('research_project_saved_searches.id'), index=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey('papers.id'), index=True)
+    rank_position: Mapped[int] = mapped_column(Integer, default=0)
+    rank_score: Mapped[float] = mapped_column(Float, default=0.0)
+    reason_json: Mapped[str] = mapped_column(Text, default='{}')
+    ai_reason_text: Mapped[str] = mapped_column(Text, default='')
+    triage_status: Mapped[str] = mapped_column(String(20), default='new', index=True)
+    first_seen_run_id: Mapped[int | None] = mapped_column(ForeignKey('research_project_search_runs.id'), nullable=True, index=True)
+    last_seen_run_id: Mapped[int | None] = mapped_column(ForeignKey('research_project_search_runs.id'), nullable=True, index=True)
+
+    saved_search = relationship('ResearchProjectSavedSearchRecord', back_populates='candidates')
+    paper = relationship('PaperRecord')
+    first_seen_run = relationship('ResearchProjectSearchRunRecord', foreign_keys=[first_seen_run_id])
+    last_seen_run = relationship('ResearchProjectSearchRunRecord', foreign_keys=[last_seen_run_id])

@@ -43,7 +43,7 @@ def test_key_field_translation(client, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
     monkeypatch.setattr(
         'app.services.translation.service.translation_service._provider',
         lambda: _FakeSelectionProvider(complete_text='论文标题中文翻译'),
@@ -51,7 +51,7 @@ def test_key_field_translation(client, monkeypatch):
 
     search_resp = client.post('/papers/search', json={'query': 'translation', 'sources': ['arxiv'], 'limit': 1})
     assert search_resp.status_code == 200
-    paper_id = search_resp.json()['items'][0]['id']
+    paper_id = search_resp.json()['items'][0]['paper']['id']
 
     trans = client.post('/translation/key-fields', json={'target_type': 'paper', 'target_id': paper_id, 'fields': ['title']})
     assert trans.status_code == 200

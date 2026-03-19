@@ -33,6 +33,34 @@ from app.models.db import weekly_report_record  # noqa: F401
 
 
 ALEMBIC_BASELINE_REVISION = '20260318_0001'
+POST_BASELINE_TABLES = {
+    'research_project_saved_searches',
+    'research_project_search_runs',
+    'research_project_saved_search_candidates',
+}
+POST_BASELINE_INDEXES = {
+    'ix_research_project_saved_searches_last_run_id',
+    'ix_research_project_saved_searches_project_id',
+    'ix_research_project_saved_searches_sort_mode',
+    'ix_research_project_search_runs_project_id',
+    'ix_research_project_search_runs_saved_search_id',
+    'ix_research_project_search_runs_sort_mode',
+    'ix_research_project_saved_search_candidates_first_seen_run_id',
+    'ix_research_project_saved_search_candidates_last_seen_run_id',
+    'ix_research_project_saved_search_candidates_paper_id',
+    'ix_research_project_saved_search_candidates_saved_search_id',
+    'ix_research_project_saved_search_candidates_triage_status',
+    'ix_papers_openalex_id',
+    'ix_papers_semantic_scholar_id',
+}
+POST_BASELINE_COLUMNS = {
+    ('papers', 'doi'),
+    ('papers', 'paper_url'),
+    ('papers', 'openalex_id'),
+    ('papers', 'semantic_scholar_id'),
+    ('papers', 'citation_count'),
+    ('papers', 'reference_count'),
+}
 
 
 def _build_alembic_config() -> Config:
@@ -69,6 +97,21 @@ def _schema_diffs() -> list[tuple]:
         return compare_metadata(context, Base.metadata)
 
 
+def _is_known_post_baseline_diff(diff: tuple) -> bool:
+    operation = diff[0] if diff else None
+    if operation == 'add_table':
+        table = diff[1]
+        return getattr(table, 'name', '') in POST_BASELINE_TABLES
+    if operation == 'add_index':
+        index = diff[1]
+        return getattr(index, 'name', '') in POST_BASELINE_INDEXES
+    if operation == 'add_column':
+        table_name = diff[2]
+        column = diff[3]
+        return (str(table_name), getattr(column, 'name', '')) in POST_BASELINE_COLUMNS
+    return False
+
+
 def initialize_database() -> None:
     config = _build_alembic_config()
     with engine.connect() as connection:
@@ -85,6 +128,10 @@ def initialize_database() -> None:
     backup_path = _backup_database()
     diffs = _schema_diffs()
     if diffs:
+        if all(_is_known_post_baseline_diff(diff) for diff in diffs):
+            command.stamp(config, ALEMBIC_BASELINE_REVISION)
+            command.upgrade(config, 'head')
+            return
         preview = '; '.join(str(item) for item in diffs[:5])
         backup_note = f' Backup created at {backup_path}.' if backup_path is not None else ''
         raise RuntimeError(
@@ -92,8 +139,7 @@ def initialize_database() -> None:
             f'{backup_note} Diffs: {preview}'
         )
 
-    command.stamp(config, ALEMBIC_BASELINE_REVISION)
-    command.upgrade(config, 'head')
+    command.stamp(config, 'head')
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ def _search_payload(monkeypatch, items: list[SearchPaper]) -> list[int]:
     async def fake_arxiv(query: str, limit: int = 10):
         return items
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
 
 
 def _wait_for_task(client, project_id: int, task_id: int, timeout: float = 5.0) -> dict:
@@ -49,7 +49,7 @@ def test_project_crud_reorder_and_manual_evidence(client, monkeypatch):
 
     paper_resp = client.post('/papers/search', json={'query': 'transformer', 'sources': ['arxiv'], 'limit': 1})
     assert paper_resp.status_code == 200
-    paper_id = paper_resp.json()['items'][0]['id']
+    paper_id = paper_resp.json()['items'][0]['paper']['id']
 
     create_resp = client.post('/projects', json={'research_question': 'How should I compare transformer papers?', 'goal': 'Write a short review'})
     assert create_resp.status_code == 200
@@ -182,7 +182,7 @@ def test_project_actions_launch_background_task_and_stream(client, monkeypatch):
 
     paper_resp = client.post('/papers/search', json={'query': 'attention', 'sources': ['arxiv'], 'limit': 2})
     assert paper_resp.status_code == 200
-    paper_ids = [item['id'] for item in paper_resp.json()['items']]
+    paper_ids = [item['paper']['id'] for item in paper_resp.json()['items']]
 
     project_resp = client.post('/projects', json={'research_question': 'How do these attention papers compare?', 'goal': 'Produce a comparison table'})
     assert project_resp.status_code == 200
@@ -273,7 +273,7 @@ def test_project_filters_and_restart_cleanup(client, monkeypatch):
     )
 
     paper_resp = client.post('/papers/search', json={'query': 'paper', 'sources': ['arxiv'], 'limit': 2})
-    paper_ids = [item['id'] for item in paper_resp.json()['items']]
+    paper_ids = [item['paper']['id'] for item in paper_resp.json()['items']]
     project_paper_id, other_paper_id = paper_ids
 
     project_resp = client.post('/projects', json={'research_question': 'Project scoped filtering'})

@@ -18,10 +18,10 @@ def _create_paper(client, monkeypatch, source_id: str = 'repro-1', title: str = 
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
     response = client.post('/papers/search', json={'query': title, 'sources': ['arxiv'], 'limit': 1})
     assert response.status_code == 200
-    return response.json()['items'][0]['id']
+    return response.json()['items'][0]['paper']['id']
 
 
 def _mock_reproduction_planner(monkeypatch) -> None:

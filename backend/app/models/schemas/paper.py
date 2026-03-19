@@ -10,6 +10,16 @@ class PaperSearchRequest(BaseModel):
     limit: int = 10
     year_from: int | None = None
     year_to: int | None = None
+    venue_query: str = ''
+    require_pdf: bool | None = None
+    project_id: int | None = None
+    project_membership: str = 'all'
+    has_summary: bool | None = None
+    has_reflection: bool | None = None
+    has_reproduction: bool | None = None
+    reading_status: str = ''
+    repro_interest: str = ''
+    sort_mode: str = 'relevance'
 
 
 class PaperOut(BaseModel):
@@ -21,15 +31,58 @@ class PaperOut(BaseModel):
     authors: str
     year: int | None = None
     venue: str = ''
+    doi: str = ''
+    paper_url: str = ''
+    openalex_id: str = ''
+    semantic_scholar_id: str = ''
+    citation_count: int = 0
+    reference_count: int = 0
     pdf_url: str = ''
     pdf_local_path: str = ''
     created_at: datetime
     updated_at: datetime
 
 
+class PaperSearchReasonOut(BaseModel):
+    summary: str = ''
+    matched_terms: list[str] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+    source_signals: list[str] = Field(default_factory=list)
+    local_signals: list[str] = Field(default_factory=list)
+    merged_sources: list[str] = Field(default_factory=list)
+    duplicate_count: int = 1
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+
+
+class SearchCandidateOut(BaseModel):
+    candidate_id: int | None = None
+    saved_search_id: int | None = None
+    run_id: int | None = None
+    paper: PaperOut
+    rank_position: int
+    rank_score: float = 0.0
+    reason: PaperSearchReasonOut = Field(default_factory=PaperSearchReasonOut)
+    ai_reason_text: str = ''
+    triage_status: str = 'new'
+    is_in_project: bool = False
+    is_downloaded: bool = False
+    summary_count: int = 0
+    reflection_count: int = 0
+    reproduction_count: int = 0
+    reading_status: str = ''
+    repro_interest: str = ''
+    matched_in_latest_run: bool = True
+
+
 class PaperSearchResponse(BaseModel):
-    items: list[PaperOut]
+    items: list[SearchCandidateOut]
     warnings: list[str] = Field(default_factory=list)
+
+
+class PaperCitationTrailResponse(BaseModel):
+    paper: PaperOut
+    references: list[SearchCandidateOut] = Field(default_factory=list)
+    cited_by: list[SearchCandidateOut] = Field(default_factory=list)
 
 
 class PaperDownloadRequest(BaseModel):

@@ -12,8 +12,15 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.db.session import SessionLocal
 from app.models.db.research_project_record import ResearchProjectEvidenceItemRecord, ResearchProjectOutputRecord
+from app.models.schemas.paper import SearchCandidateOut
 from app.models.schemas.project import (
     ProjectActionLaunchResponse,
+    ResearchProjectSavedSearchAiReasonResponse,
+    ResearchProjectSavedSearchCandidateUpdateRequest,
+    ResearchProjectSavedSearchCreateRequest,
+    ResearchProjectSavedSearchDetailOut,
+    ResearchProjectSavedSearchOut,
+    ResearchProjectSavedSearchUpdateRequest,
     ResearchProjectActionRequest,
     ResearchProjectCreateRequest,
     ResearchProjectEvidenceCreateRequest,
@@ -27,11 +34,15 @@ from app.models.schemas.project import (
     ResearchProjectOutputUpdateRequest,
     ResearchProjectPaperAddRequest,
     ResearchProjectPaperOut,
+    ResearchProjectSearchRunCreateRequest,
+    ResearchProjectSearchRunDetailOut,
+    ResearchProjectSearchRunOut,
     ResearchProjectTaskDetailOut,
     ResearchProjectUpdateRequest,
     ResearchProjectWorkspaceResponse,
 )
 from app.services.project.runtime import project_task_runtime
+from app.services.project.search_service import project_search_service
 from app.services.project.service import PROJECT_TERMINAL_TASK_STATUSES
 from app.services.project.service import project_service
 
@@ -105,6 +116,95 @@ def get_project_workspace(project_id: int, db: Session = Depends(get_db)) -> Res
     return project_service.build_workspace(db, project)
 
 
+@router.post('/{project_id}/search-runs', response_model=ResearchProjectSearchRunDetailOut)
+async def create_project_search_run(
+    project_id: int,
+    payload: ResearchProjectSearchRunCreateRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectSearchRunDetailOut:
+    project = _project_or_404(db, project_id)
+    try:
+        return await project_search_service.create_search_run(db, project=project, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get('/{project_id}/search-runs', response_model=list[ResearchProjectSearchRunOut])
+def list_project_search_runs(project_id: int, db: Session = Depends(get_db)) -> list[ResearchProjectSearchRunOut]:
+    _project_or_404(db, project_id)
+    return project_search_service.list_search_runs(db, project_id)
+
+
+@router.post('/{project_id}/saved-searches', response_model=ResearchProjectSavedSearchDetailOut)
+async def create_project_saved_search(
+    project_id: int,
+    payload: ResearchProjectSavedSearchCreateRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectSavedSearchDetailOut:
+    project = _project_or_404(db, project_id)
+    try:
+        return await project_search_service.create_saved_search(db, project=project, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get('/{project_id}/saved-searches', response_model=list[ResearchProjectSavedSearchOut])
+def list_project_saved_searches(project_id: int, db: Session = Depends(get_db)) -> list[ResearchProjectSavedSearchOut]:
+    _project_or_404(db, project_id)
+    return project_search_service.list_saved_searches(db, project_id)
+
+
+@router.get('/{project_id}/saved-searches/{search_id}', response_model=ResearchProjectSavedSearchDetailOut)
+def get_project_saved_search(project_id: int, search_id: int, db: Session = Depends(get_db)) -> ResearchProjectSavedSearchDetailOut:
+    _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return project_search_service.get_saved_search_detail(db, project_id=project_id, saved_search=saved_search)
+
+
+@router.patch('/{project_id}/saved-searches/{search_id}', response_model=ResearchProjectSavedSearchOut)
+def update_project_saved_search(
+    project_id: int,
+    search_id: int,
+    payload: ResearchProjectSavedSearchUpdateRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectSavedSearchOut:
+    _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+        saved_search = project_search_service.update_saved_search(db, row=saved_search, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return project_search_service._to_saved_search_out(saved_search)
+
+
+@router.delete('/{project_id}/saved-searches/{search_id}', status_code=204, response_class=Response)
+def delete_project_saved_search(project_id: int, search_id: int, db: Session = Depends(get_db)) -> Response:
+    _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+        project_search_service.delete_saved_search(db, saved_search)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post('/{project_id}/saved-searches/{search_id}/run', response_model=ResearchProjectSavedSearchDetailOut)
+async def rerun_project_saved_search(
+    project_id: int,
+    search_id: int,
+    db: Session = Depends(get_db),
+) -> ResearchProjectSavedSearchDetailOut:
+    project = _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+        return await project_search_service.rerun_saved_search(db, project=project, saved_search=saved_search)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post('/{project_id}/papers', response_model=ResearchProjectPaperOut)
 def add_project_paper(
     project_id: int,
@@ -112,8 +212,18 @@ def add_project_paper(
     db: Session = Depends(get_db),
 ) -> ResearchProjectPaperOut:
     project = _project_or_404(db, project_id)
+    selection_reason = payload.selection_reason
+    if payload.saved_search_candidate_id is not None:
+        try:
+            candidate = project_search_service.candidate_for_project(db, project.id, payload.saved_search_candidate_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if candidate.paper_id != payload.paper_id:
+            raise HTTPException(status_code=400, detail='saved_search_candidate_id does not match paper_id')
+        if not selection_reason.strip():
+            selection_reason = project_search_service.default_selection_reason(candidate)
     try:
-        row = project_service.add_paper(db, project=project, paper_id=payload.paper_id, selection_reason=payload.selection_reason)
+        row = project_service.add_paper(db, project=project, paper_id=payload.paper_id, selection_reason=selection_reason)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return project_service._to_project_paper_out(db, row)
@@ -209,6 +319,48 @@ def update_project_output(
         raise HTTPException(status_code=404, detail='Project output not found')
     row = project_service.update_output(db, row, **payload.model_dump(exclude_none=True))
     return project_service._to_output_out(row)
+
+
+@router.patch('/{project_id}/saved-searches/{search_id}/candidates/{candidate_id}', response_model=SearchCandidateOut)
+def update_project_saved_search_candidate(
+    project_id: int,
+    search_id: int,
+    candidate_id: int,
+    payload: ResearchProjectSavedSearchCandidateUpdateRequest,
+    db: Session = Depends(get_db),
+) -> SearchCandidateOut:
+    project = _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+        candidate = project_search_service.get_candidate_or_404(db, search_id, candidate_id)
+        candidate = project_search_service.update_candidate(
+            db,
+            row=candidate,
+            triage_status=payload.triage_status or candidate.triage_status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return project_search_service._candidate_out_from_row(db, project_id=project.id, saved_search=saved_search, row=candidate)
+
+
+@router.post(
+    '/{project_id}/saved-searches/{search_id}/candidates/{candidate_id}/ai-reason',
+    response_model=ResearchProjectSavedSearchAiReasonResponse,
+)
+async def generate_project_saved_search_candidate_ai_reason(
+    project_id: int,
+    search_id: int,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+) -> ResearchProjectSavedSearchAiReasonResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        saved_search = project_search_service.get_saved_search_or_404(db, project_id, search_id)
+        candidate = project_search_service.get_candidate_or_404(db, search_id, candidate_id)
+        item = await project_search_service.generate_ai_reason(db, project=project, saved_search=saved_search, row=candidate)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResearchProjectSavedSearchAiReasonResponse(item=item)
 
 
 @router.get('/{project_id}/tasks/{task_id}', response_model=ResearchProjectTaskDetailOut)

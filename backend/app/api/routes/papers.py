@@ -4,6 +4,7 @@ import json
 import os
 from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,19 +22,24 @@ from app.models.db.task_record import TaskRecord
 from app.models.schemas.paper import (
     PaperAnnotationCreateRequest,
     PaperAnnotationOut,
+    PaperCitationTrailResponse,
     PaperContextReflectionCreateRequest,
     PaperDownloadRequest,
     PaperDownloadResponse,
     PaperOut,
     PaperReaderResponse,
     PaperResearchStateUpdate,
+    PaperSearchReasonOut,
     PaperSearchRequest,
     PaperSearchResponse,
     PaperWorkspaceResponse,
+    SearchCandidateOut,
 )
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.base import SearchPaper
-from app.services.paper_search.normalizer import dedupe_and_rank
+from app.services.paper_search.openalex import OpenAlexSearchService
+from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
+from app.services.paper_search.service import load_citation_fixture, paper_search_service
 from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
 from app.services.pdf.reader import paper_reader_service
@@ -43,6 +49,8 @@ from app.services.workflow.service import workflow_service
 router = APIRouter(prefix='/papers', tags=['papers'])
 
 arxiv_service = ArxivSearchService()
+openalex_service = OpenAlexSearchService()
+semantic_scholar_service = SemanticScholarSearchService()
 
 
 def load_search_fixtures(query: str, limit: int) -> list[SearchPaper] | None:
@@ -100,6 +108,12 @@ def to_paper_out(p: PaperRecord) -> PaperOut:
         authors=p.authors,
         year=p.year,
         venue=p.venue,
+        doi=p.doi,
+        paper_url=p.paper_url,
+        openalex_id=p.openalex_id,
+        semantic_scholar_id=p.semantic_scholar_id,
+        citation_count=p.citation_count,
+        reference_count=p.reference_count,
         pdf_url=p.pdf_url,
         pdf_local_path=p.pdf_local_path,
         created_at=p.created_at,
@@ -252,36 +266,31 @@ def ensure_research_state(db: Session, paper_id: int) -> PaperResearchStateRecor
 
 
 def upsert_paper(db: Session, paper) -> PaperRecord:
-    row = (
-        db.execute(select(PaperRecord).where(PaperRecord.source == paper.source, PaperRecord.source_id == paper.source_id))
-        .scalars()
-        .first()
-    )
-    if row is None:
-        row = PaperRecord(
-            source=paper.source,
-            source_id=paper.source_id,
-            title_en=paper.title_en,
-            abstract_en=paper.abstract_en,
-            authors=paper.authors,
-            year=paper.year,
-            venue=paper.venue,
-            pdf_url=paper.pdf_url,
-            published_at=datetime(paper.year, 1, 1, tzinfo=timezone.utc) if paper.year else None,
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-    else:
-        row.title_en = paper.title_en or row.title_en
-        row.abstract_en = paper.abstract_en or row.abstract_en
-        row.authors = paper.authors or row.authors
-        row.year = paper.year or row.year
-        row.venue = paper.venue or row.venue
-        row.pdf_url = paper.pdf_url or row.pdf_url
-        db.add(row)
-        db.commit()
-        db.refresh(row)
+    row = paper_search_service.upsert_paper(db, paper)
+    ensure_research_state(db, row.id)
+    return row
+
+
+def enrich_existing_paper(db: Session, row: PaperRecord, paper: SearchPaper) -> PaperRecord:
+    row.title_en = paper.title_en or row.title_en
+    if paper.abstract_en and len(paper.abstract_en) > len(row.abstract_en or ''):
+        row.abstract_en = paper.abstract_en
+    row.authors = paper.authors or row.authors
+    row.year = paper.year or row.year
+    row.venue = paper.venue or row.venue
+    row.doi = paper.doi or row.doi
+    row.paper_url = paper.paper_url or row.paper_url
+    row.openalex_id = paper.openalex_id or row.openalex_id
+    row.semantic_scholar_id = paper.semantic_scholar_id or row.semantic_scholar_id
+    row.citation_count = max(row.citation_count or 0, paper.citation_count or 0)
+    row.reference_count = max(row.reference_count or 0, paper.reference_count or 0)
+    if paper.pdf_url and (not row.pdf_url or 'arxiv.org/pdf' in row.pdf_url):
+        row.pdf_url = paper.pdf_url
+    if paper.year and row.published_at is None:
+        row.published_at = datetime(paper.year, 1, 1, tzinfo=timezone.utc)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
     ensure_research_state(db, row.id)
     return row
 
@@ -300,23 +309,36 @@ def derive_related_task_id(db: Session, paper_id: int, summary_id: int | None) -
 
 
 def format_search_error(source: str, exc: Exception) -> str:
-    if isinstance(exc, httpx.ConnectError):
-        return f'{source}: 网络连接失败，已跳过该数据源。'
-    if isinstance(exc, httpx.TimeoutException):
-        return f'{source}: 请求超时，已跳过该数据源。'
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        if source == 'semantic_scholar' and status == 429:
-            return (
-                'semantic_scholar: 达到速率限制(429)，本次已自动降级为 arXiv 结果。'
-                '可选：在 .env 配置 SEMANTIC_SCHOLAR_API_KEY 或稍后重试。'
-            )
-        return f'{source}: 上游 HTTP {status}'
-    message = str(exc).strip()
-    if message:
-        trimmed = message if len(message) <= 160 else f'{message[:160]}...'
-        return f'{source}: {trimmed}'
-    return f'{source}: {exc.__class__.__name__}'
+    return paper_search_service.format_search_error(source, exc)
+
+
+def _citation_candidate(
+    row: PaperRecord,
+    *,
+    index: int,
+    status_maps: dict[str, dict[int, int | str | bool]],
+    summary: str,
+) -> SearchCandidateOut:
+    ranked = SimpleNamespace(
+        rank_position=index,
+        rank_score=float(max(row.citation_count or 0, 1)),
+        reason=PaperSearchReasonOut(
+            summary=summary,
+            matched_terms=[],
+            matched_fields=[],
+            source_signals=['引文链'],
+            local_signals=[],
+            merged_sources=[row.source],
+            duplicate_count=1,
+            score_breakdown={},
+        ),
+    )
+    return paper_search_service._candidate_from_ranked(
+        row,
+        ranked=ranked,
+        project_id=None,
+        status_maps=status_maps,
+    )
 
 
 @router.post('/search', response_model=PaperSearchResponse)
@@ -327,37 +349,113 @@ async def search_papers(payload: PaperSearchRequest, db: Session = Depends(get_d
         input_json=payload.model_dump(),
         status='running',
     )
-    papers = []
-    errors: list[str] = []
-    effective_sources = ['arxiv']
-
-    fixture_papers = load_search_fixtures(payload.query, payload.limit)
-    if fixture_papers is not None:
-        papers.extend(fixture_papers)
-        effective_sources = ['fixture']
-    else:
-        try:
-            papers.extend(await arxiv_service.search(payload.query, payload.limit))
-        except Exception as exc:
-            errors.append(format_search_error('arxiv', exc))
-
-    unified = dedupe_and_rank(papers, payload.limit, payload.query)
-    stored = [upsert_paper(db, p) for p in unified]
+    result = await paper_search_service.execute_search(db, payload)
 
     workflow_service.add_artifact(
         db,
         task.id,
         artifact_type='search_results',
-        snapshot_json={'count': len(stored), 'sources': effective_sources, 'errors': errors},
+        snapshot_json={
+            'count': len(result.items),
+            'sources': payload.sources,
+            'errors': result.warnings,
+            'sort_mode': payload.sort_mode,
+        },
         role='output',
     )
     workflow_service.update_task(
         db,
         task,
-        status='completed' if not errors else 'completed_with_warnings',
-        output_json={'paper_ids': [p.id for p in stored], 'errors': errors},
+        status='completed' if not result.warnings else 'completed_with_warnings',
+        output_json={'paper_ids': [item.paper.id for item in result.items], 'errors': result.warnings},
     )
-    return PaperSearchResponse(items=[to_paper_out(p) for p in stored], warnings=errors)
+    return PaperSearchResponse(items=result.items, warnings=result.warnings)
+
+
+@router.get('/{paper_id}/citation-trail', response_model=PaperCitationTrailResponse)
+async def get_paper_citation_trail(paper_id: int, db: Session = Depends(get_db)) -> PaperCitationTrailResponse:
+    paper = db.get(PaperRecord, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail='Paper not found')
+
+    fixture = load_citation_fixture(paper.source_id)
+    if fixture is not None:
+        references = []
+        cited_by = []
+        for index, item in enumerate(fixture.get('references', []), start=1):
+            row = upsert_paper(
+                db,
+                SearchPaper(
+                    source=str(item.get('source') or 'fixture'),
+                    source_id=str(item.get('source_id') or f'ref-{index}'),
+                    title_en=str(item.get('title_en') or ''),
+                    abstract_en=str(item.get('abstract_en') or ''),
+                    authors=str(item.get('authors') or ''),
+                    year=int(item['year']) if item.get('year') is not None else None,
+                    venue=str(item.get('venue') or ''),
+                    pdf_url=str(item.get('pdf_url') or ''),
+                    doi=str(item.get('doi') or ''),
+                    paper_url=str(item.get('paper_url') or ''),
+                    openalex_id=str(item.get('openalex_id') or ''),
+                    semantic_scholar_id=str(item.get('semantic_scholar_id') or ''),
+                    citation_count=int(item.get('citation_count') or 0),
+                    reference_count=int(item.get('reference_count') or 0),
+                ),
+            )
+            references.append(row)
+        for index, item in enumerate(fixture.get('cited_by', []), start=1):
+            row = upsert_paper(
+                db,
+                SearchPaper(
+                    source=str(item.get('source') or 'fixture'),
+                    source_id=str(item.get('source_id') or f'cit-{index}'),
+                    title_en=str(item.get('title_en') or ''),
+                    abstract_en=str(item.get('abstract_en') or ''),
+                    authors=str(item.get('authors') or ''),
+                    year=int(item['year']) if item.get('year') is not None else None,
+                    venue=str(item.get('venue') or ''),
+                    pdf_url=str(item.get('pdf_url') or ''),
+                    doi=str(item.get('doi') or ''),
+                    paper_url=str(item.get('paper_url') or ''),
+                    openalex_id=str(item.get('openalex_id') or ''),
+                    semantic_scholar_id=str(item.get('semantic_scholar_id') or ''),
+                    citation_count=int(item.get('citation_count') or 0),
+                    reference_count=int(item.get('reference_count') or 0),
+                ),
+            )
+            cited_by.append(row)
+        status_maps = paper_search_service._local_status_maps(db, [item.id for item in [*references, *cited_by]], None)
+        reference_items = [
+            _citation_candidate(row, index=index, status_maps=status_maps, summary='来自引文链结果')
+            for index, row in enumerate(references, start=1)
+        ]
+        cited_by_items = [
+            _citation_candidate(row, index=index, status_maps=status_maps, summary='来自引文链结果')
+            for index, row in enumerate(cited_by, start=1)
+        ]
+        return PaperCitationTrailResponse(paper=to_paper_out(paper), references=reference_items, cited_by=cited_by_items)
+
+    resolved, references, cited_by = await openalex_service.fetch_citation_trail(paper)
+    if resolved is None and paper.semantic_scholar_id:
+        resolved = await semantic_scholar_service.fetch_paper(paper.semantic_scholar_id)
+
+    if resolved is not None:
+        paper = enrich_existing_paper(db, paper, resolved)
+    reference_rows = [upsert_paper(db, item) for item in references]
+    cited_by_rows = [upsert_paper(db, item) for item in cited_by]
+    status_maps = paper_search_service._local_status_maps(db, [item.id for item in [*reference_rows, *cited_by_rows]], None)
+
+    return PaperCitationTrailResponse(
+        paper=to_paper_out(db.get(PaperRecord, paper_id) or paper),
+        references=[
+            _citation_candidate(row, index=index, status_maps=status_maps, summary='来自单跳引文链')
+            for index, row in enumerate(reference_rows, start=1)
+        ],
+        cited_by=[
+            _citation_candidate(row, index=index, status_maps=status_maps, summary='来自单跳引文链')
+            for index, row in enumerate(cited_by_rows, start=1)
+        ],
+    )
 
 
 @router.post('/download', response_model=PaperDownloadResponse)

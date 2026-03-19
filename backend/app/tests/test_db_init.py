@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 from app.db import init_db
@@ -39,7 +40,9 @@ def test_initialize_database_upgrades_new_database(monkeypatch, tmp_path):
 def test_initialize_database_stamps_existing_matching_schema(monkeypatch, tmp_path):
     engine, db_path, data_dir = _bind_temp_runtime(monkeypatch, tmp_path)
     try:
-        Base.metadata.create_all(bind=engine)
+        command.upgrade(init_db._build_alembic_config(), init_db.ALEMBIC_BASELINE_REVISION)
+        with engine.begin() as connection:
+            connection.execute(text('DROP TABLE IF EXISTS alembic_version'))
         init_db.initialize_database()
 
         tables = set(inspect(engine).get_table_names())

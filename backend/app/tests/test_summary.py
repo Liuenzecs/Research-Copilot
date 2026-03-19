@@ -39,7 +39,7 @@ def test_quick_summary(client, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
     monkeypatch.setattr('app.services.summarize.service.summarize_service._provider', lambda: _FakeSummaryProvider())
 
     search_resp = client.post('/papers/search', json={'query': 'transformer', 'sources': ['arxiv'], 'limit': 1})
@@ -47,7 +47,7 @@ def test_quick_summary(client, monkeypatch):
     items = search_resp.json()['items']
     assert items
 
-    paper_id = items[0]['id']
+    paper_id = items[0]['paper']['id']
     response = client.post('/summaries/quick', json={'paper_id': paper_id})
     assert response.status_code == 200
     payload = response.json()
@@ -70,11 +70,11 @@ def test_quick_summary_stream_returns_delta_and_complete(client, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
     monkeypatch.setattr('app.services.summarize.service.summarize_service._provider', lambda: _FakeSummaryProvider())
 
     search_resp = client.post('/papers/search', json={'query': 'stream summary', 'sources': ['arxiv'], 'limit': 1})
-    paper_id = search_resp.json()['items'][0]['id']
+    paper_id = search_resp.json()['items'][0]['paper']['id']
 
     with client.stream('POST', '/summaries/quick/stream', json={'paper_id': paper_id}) as response:
         assert response.status_code == 200
@@ -102,11 +102,11 @@ def test_deep_summary_stream_returns_complete(client, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr('app.api.routes.papers.arxiv_service.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
     monkeypatch.setattr('app.services.summarize.service.summarize_service._provider', lambda: _FakeSummaryProvider())
 
     search_resp = client.post('/papers/search', json={'query': 'deep stream summary', 'sources': ['arxiv'], 'limit': 1})
-    paper_id = search_resp.json()['items'][0]['id']
+    paper_id = search_resp.json()['items'][0]['paper']['id']
 
     with client.stream('POST', '/summaries/deep/stream', json={'paper_id': paper_id, 'focus': 'experiments'}) as response:
         assert response.status_code == 200

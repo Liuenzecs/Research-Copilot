@@ -24,6 +24,7 @@ import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
+import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench";
 import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
   addProjectPaper,
@@ -698,7 +699,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     setNotice("");
     try {
       const result = await searchPapers(searchQuery.trim(), 12);
-      const sorted = [...(result.items ?? [])].sort((left, right) => (right.year ?? 0) - (left.year ?? 0));
+      const sorted = [...(result.items ?? []).map((item) => item.paper)].sort((left, right) => (right.year ?? 0) - (left.year ?? 0));
       setSearchResults(sorted);
       setSearchWarnings(result.warnings ?? []);
       setSearchSelection([]);
@@ -1138,111 +1139,12 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
       <div className="project-workspace-grid">
         <div className="project-sidebar-left">
-          <Card>
-            <div className="projects-section-header">
-              <div>
-                <h2 className="title">项目内收集台</h2>
-                <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  搜索结果只停留在当前会话；点“批量加入项目”之后才会持久化。
-                </p>
-              </div>
-            </div>
-
-            <div className="project-search-box">
-              <input
-                className="input"
-                data-testid="project-search-input"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void handleSearch();
-                  }
-                }}
-                placeholder="继续搜索项目相关论文"
-              />
-              <Button className="secondary" type="button" data-testid="project-search-run" onClick={() => void handleSearch()} disabled={searchLoading}>
-                {searchLoading ? "搜索中..." : "搜索"}
-              </Button>
-            </div>
-
-            <div className="project-search-filters">
-              <select className="select" value={searchScopeFilter} onChange={(event) => setSearchScopeFilter(event.target.value as SearchScopeFilter)}>
-                <option value="all">全部结果</option>
-                <option value="not_in_project">仅未加入项目</option>
-                <option value="in_project">仅已加入项目</option>
-              </select>
-              <select className="select" value={downloadFilter} onChange={(event) => setDownloadFilter(event.target.value as DownloadFilter)}>
-                <option value="all">全部下载状态</option>
-                <option value="downloaded">仅已下载 PDF</option>
-                <option value="not_downloaded">仅未下载 PDF</option>
-              </select>
-              <input className="input" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)} placeholder="按年份筛选" />
-            </div>
-
-            <div className="projects-inline-actions" style={{ marginTop: 12 }}>
-              <Button type="button" data-testid="project-search-batch-add" onClick={() => void handleAddSearchBatch()} disabled={addingSearchBatch || searchSelection.length === 0}>
-                {addingSearchBatch ? "加入中..." : `批量加入项目 (${searchSelection.length})`}
-              </Button>
-              <Button className="secondary" type="button" onClick={() => setSearchSelection(filteredSearchResults.map((paper) => paper.id))}>
-                全选筛选结果
-              </Button>
-              <Button className="secondary" type="button" onClick={() => setSearchSelection([])}>
-                清空勾选
-              </Button>
-            </div>
-
-            {filteredSearchResults.length > 0 ? (
-              <div className="project-search-results">
-                {filteredSearchResults.map((paper) => {
-                  const inProject = projectPaperIds.has(paper.id);
-                  return (
-                    <div key={paper.id} className="project-paper-search-item" data-testid={`search-result-${paper.id}`}>
-                      <label className="project-paper-check">
-                        <input
-                          type="checkbox"
-                          checked={searchSelection.includes(paper.id)}
-                          onChange={(event) => {
-                            setSearchSelection((current) => {
-                              if (event.target.checked) return Array.from(new Set([...current, paper.id]));
-                              return current.filter((id) => id !== paper.id);
-                            });
-                          }}
-                        />
-                        <span>{inProject ? "已在项目中" : "加入本批次"}</span>
-                      </label>
-                      <strong>{paper.title_en}</strong>
-                      <div className="subtle">
-                        {paper.authors || "作者未知"} · {paper.year ?? "年份未知"} · {paper.pdf_local_path ? "已下载 PDF" : "未下载 PDF"}
-                      </div>
-                      <div className="projects-inline-actions">
-                        {inProject ? (
-                          <Button
-                            className="secondary"
-                            type="button"
-                            onClick={() => {
-                              paperPoolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                              setNotice("已定位到项目论文池。");
-                            }}
-                          >
-                            回到项目论文池
-                          </Button>
-                        ) : (
-                          <Button type="button" onClick={() => setSearchSelection((current) => Array.from(new Set([...current, paper.id])))}>加入待选</Button>
-                        )}
-                        <Link className="button secondary" href={paperReaderPath(paper.id, undefined, undefined, projectId)}>
-                          打开阅读器
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <EmptyState title="还没有候选论文" hint="用上面的搜索框把候选论文收集进来。" />
-            )}
-          </Card>
+          <ProjectSearchWorkbench
+            projectId={projectId}
+            project={workspace.project}
+            initialQuery={workspace.project.seed_query || workspace.project.research_question}
+            onProjectMutated={() => loadWorkspace({ quiet: true })}
+          />
 
           <Card>
             <div ref={paperPoolRef}>
@@ -1371,7 +1273,6 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               </DndContext>
             )}
           </Card>
-
           <Card>
             <div className="projects-section-header">
               <div>
@@ -1380,7 +1281,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   整表自动保存，刷新后如果还有未落库草稿，会优先从本地镜像恢复。
                 </p>
               </div>
-              <span className={`autosave-chip state-${compareSaveState}`.trim()} data-testid="compare-autosave-state">{autosaveLabel(compareSaveState)}</span>
+              <span className={`autosave-chip state-${compareSaveState}`.trim()} data-testid="compare-autosave-state">
+                {autosaveLabel(compareSaveState)}
+              </span>
             </div>
 
             {!compareOutput ? (
@@ -1424,7 +1327,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   自动保存 markdown 草稿；只要还有未成功落库的修改，刷新前都会给出浏览器提醒。
                 </p>
               </div>
-              <span className={`autosave-chip state-${reviewSaveState}`.trim()} data-testid="review-autosave-state">{autosaveLabel(reviewSaveState)}</span>
+              <span className={`autosave-chip state-${reviewSaveState}`.trim()} data-testid="review-autosave-state">
+                {autosaveLabel(reviewSaveState)}
+              </span>
             </div>
 
             {!reviewOutput ? (

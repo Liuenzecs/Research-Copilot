@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.schemas.paper import PaperOut
+from app.models.schemas.paper import PaperOut, SearchCandidateOut
 
 
 class ResearchProjectCreateRequest(BaseModel):
@@ -42,6 +42,7 @@ class ResearchProjectListItemOut(ResearchProjectOut):
 class ResearchProjectPaperAddRequest(BaseModel):
     paper_id: int
     selection_reason: str = ''
+    saved_search_candidate_id: int | None = None
 
 
 class ResearchProjectPaperOut(BaseModel):
@@ -200,3 +201,82 @@ class ResearchProjectWorkspaceResponse(BaseModel):
 
 class ResearchProjectEvidenceReorderResponse(BaseModel):
     items: list[ResearchProjectEvidenceOut] = Field(default_factory=list)
+
+
+class ProjectSearchFilters(BaseModel):
+    sources: list[str] = Field(default_factory=lambda: ['arxiv'])
+    year_from: int | None = None
+    year_to: int | None = None
+    venue_query: str = ''
+    require_pdf: bool | None = None
+    project_membership: str = 'all'
+    has_summary: bool | None = None
+    has_reflection: bool | None = None
+    has_reproduction: bool | None = None
+    reading_status: str = ''
+    repro_interest: str = ''
+
+
+class ResearchProjectSearchRunCreateRequest(BaseModel):
+    query: str
+    filters: ProjectSearchFilters = Field(default_factory=ProjectSearchFilters)
+    sort_mode: str = 'relevance'
+
+
+class ResearchProjectSearchRunOut(BaseModel):
+    id: int
+    project_id: int
+    saved_search_id: int | None = None
+    query: str
+    filters: ProjectSearchFilters = Field(default_factory=ProjectSearchFilters)
+    sort_mode: str
+    result_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class ResearchProjectSearchRunDetailOut(BaseModel):
+    run: ResearchProjectSearchRunOut
+    items: list[SearchCandidateOut] = Field(default_factory=list)
+
+
+class ResearchProjectSavedSearchCreateRequest(BaseModel):
+    title: str = ''
+    query: str
+    filters: ProjectSearchFilters = Field(default_factory=ProjectSearchFilters)
+    sort_mode: str = 'relevance'
+    source_run_id: int | None = None
+
+
+class ResearchProjectSavedSearchUpdateRequest(BaseModel):
+    title: str | None = None
+    query: str | None = None
+    filters: ProjectSearchFilters | None = None
+    sort_mode: str | None = None
+
+
+class ResearchProjectSavedSearchOut(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    query: str
+    filters: ProjectSearchFilters = Field(default_factory=ProjectSearchFilters)
+    sort_mode: str
+    last_run_id: int | None = None
+    last_result_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResearchProjectSavedSearchCandidateUpdateRequest(BaseModel):
+    triage_status: str | None = None
+
+
+class ResearchProjectSavedSearchDetailOut(BaseModel):
+    saved_search: ResearchProjectSavedSearchOut
+    last_run: ResearchProjectSearchRunOut | None = None
+    items: list[SearchCandidateOut] = Field(default_factory=list)
+
+
+class ResearchProjectSavedSearchAiReasonResponse(BaseModel):
+    item: SearchCandidateOut

@@ -14,6 +14,12 @@ class SearchPaper:
     year: int | None
     venue: str
     pdf_url: str
+    doi: str = ''
+    paper_url: str = ''
+    openalex_id: str = ''
+    semantic_scholar_id: str = ''
+    citation_count: int = 0
+    reference_count: int = 0
 
 
 class PaperSearchProvider(Protocol):

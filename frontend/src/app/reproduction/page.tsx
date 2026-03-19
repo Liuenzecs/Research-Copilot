@@ -353,7 +353,7 @@ function ReproductionPageContent() {
     setInfo('');
     try {
       const payload = await searchPapers(paperLookupQuery.trim(), 6);
-      const items = payload.items ?? [];
+      const items = (payload.items ?? []).map((item) => item.paper);
       setPaperLookupResults(items);
       if (items.length > 0) {
         setNotice(`已找到 ${items.length} 篇候选论文，请直接选择进入复现工作区。`);

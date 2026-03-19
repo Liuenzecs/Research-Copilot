@@ -7,7 +7,45 @@
     "authors": "A. Researcher, B. Analyst",
     "year": 2025,
     "venue": "arXiv",
-    "pdf_url": "https://arxiv.org/pdf/e2e-retrieval-study.pdf"
+    "doi": "10.1000/e2e-retrieval-study",
+    "paper_url": "https://example.org/e2e-retrieval-study",
+    "openalex_id": "https://openalex.org/WE2ERETRIEVAL",
+    "citation_count": 42,
+    "reference_count": 16,
+    "pdf_url": "https://arxiv.org/pdf/e2e-retrieval-study.pdf",
+    "citation_trail": {
+      "references": [
+        {
+          "source": "openalex",
+          "source_id": "e2e-reference-a",
+          "title_en": "Reference Evidence Board Methods",
+          "abstract_en": "A reference paper about evidence board extraction.",
+          "authors": "Ref. Author",
+          "year": 2023,
+          "venue": "ICLR",
+          "paper_url": "https://example.org/e2e-reference-a",
+          "openalex_id": "https://openalex.org/WE2EREFA",
+          "citation_count": 18,
+          "reference_count": 9,
+          "pdf_url": "https://example.org/e2e-reference-a.pdf"
+        }
+      ],
+      "cited_by": [
+        {
+          "source": "semantic_scholar",
+          "source_id": "e2e-citing-a",
+          "title_en": "Citing Notebook Review Systems",
+          "abstract_en": "A citing paper about notebook-first review systems.",
+          "authors": "Cit. Author",
+          "year": 2026,
+          "venue": "NeurIPS",
+          "semantic_scholar_id": "S2-E2E-CITING-A",
+          "citation_count": 12,
+          "reference_count": 5,
+          "pdf_url": "https://example.org/e2e-citing-a.pdf"
+        }
+      ]
+    }
   },
   {
     "source": "arxiv",
@@ -17,6 +55,11 @@
     "authors": "C. Scientist, D. Engineer",
     "year": 2024,
     "venue": "arXiv",
+    "doi": "10.1000/e2e-long-context-benchmark",
+    "paper_url": "https://example.org/e2e-long-context-benchmark",
+    "openalex_id": "https://openalex.org/WE2ELONGCONTEXT",
+    "citation_count": 31,
+    "reference_count": 11,
     "pdf_url": "https://arxiv.org/pdf/e2e-long-context-benchmark.pdf"
   },
   {
@@ -27,6 +70,11 @@
     "authors": "E. Baseline",
     "year": 2023,
     "venue": "arXiv",
+    "doi": "10.1000/hidden-control-paper",
+    "paper_url": "https://example.org/hidden-control-paper",
+    "openalex_id": "https://openalex.org/WHIDDENCONTROL",
+    "citation_count": 4,
+    "reference_count": 2,
     "pdf_url": "https://arxiv.org/pdf/hidden-control-paper.pdf"
   }
 ]

@@ -24,5 +24,5 @@ def test_exact_title_should_rank_above_newer_partial_matches():
 
     ranked = dedupe_and_rank(papers, limit=3, query='Attention is all you need')
 
-    assert ranked[0].source_id == '1706.03762'
-    assert ranked[0].title_en == 'Attention Is All You Need'
+    assert ranked[0].paper.source_id == '1706.03762'
+    assert ranked[0].paper.title_en == 'Attention Is All You Need'

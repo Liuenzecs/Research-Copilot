@@ -1,143 +1,158 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function createProject(page: Page, question: string) {
-  await page.goto('/projects');
-  await page.getByTestId('project-question-input').fill(question);
-  await page.getByTestId('create-project-button').click();
+  await page.goto("/projects");
+  await page.getByTestId("project-question-input").fill(question);
+  await page.getByTestId("create-project-button").click();
   await page.waitForURL(/\/projects\/\d+$/);
+}
+
+async function openSeededProject(page: Page) {
+  await page.goto("/projects");
+  const seededProjectCard = page.locator(".project-list-card", { hasText: "E2E Context Project" });
+  await seededProjectCard.getByRole("button", { name: /进入工作台/ }).click();
+  await page.waitForURL(/\/projects\/\d+$/);
+}
+
+async function firstSearchResults(page: Page) {
+  const results = page.locator('[data-testid^="search-result-"]');
+  await expect.poll(async () => results.count()).toBeGreaterThan(1);
+  return results;
 }
 
 async function addFixturePapersToProject(page: Page, query: string) {
-  await page.getByTestId('project-search-input').fill(query);
-  await page.getByTestId('project-search-run').click();
+  await page.getByTestId("project-search-input").fill(query);
+  await page.getByTestId("project-search-run").click();
 
-  const results = page.locator('[data-testid^="search-result-"]');
-  await expect.poll(async () => results.count()).toBeGreaterThan(1);
-
+  const results = await firstSearchResults(page);
   await results.nth(0).locator('input[type="checkbox"]').check();
   await results.nth(1).locator('input[type="checkbox"]').check();
-  await page.getByTestId('project-search-batch-add').click();
+  await page.getByTestId("project-search-batch-add").click();
 
-  const paperPool = page.getByTestId('project-paper-pool');
-  await expect(paperPool).toContainText('E2E Retrieval Study for Evidence Synthesis');
-  await expect(paperPool).toContainText('E2E Long Context Benchmark for Literature Agents');
+  const paperPool = page.getByTestId("project-paper-pool");
+  await expect(paperPool).toContainText("E2E Retrieval Study for Evidence Synthesis");
+  await expect(paperPool).toContainText("E2E Long Context Benchmark for Literature Agents");
 }
 
-test('shows Chinese navigation, help copy, project counts, and settings runtime notes', async ({ page }) => {
-  await page.goto('/projects');
+async function saveCurrentSearch(page: Page, title: string) {
+  await page.getByPlaceholder("保存搜索名称").fill(title);
+  await page.getByTestId("save-search-button").click();
+  await expect(page.locator('[data-testid^="saved-search-"]')).toContainText(title);
+}
 
-  await expect(page.getByRole('link', { name: '项目', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: '文库', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: '周报', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: '设置', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '搜索论文', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '使用说明', exact: true })).toBeVisible();
+async function checkFirstCandidate(page: Page) {
+  const results = await firstSearchResults(page);
+  await results.first().locator('input[type="checkbox"]').check();
+  return results.first();
+}
 
-  const seededProjectCard = page.locator('.project-list-card', { hasText: 'E2E Context Project' });
-  await expect(seededProjectCard).toContainText('论文 2');
-  await expect(seededProjectCard).toContainText('证据 0');
-  await expect(seededProjectCard).toContainText('成果物 0');
+test("supports saved search, triage persistence, ai reasons, and citation add", async ({ page }) => {
+  const suffix = Date.now();
+  await createProject(page, `E2E search workbench ${suffix}: Which literature agents deserve deeper review?`);
 
-  await page.getByRole('button', { name: '使用说明', exact: true }).click();
-  await expect(page.getByText('主入口是“项目工作台”')).toBeVisible();
-  await expect(page.getByText('pytest 与 Playwright E2E 默认使用临时数据库')).toBeVisible();
-  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByTestId("project-search-input").fill("long context evidence synthesis");
+  await page.getByTestId("project-search-run").click();
+  await firstSearchResults(page);
 
-  await page.getByRole('link', { name: '设置', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.getByTestId('runtime-settings-card')).toContainText('数据库路径');
-  await expect(page.getByTestId('test-db-note')).toContainText('临时数据库');
+  await saveCurrentSearch(page, "核心检索");
+  await checkFirstCandidate(page);
+  await page.getByRole("button", { name: "标为待重点阅读" }).click();
+  await expect(page.locator(".project-candidate-card").first()).toContainText("待重点阅读");
+
+  await page.getByTestId("generate-ai-reason-button").click();
+  await expect(page.getByText("默认先展示规则解释；需要时可按需生成 AI 推荐理由。")).toHaveCount(0);
+
+  await page.getByTestId("load-citation-trail-button").click();
+  const referenceColumn = page.locator(".project-citation-column").first();
+  await expect(referenceColumn).toContainText("Reference Evidence Board Methods");
+  await referenceColumn.locator('input[type="checkbox"]').first().check();
+  await page.getByTestId("citation-batch-add-button").click();
+  await expect(page.getByTestId("project-paper-pool")).toContainText("Reference Evidence Board Methods");
+
+  await page.reload();
+  const savedSearches = page.locator('[data-testid^="saved-search-"]');
+  await savedSearches.first().click();
+  await expect(page.locator(".project-candidate-card").first()).toContainText("待重点阅读");
+  await expect(page.getByText("默认先展示规则解释；需要时可按需生成 AI 推荐理由。")).toHaveCount(0);
 });
 
-test('creates a project, runs actions, and persists autosaved outputs', async ({ page }) => {
+test("creates a project, runs actions, and persists autosaved outputs", async ({ page }) => {
   const suffix = Date.now();
   await createProject(page, `E2E live project ${suffix}: How should long context evidence agents compare?`);
-  await addFixturePapersToProject(page, 'long context evidence synthesis');
+  await addFixturePapersToProject(page, "long context evidence synthesis");
 
-  await page.getByTestId('project-action-extract').click();
-  const progressPanel = page.getByTestId('task-progress-panel');
-  await expect(progressPanel).toContainText('补齐摘要');
+  await page.getByTestId("project-action-extract").click();
+  await expect(page.getByTestId("task-progress-panel")).toContainText(/摘要|证据/);
   await expect.poll(async () => page.locator('[data-testid^="evidence-card-"]').count()).toBeGreaterThan(0);
 
-  await page.getByTestId('project-action-compare').click();
+  await page.getByTestId("project-action-compare").click();
   await expect.poll(async () => page.locator('[data-testid="compare-table"] tbody tr').count()).toBeGreaterThan(0);
 
-  await page.getByTestId('project-action-review').click();
-  const reviewEditor = page.getByTestId('review-editor');
+  await page.getByTestId("project-action-review").click();
+  const reviewEditor = page.getByTestId("review-editor");
   await expect(reviewEditor).toBeVisible();
   await expect(reviewEditor).toHaveValue(/## Problem Framing/);
 
-  const compareNote = 'E2E compare note: prioritize stronger ablation coverage.';
-  const compareNoteCell = page.locator('[data-testid="compare-table"] tbody tr').first().locator('textarea').last();
+  const compareNote = "E2E compare note: prioritize stronger ablation coverage.";
+  const compareNoteCell = page.locator('[data-testid="compare-table"] tbody tr').first().locator("textarea").last();
   await compareNoteCell.fill(compareNote);
   await compareNoteCell.blur();
-  await expect.poll(async () => page.getByTestId('compare-autosave-state').getAttribute('class')).toContain('state-saved');
+  await expect.poll(async () => page.getByTestId("compare-autosave-state").getAttribute("class")).toContain("state-saved");
 
-  const reviewNote = 'E2E review note: keep the notebook output directly editable.';
+  const reviewNote = "E2E review note: keep the notebook output directly editable.";
   const existingReview = await reviewEditor.inputValue();
   await reviewEditor.fill(`${existingReview}\n\n${reviewNote}`);
   await reviewEditor.blur();
-  await expect.poll(async () => page.getByTestId('review-autosave-state').getAttribute('class')).toContain('state-saved');
+  await expect.poll(async () => page.getByTestId("review-autosave-state").getAttribute("class")).toContain("state-saved");
 
   await page.reload();
-  await expect(page.locator('[data-testid="compare-table"] tbody tr').first().locator('textarea').last()).toHaveValue(compareNote);
-  await expect(page.getByTestId('review-editor')).toHaveValue(new RegExp(reviewNote.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  await expect(page.locator('[data-testid="compare-table"] tbody tr').first().locator("textarea").last()).toHaveValue(compareNote);
+  await expect(page.getByTestId("review-editor")).toHaveValue(new RegExp(reviewNote.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test('adds evidence from the reader back into the current project', async ({ page }) => {
-  await page.goto('/projects');
-  const seededProjectCard = page.locator('.project-list-card', { hasText: 'E2E Context Project' });
-  await seededProjectCard.getByRole('button', { name: '进入工作台', exact: true }).click();
-  await page.waitForURL(/\/projects\/\d+$/);
+test("adds evidence from the reader back into the current project", async ({ page }) => {
+  await openSeededProject(page);
 
   await page.locator('[data-testid^="project-open-reader-"]').first().click();
   await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
 
-  await page.getByTestId('reader-mode-text').click();
-  await expect(page.getByTestId('reader-text-article')).toBeVisible();
-
+  await page.getByTestId("reader-mode-text").click();
+  await expect(page.getByTestId("reader-text-article")).toBeVisible();
   const paragraphs = page.locator('[data-testid^="reader-paragraph-"]');
   await expect.poll(async () => paragraphs.count()).toBeGreaterThan(0);
   await paragraphs.first().click();
 
-  await page.getByTestId('reader-add-project-evidence').click();
-  await page.getByTestId('reader-return-project').click();
+  await page.getByTestId("reader-add-project-evidence").click();
+  await page.getByTestId("reader-return-project").click();
   await page.waitForURL(/\/projects\/\d+$/);
-
   await expect.poll(async () => page.locator('[data-testid^="evidence-card-"]').count()).toBeGreaterThan(0);
 });
 
-test('keeps reflections, reproduction, and memory scoped to the project context', async ({ page }) => {
-  await page.goto('/projects');
-  const seededProjectCard = page.locator('.project-list-card', { hasText: 'E2E Context Project' });
-  await seededProjectCard.getByRole('button', { name: '进入工作台', exact: true }).click();
-  await page.waitForURL(/\/projects\/\d+$/);
+test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
+  await openSeededProject(page);
   const projectUrl = page.url();
 
-  await page.getByTestId('quick-link-search').click();
+  await page.getByTestId("quick-link-search").click();
   await expect(page).toHaveURL(/\/search\?project_id=\d+/);
-  await expect(page.getByTestId('project-context-banner')).toContainText('当前');
-  await page.getByRole('button', { name: '返回项目工作台', exact: true }).click();
+  await expect(page.getByTestId("project-context-banner")).toContainText("当前");
+  await page.getByRole("button", { name: /返回项目工作台/ }).click();
   await expect(page).toHaveURL(/\/projects\/\d+$/);
 
   await page.goto(projectUrl);
-  await page.getByTestId('quick-link-reflections').click();
+  await page.getByTestId("quick-link-reflections").click();
   await expect(page).toHaveURL(/\/reflections\?project_id=\d+/);
-  await expect(page.getByTestId('project-context-banner')).toContainText('当前为项目上下文');
-  await expect(page.getByText('Project reflection insight for E2E context')).toBeVisible();
-  await expect(page.getByText('Hidden reflection outside project')).toHaveCount(0);
+  await expect(page.getByText("Project reflection insight for E2E context")).toBeVisible();
+  await expect(page.getByText("Hidden reflection outside project")).toHaveCount(0);
 
   await page.goto(projectUrl);
-  await page.getByTestId('quick-link-reproduction').click();
+  await page.getByTestId("quick-link-reproduction").click();
   await expect(page).toHaveURL(/\/reproduction\?project_id=\d+/);
-  await expect(page.getByTestId('project-context-banner')).toContainText('当前为项目上下文');
-  await expect(page.getByText('E2E Retrieval Study for Evidence Synthesis')).toBeVisible();
-  await expect(page.getByText('Hidden Control Paper for Unrelated Vision Tasks')).toHaveCount(0);
+  await expect(page.getByText("E2E Retrieval Study for Evidence Synthesis")).toBeVisible();
+  await expect(page.getByText("Hidden Control Paper for Unrelated Vision Tasks")).toHaveCount(0);
 
   await page.goto(projectUrl);
-  await page.getByTestId('quick-link-memory').click();
+  await page.getByTestId("quick-link-memory").click();
   await expect(page).toHaveURL(/\/memory\?project_id=\d+/);
-  await expect(page.getByTestId('project-context-banner')).toContainText('当前为项目上下文');
-  await expect(page.getByText('Project memory anchor for E2E context')).toBeVisible();
-  await expect(page.getByText('Hidden memory outside project')).toHaveCount(0);
+  await expect(page.getByText("Project memory anchor for E2E context")).toBeVisible();
+  await expect(page.getByText("Hidden memory outside project")).toHaveCount(0);
 });

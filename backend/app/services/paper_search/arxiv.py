@@ -39,6 +39,7 @@ class ArxivSearchService:
                     year=year,
                     venue='arXiv',
                     pdf_url=pdf_url,
+                    paper_url=entry_id,
                 )
             )
         return papers

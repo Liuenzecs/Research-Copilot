@@ -4,8 +4,16 @@ import {
   LibraryItem,
   MemoryItem,
   Paper,
+  PaperCitationTrail,
+  PaperSearchFilters,
+  PaperSearchResponse,
+  PaperSearchSortMode,
   PaperReader,
   PaperWorkspace,
+  ProjectSavedSearch,
+  ProjectSavedSearchDetail,
+  ProjectSearchRun,
+  ProjectSearchRunDetail,
   ProjectActionLaunchResponse,
   ResearchProject,
   ResearchProjectEvidenceItem,
@@ -15,6 +23,7 @@ import {
   ResearchProjectTaskDetail,
   ResearchProjectTaskEvent,
   ResearchProjectWorkspace,
+  SearchCandidate,
   ProviderSettings,
   Reflection,
   ReproductionDetail,
@@ -222,10 +231,51 @@ export async function health() {
   return request('/health');
 }
 
-export async function searchPapers(query: string, limit = 10) {
-  return request<{ items: Paper[]; warnings?: string[] }>('/papers/search', {
+export async function searchPapers(
+  payloadOrQuery:
+    | string
+    | {
+        query: string;
+        sources?: string[];
+        limit?: number;
+        year_from?: number | null;
+        year_to?: number | null;
+        venue_query?: string;
+        require_pdf?: boolean | null;
+        project_id?: number | null;
+        project_membership?: string;
+        has_summary?: boolean | null;
+        has_reflection?: boolean | null;
+        has_reproduction?: boolean | null;
+        reading_status?: string;
+        repro_interest?: string;
+        sort_mode?: PaperSearchSortMode | string;
+      },
+  limit = 10,
+) {
+  const payload =
+    typeof payloadOrQuery === 'string'
+      ? { query: payloadOrQuery, sources: ['arxiv'], limit }
+      : {
+          query: payloadOrQuery.query,
+          sources: payloadOrQuery.sources ?? ['arxiv'],
+          limit: payloadOrQuery.limit ?? limit,
+          year_from: payloadOrQuery.year_from ?? null,
+          year_to: payloadOrQuery.year_to ?? null,
+          venue_query: payloadOrQuery.venue_query ?? '',
+          require_pdf: payloadOrQuery.require_pdf ?? null,
+          project_id: payloadOrQuery.project_id ?? null,
+          project_membership: payloadOrQuery.project_membership ?? 'all',
+          has_summary: payloadOrQuery.has_summary ?? null,
+          has_reflection: payloadOrQuery.has_reflection ?? null,
+          has_reproduction: payloadOrQuery.has_reproduction ?? null,
+          reading_status: payloadOrQuery.reading_status ?? '',
+          repro_interest: payloadOrQuery.repro_interest ?? '',
+          sort_mode: payloadOrQuery.sort_mode ?? 'relevance',
+        };
+  return request<PaperSearchResponse>('/papers/search', {
     method: 'POST',
-    body: JSON.stringify({ query, sources: ['arxiv'], limit }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -291,6 +341,10 @@ export async function deepSummaryStream(
 
 export async function getPaper(paperId: number) {
   return request<Paper>(`/papers/${paperId}`);
+}
+
+export async function getPaperCitationTrail(paperId: number) {
+  return request<PaperCitationTrail>(`/papers/${paperId}/citation-trail`);
 }
 
 export async function getPaperWorkspace(paperId: number) {
@@ -458,11 +512,104 @@ export async function getProjectWorkspace(projectId: number) {
   return request<ResearchProjectWorkspace>(`/projects/${projectId}/workspace`);
 }
 
+export async function createProjectSearchRun(
+  projectId: number,
+  payload: {
+    query: string;
+    filters: PaperSearchFilters;
+    sort_mode: PaperSearchSortMode | string;
+  },
+) {
+  return request<ProjectSearchRunDetail>(`/projects/${projectId}/search-runs`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listProjectSearchRuns(projectId: number) {
+  return request<ProjectSearchRun[]>(`/projects/${projectId}/search-runs`);
+}
+
+export async function createProjectSavedSearch(
+  projectId: number,
+  payload: {
+    title?: string;
+    query: string;
+    filters: PaperSearchFilters;
+    sort_mode: PaperSearchSortMode | string;
+    source_run_id?: number | null;
+  },
+) {
+  return request<ProjectSavedSearchDetail>(`/projects/${projectId}/saved-searches`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listProjectSavedSearches(projectId: number) {
+  return request<ProjectSavedSearch[]>(`/projects/${projectId}/saved-searches`);
+}
+
+export async function getProjectSavedSearch(projectId: number, searchId: number) {
+  return request<ProjectSavedSearchDetail>(`/projects/${projectId}/saved-searches/${searchId}`);
+}
+
+export async function updateProjectSavedSearch(
+  projectId: number,
+  searchId: number,
+  payload: {
+    title?: string;
+    query?: string;
+    filters?: PaperSearchFilters;
+    sort_mode?: PaperSearchSortMode | string;
+  },
+) {
+  return request<ProjectSavedSearch>(`/projects/${projectId}/saved-searches/${searchId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProjectSavedSearch(projectId: number, searchId: number) {
+  return request<void>(`/projects/${projectId}/saved-searches/${searchId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function rerunProjectSavedSearch(projectId: number, searchId: number) {
+  return request<ProjectSavedSearchDetail>(`/projects/${projectId}/saved-searches/${searchId}/run`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function updateProjectSavedSearchCandidate(
+  projectId: number,
+  searchId: number,
+  candidateId: number,
+  payload: {
+    triage_status?: string;
+  },
+) {
+  return request<SearchCandidate>(`/projects/${projectId}/saved-searches/${searchId}/candidates/${candidateId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateProjectSavedSearchCandidateAiReason(projectId: number, searchId: number, candidateId: number) {
+  return request<{ item: SearchCandidate }>(`/projects/${projectId}/saved-searches/${searchId}/candidates/${candidateId}/ai-reason`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export async function addProjectPaper(
   projectId: number,
   payload: {
     paper_id: number;
     selection_reason?: string;
+    saved_search_candidate_id?: number;
   },
 ) {
   return request<ResearchProjectPaper>(`/projects/${projectId}/papers`, {
