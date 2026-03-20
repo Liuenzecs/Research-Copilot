@@ -34,6 +34,7 @@ try {
         --noconfirm `
         --clean `
         --onedir `
+        --noconsole `
         --name research-copilot-backend `
         --paths $backendRoot `
         --collect-submodules app `

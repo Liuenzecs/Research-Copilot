@@ -1,6 +1,8 @@
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::net::TcpListener;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -113,6 +115,15 @@ fn open_log_file(path: &Path) -> Result<Stdio, String> {
     Ok(Stdio::from(file))
 }
 
+#[cfg(windows)]
+fn apply_background_flags(command: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn apply_background_flags(_: &mut Command) {}
+
 fn spawn_backend_process(app: &AppHandle, runtime: &RuntimeConfigResponse) -> Result<Child, String> {
     let data_dir = PathBuf::from(&runtime.app_data_dir);
     let logs_dir = PathBuf::from(&runtime.logs_dir);
@@ -159,6 +170,8 @@ fn spawn_backend_process(app: &AppHandle, runtime: &RuntimeConfigResponse) -> Re
         .stdout(stdout)
         .stderr(stderr)
         .stdin(Stdio::null());
+
+    apply_background_flags(&mut command);
 
     command
         .spawn()
