@@ -1,4 +1,4 @@
-import { API_BASE } from './constants';
+import { getApiBase } from './runtime';
 import {
   BrainstormIdeaResult,
   LibraryItem,
@@ -43,7 +43,7 @@ import {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${getApiBase()}${path}`, {
       headers: {
         'Content-Type': 'application/json',
         ...(init?.headers ?? {}),
@@ -53,7 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知网络错误';
-    throw new Error(`无法连接后端服务：${API_BASE}。请确认后端已启动，且 NEXT_PUBLIC_API_BASE 配置正确。原始错误：${message}`);
+    throw new Error(`无法连接后端服务：${getApiBase()}。请确认桌面后端已启动，或开发环境中的 VITE_API_BASE 配置正确。原始错误：${message}`);
   }
 
   if (!response.ok) {
@@ -79,7 +79,7 @@ async function streamNdjson(
 ) {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${getApiBase()}${path}`, {
       method: options.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +93,7 @@ async function streamNdjson(
       return;
     }
     const message = error instanceof Error ? error.message : '未知网络错误';
-    throw new Error(`无法连接后端服务：${API_BASE}。原始错误：${message}`);
+    throw new Error(`无法连接后端服务：${getApiBase()}。原始错误：${message}`);
   }
 
   if (!response.ok) {
@@ -143,7 +143,7 @@ async function requestStream<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${getApiBase()}${path}`, {
       headers: {
         'Content-Type': 'application/json',
         ...(init.headers ?? {}),
@@ -153,7 +153,7 @@ async function requestStream<T>(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知网络错误';
-    throw new Error(`无法连接后端服务：${API_BASE}。请确认后端已启动。原始错误：${message}`);
+    throw new Error(`无法连接后端服务：${getApiBase()}。请确认桌面后端已启动。原始错误：${message}`);
   }
 
   if (!response.ok) {
@@ -226,7 +226,7 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
 export function resolveApiAssetUrl(path: string): string {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
-  return `${API_BASE}${path}`;
+  return `${getApiBase()}${path}`;
 }
 
 export async function health() {
@@ -461,7 +461,7 @@ export async function pushPaperToMemory(paperId: number) {
 }
 
 export function getPaperPdfUrl(paperId: number, download = true) {
-  return `${API_BASE}/papers/${paperId}/pdf${download ? '?download=true' : '?download=false'}`;
+  return `${getApiBase()}/papers/${paperId}/pdf${download ? '?download=true' : '?download=false'}`;
 }
 
 export async function translateSegment(payload: {

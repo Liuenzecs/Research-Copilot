@@ -28,7 +28,7 @@ export default function Topbar() {
   const router = useRouter();
 
   useEffect(() => {
-    const renderNow = () => setNow(new Date().toLocaleString('zh-CN'));
+    const renderNow = () => setNow(new Date().toLocaleString('zh-CN', { hour12: false }));
     renderNow();
     const timer = window.setInterval(renderNow, 1000);
     return () => window.clearInterval(timer);
@@ -41,7 +41,7 @@ export default function Topbar() {
       <header className="topbar">
         <Link href="/projects" className="topbar-brand">
           <strong>{APP_BRAND}</strong>
-          <span className="subtle">项目制研究工作台，围绕研究问题持续推进</span>
+          <span className="subtle">桌面研究工作台，围绕研究问题推进搜索、证据、写作与周报。</span>
         </Link>
 
         <nav className="topbar-nav" aria-label="主导航">
@@ -67,7 +67,7 @@ export default function Topbar() {
             搜索论文
           </button>
           <Button className="secondary" type="button" onClick={() => setHelpOpen(true)}>
-            使用说明
+            帮助
           </Button>
           <div className="subtle topbar-time">{now || '--'}</div>
         </div>

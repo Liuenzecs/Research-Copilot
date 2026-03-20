@@ -15,28 +15,27 @@
     "moduleResolution": "bundler",
     "baseUrl": "",
     "paths": {
+      "next/link": [
+        "src/desktop-shims/next-link.tsx"
+      ],
+      "next/navigation": [
+        "src/desktop-shims/next-navigation.ts"
+      ],
       "@/*": [
         "src/*"
       ]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
+    "jsx": "react-jsx",
     "types": [
-      "node"
-    ],
-    "plugins": [
-      {
-        "name": "next"
-      }
+      "node",
+      "vite/client"
     ]
   },
   "include": [
-    "next-env.d.ts",
     "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts"
+    "**/*.tsx"
   ],
   "exclude": [
     "node_modules"

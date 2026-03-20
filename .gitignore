@@ -13,9 +13,14 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+frontend/dist/
+frontend/.pyinstaller-desktop/
 frontend/playwright-report/
 frontend/test-results/
 .e2e-runtime/
+frontend/src-tauri/target/
+frontend/src-tauri/resources/backend-sidecar/*
+!frontend/src-tauri/resources/backend-sidecar/.gitkeep
 
 # Env (keep template files)
 .env

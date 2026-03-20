@@ -13,3 +13,4 @@ rich==14.1.0
 chromadb==1.0.20
 openai==1.102.0
 pytest==8.4.2
+pyinstaller==6.16.0

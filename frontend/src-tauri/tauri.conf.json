@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Research Copilot",
+  "version": "0.1.0",
+  "identifier": "com.researchcopilot.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run desktop:backend:bundle && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Research Copilot",
+        "label": "main",
+        "width": 1600,
+        "height": 1000,
+        "minWidth": 1200,
+        "minHeight": 780,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/backend-sidecar"
+    ]
+  }
+}

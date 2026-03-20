@@ -747,7 +747,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       if (controller.signal.aborted) return;
       setTaskConnectionNotice("实时进度流中断，已回退到轮询恢复状态。");
       void fallbackPollTask(task.id);
-      if (process.env.NODE_ENV !== "production") console.error(streamError);
+      if (import.meta.env.DEV) console.error(streamError);
     });
   }
 
