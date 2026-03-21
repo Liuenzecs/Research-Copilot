@@ -45,3 +45,7 @@ scripts/.frontend_url
 # IDE
 .vscode/
 .idea/
+
+# Local UI review artifacts
+.tmp-ui-review/
+*ui-review*.log
