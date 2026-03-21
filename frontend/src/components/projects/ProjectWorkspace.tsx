@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -72,6 +72,19 @@ type CompareTableDraft = {
   columns: string[];
   rows: Array<Record<string, string>>;
   instruction: string;
+};
+
+type WorkspaceFocusAction = {
+  label: string;
+  onClick: () => void;
+  secondary?: boolean;
+};
+
+type WorkspaceFocusSnapshot = {
+  label: string;
+  value: string;
+  detail: string;
+  accent: "teal" | "amber" | "rose";
 };
 
 type SearchScopeFilter = "all" | "not_in_project" | "in_project";
@@ -396,7 +409,10 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
   usePageTitle("项目工作台");
 
+  const searchWorkbenchRef = useRef<HTMLDivElement | null>(null);
   const paperPoolRef = useRef<HTMLDivElement | null>(null);
+  const evidenceBoardRef = useRef<HTMLDivElement | null>(null);
+  const reviewSectionRef = useRef<HTMLDivElement | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const fallbackPollRef = useRef<number | null>(null);
   const evidenceTimersRef = useRef<Record<number, number | null>>({});
@@ -1230,6 +1246,179 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     return <StatusStack items={error ? [{ variant: "error", message: error }] : []} />;
   }
 
+  const totalPapers = workspace.papers.length;
+  const readCount = workspace.papers.filter((item) => Boolean(item.read_at)).length;
+  const summarizedCount = workspace.papers.filter((item) => item.summary_count > 0).length;
+  const evidenceReadyCount = workspace.papers.filter((item) => item.evidence_count > 0).length;
+  const reportableCount = workspace.papers.filter((item) => item.report_worthy_count > 0).length;
+  const activeReproductionCount = workspace.papers.filter(
+    (item) =>
+      item.reproduction_count > 0 ||
+      ["planned", "in_progress", "blocked", "completed"].includes(item.latest_reproduction_status || ""),
+  ).length;
+  const pendingSummaryCount =
+    workspace.smart_views.find((item) => item.key === "pending_summary")?.count ?? Math.max(totalPapers - summarizedCount, 0);
+  const pendingEvidenceCount =
+    workspace.smart_views.find((item) => item.key === "pending_evidence")?.count ?? Math.max(totalPapers - evidenceReadyCount, 0);
+  const pendingWritingCount =
+    workspace.smart_views.find((item) => item.key === "pending_writing_citation")?.count ?? unusedEvidenceItems.length;
+  const missingPdfCount =
+    workspace.smart_views.find((item) => item.key === "missing_pdf")?.count ??
+    workspace.papers.filter((item) => ["missing", "landing_page_only", "error"].includes(item.pdf_status)).length;
+  const riskyCount =
+    workspace.smart_views.find((item) => item.key === "risky")?.count ??
+    workspace.papers.filter((item) => ["warning", "error", "retracted"].includes(item.integrity_status)).length;
+
+  function scrollToSection(ref: RefObject<HTMLElement | null>) {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function activateSmartView(viewKey: string) {
+    if (!workspace) return;
+    setActiveSmartView(viewKey);
+    setSelectedPaperIds(
+      workspace.papers
+        .filter((item) => smartViewMatches(viewKey, item, citedPaperIds, duplicatePaperIds))
+        .map((item) => item.paper.id),
+    );
+    scrollToSection(paperPoolRef);
+  }
+
+  function launchSummariesAction() {
+    void launchAction(
+      "summaries",
+      ensureProjectSummaries(projectId, {
+        paper_ids: activePaperIds,
+        instruction: actionInstruction.trim(),
+      }),
+    );
+  }
+
+  function launchEvidenceAction() {
+    void launchAction(
+      "extract",
+      extractProjectEvidence(projectId, {
+        paper_ids: activePaperIds,
+        instruction: actionInstruction.trim(),
+      }),
+    );
+  }
+
+  function launchReviewAction() {
+    void launchAction(
+      "review",
+      draftProjectLiteratureReview(projectId, {
+        paper_ids: activePaperIds,
+        instruction: actionInstruction.trim(),
+      }),
+    );
+  }
+
+  function launchPdfAction() {
+    void launchAction(
+      "pdfs",
+      fetchProjectPdfs(projectId, {
+        paper_ids: activePaperIds,
+        instruction: actionInstruction.trim(),
+      }),
+    );
+  }
+
+  function launchMetadataAction() {
+    void launchAction(
+      "metadata",
+      refreshProjectMetadata(projectId, {
+        paper_ids: activePaperIds,
+        instruction: actionInstruction.trim(),
+      }),
+    );
+  }
+
+  const focusSnapshots: WorkspaceFocusSnapshot[] = [
+    {
+      label: "阅读推进",
+      value: totalPapers > 0 ? `${readCount}/${totalPapers}` : "0/0",
+      detail: `已收集 ${totalPapers} 篇 · 待摘要 ${pendingSummaryCount} 篇`,
+      accent: "teal",
+    },
+    {
+      label: "证据沉淀",
+      value: `${evidenceItems.length} 张`,
+      detail: `待补证据 ${pendingEvidenceCount} 篇 · 待写入 ${unusedEvidenceItems.length} 张`,
+      accent: "amber",
+    },
+    {
+      label: "输出成形",
+      value: reviewOutput ? `${reviewCitations.length} 条引用` : "待起草",
+      detail: `可汇报 ${reportableCount} 篇 · 推荐复现 ${activeReproductionCount} 篇`,
+      accent: riskyCount > 0 ? "rose" : "teal",
+    },
+  ];
+
+  let focusEyebrow = "下一步建议";
+  let focusTitle = "先把项目论文池铺开";
+  let focusDescription = "你还没有项目论文。先在左侧搜索与收集台加入一批候选论文，后面的摘要、证据和综述才会真正启动起来。";
+  let focusActions: WorkspaceFocusAction[] = [
+    { label: "去搜索与收集台", onClick: () => scrollToSection(searchWorkbenchRef) },
+    { label: "打开项目搜索页", onClick: () => navigate(`/search?project_id=${projectId}`), secondary: true },
+  ];
+
+  if (totalPapers > 0 && pendingSummaryCount > 0) {
+    focusTitle = "先把摘要补齐，后面会顺很多";
+    focusDescription = `还有 ${pendingSummaryCount} 篇论文没有摘要。先补齐摘要，再做证据提取、对比表和心得会更稳。`;
+    focusActions = [
+      { label: "批量补摘要", onClick: launchSummariesAction },
+      { label: "查看待摘要论文", onClick: () => activateSmartView("pending_summary"), secondary: true },
+    ];
+  } else if (totalPapers > 0 && pendingEvidenceCount > 0) {
+    focusTitle = "该把阅读沉淀成证据卡了";
+    focusDescription = `还有 ${pendingEvidenceCount} 篇论文没有证据。先提一轮证据，再开始写综述会更顺。`;
+    focusActions = [
+      { label: "批量提取证据", onClick: launchEvidenceAction },
+      { label: "查看待证据论文", onClick: () => activateSmartView("pending_evidence"), secondary: true },
+    ];
+  } else if (totalPapers > 0 && !reviewOutput) {
+    focusEyebrow = "当前最值得推进";
+    focusTitle = "可以起草第一版综述了";
+    focusDescription = `你已经积累了 ${evidenceItems.length} 张证据卡，适合先起一版可编辑综述稿，把结构搭起来。`;
+    focusActions = [
+      { label: "起草综述", onClick: launchReviewAction },
+      { label: "去证据板", onClick: () => scrollToSection(evidenceBoardRef), secondary: true },
+    ];
+  } else if (unusedEvidenceItems.length > 0) {
+    focusEyebrow = "写作推进";
+    focusTitle = "把现成证据写进稿子";
+    focusDescription = `还有 ${unusedEvidenceItems.length} 张证据卡没进入综述稿。先消化这批证据，稿件会更快成形。`;
+    focusActions = [
+      { label: "查看综述稿", onClick: () => scrollToSection(reviewSectionRef) },
+      { label: "回到证据板", onClick: () => scrollToSection(evidenceBoardRef), secondary: true },
+    ];
+  } else if (riskyCount > 0) {
+    focusEyebrow = "收尾检查";
+    focusTitle = "写作前做一轮可信度复查";
+    focusDescription = `当前有 ${riskyCount} 篇论文带风险提示。先复查这批论文，再继续写作会更安心。`;
+    focusActions = [
+      { label: "刷新可信度", onClick: launchMetadataAction },
+      { label: "查看风险论文", onClick: () => activateSmartView("risky"), secondary: true },
+    ];
+  } else if (missingPdfCount > 0) {
+    focusEyebrow = "深读准备";
+    focusTitle = "补齐 PDF，后面深读会更轻松";
+    focusDescription = `还有 ${missingPdfCount} 篇论文没有可用 PDF。先补齐一轮，本地阅读、批注和证据提取都会更顺。`;
+    focusActions = [
+      { label: "批量补全 PDF", onClick: launchPdfAction },
+      { label: "查看缺 PDF 论文", onClick: () => activateSmartView("missing_pdf"), secondary: true },
+    ];
+  } else if (totalPapers > 0) {
+    focusEyebrow = "已经成形";
+    focusTitle = "这一轮可以整理成汇报输出";
+    focusDescription = `当前已有 ${reviewCitations.length} 条引用、${evidenceItems.length} 张证据卡、${pendingWritingCount} 项待写作沉淀，适合开始整理周报或导师汇报。`;
+    focusActions = [
+      { label: "打开项目周报", onClick: () => navigate(weeklyReportPath(projectId)) },
+      { label: "查看综述稿", onClick: () => scrollToSection(reviewSectionRef), secondary: true },
+    ];
+  }
+
   return (
     <div className="project-workspace-shell">
       <Card className="project-workspace-hero">
@@ -1245,6 +1434,38 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             <span className="reader-chip">论文 {workspace.papers.length}</span>
             <span className="reader-chip">证据 {evidenceItems.length}</span>
             <span className="reader-chip">成果 {workspace.outputs.length}</span>
+          </div>
+        </div>
+
+        <div className="project-focus-strip">
+          <div className="project-focus-main">
+            <div className="project-focus-kicker">{focusEyebrow}</div>
+            <div className="project-focus-copyblock">
+              <h2 className="project-focus-title">{focusTitle}</h2>
+              <p className="project-focus-copy">{focusDescription}</p>
+            </div>
+            <div className="project-focus-actions">
+              {focusActions.map((action) => (
+                <Button
+                  key={action.label}
+                  className={action.secondary ? "secondary" : undefined}
+                  type="button"
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="project-focus-metrics">
+            {focusSnapshots.map((snapshot) => (
+              <div key={snapshot.label} className={`project-focus-metric accent-${snapshot.accent}`.trim()}>
+                <div className="project-focus-metric-label">{snapshot.label}</div>
+                <div className="project-focus-metric-value">{snapshot.value}</div>
+                <div className="project-focus-metric-detail">{snapshot.detail}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -1427,12 +1648,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
       <div className="project-workspace-grid">
         <div className="project-sidebar-left">
-          <ProjectSearchWorkbench
-            projectId={projectId}
-            project={workspace.project}
-            initialQuery={workspace.project.seed_query || workspace.project.research_question}
-            onProjectMutated={() => loadWorkspace({ quiet: true })}
-          />
+          <div ref={searchWorkbenchRef}>
+            <ProjectSearchWorkbench
+              projectId={projectId}
+              project={workspace.project}
+              initialQuery={workspace.project.seed_query || workspace.project.research_question}
+              onProjectMutated={() => loadWorkspace({ quiet: true })}
+            />
+          </div>
 
           <Card>
             <div ref={paperPoolRef}>
@@ -1604,7 +1827,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
           </Card>
         </div>
         <div className="project-main">
-          <Card>
+          <div ref={evidenceBoardRef} className="project-section-anchor">
+            <Card>
             <div className="projects-section-header">
               <div>
                 <h2 className="title">证据板</h2>
@@ -1667,7 +1891,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 </SortableContext>
               </DndContext>
             )}
-          </Card>
+            </Card>
+          </div>
           <Card>
             <div className="projects-section-header">
               <div>
@@ -1714,7 +1939,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             )}
           </Card>
 
-          <Card>
+          <div ref={reviewSectionRef} className="project-section-anchor">
+            <Card>
             <div className="projects-section-header">
               <div>
                 <h2 className="title">综述稿</h2>
@@ -1738,7 +1964,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 onBlur={() => void flushReviewSave()}
               />
             )}
-          </Card>
+            </Card>
+          </div>
 
           <Card>
             <div className="projects-section-header">
@@ -1801,7 +2028,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 ))
               )}
             </div>
-          </Card>
+            </Card>
         </div>
 
         <div className="project-sidebar-right">
