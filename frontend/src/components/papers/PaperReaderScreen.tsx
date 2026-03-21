@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
@@ -706,14 +706,21 @@ export default function PaperReaderScreen({
 
       {!reader.pdf_downloaded ? (
         <Card>
-          <EmptyState
-            title="当前尚未下载 PDF"
-            hint="你仍可先查看 abstract 与研究状态；下载 PDF 后即可进入原版页面阅读、辅助文本与本页图像。"
-          />
-          <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
-            <Button type="button" onClick={() => void handleDownload()} disabled={downloading}>
-              {downloading ? "正在下载 PDF..." : "下载 PDF 并生成阅读视图"}
-            </Button>
+          <div className="reader-empty-task">
+            <EmptyState
+              title="当前尚未下载 PDF"
+              hint="你仍可先查看 abstract 与研究状态；下载 PDF 后即可进入原版页面阅读、辅助文本与本页图像。"
+            />
+            <div className="reader-empty-task-actions">
+              <Button type="button" onClick={() => void handleDownload()} disabled={downloading}>
+                {downloading ? "正在下载 PDF..." : "下载 PDF 并生成阅读视图"}
+              </Button>
+              {projectId ? (
+                <Link className="button secondary" to={projectPath(projectId)}>
+                  返回项目工作台
+                </Link>
+              ) : null}
+            </div>
           </div>
         </Card>
       ) : null}

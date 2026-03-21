@@ -115,13 +115,14 @@ export default function MemoryRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">长期记忆</h2>
-        <p className="subtle">先看最近写入的记忆，再按问题检索历史研究内容，并精确回跳到论文、复现或心得上下文。</p>
+      <Card className="page-header-card">
+        <span className="page-kicker">长期沉淀</span>
+        <h2 className="page-shell-title">长期记忆</h2>
+        <p className="page-shell-copy">先看最近写入的记忆，再按问题检索历史研究内容，并精确回跳到论文、复现或心得上下文。</p>
         <ProjectContextBanner projectId={projectId} message="当前为项目上下文记忆视图。" />
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 8 }}>
+      <div className="library-toolbar-card">
         <input
           className="input"
           value={query}
@@ -162,23 +163,28 @@ export default function MemoryRoute() {
         ]}
       />
 
-      {loading ? (
-        <Loading text={viewMode === 'recent' ? '加载最近记忆...' : '检索记忆中...'} />
-      ) : (
-        <MemoryList
-          items={items}
-          title={viewMode === 'recent' ? '最近写入的长期记忆' : '记忆检索结果'}
-          emptyTitle={viewMode === 'recent' ? '当前还没有已保存的长期记忆' : '当前没有命中记忆结果'}
-          emptyHint={
-            viewMode === 'recent'
-              ? '当你在论文页点击“推送到记忆”或创建会写入记忆的对象后，这里会显示最近保存的记录。'
-              : '可以换个问题重新检索，或点击“查看最近记忆”确认已有记忆是否存在。'
-          }
-        />
-      )}
-
-      <MemoryGraph />
-      <ProfilePanel />
+      <div className="memory-layout">
+        <div>
+          {loading ? (
+            <Loading text={viewMode === 'recent' ? '加载最近记忆...' : '检索记忆中...'} />
+          ) : (
+            <MemoryList
+              items={items}
+              title={viewMode === 'recent' ? '最近写入的长期记忆' : '记忆检索结果'}
+              emptyTitle={viewMode === 'recent' ? '当前还没有已保存的长期记忆' : '当前没有命中记忆结果'}
+              emptyHint={
+                viewMode === 'recent'
+                  ? '当你在论文页点击“推送到记忆”或创建会写入记忆的对象后，这里会显示最近保存的记录。'
+                  : '可以换个问题重新检索，或点击“查看最近记忆”确认已有记忆是否存在。'
+              }
+            />
+          )}
+        </div>
+        <div className="memory-secondary-zone">
+          <MemoryGraph />
+          <ProfilePanel />
+        </div>
+      </div>
     </>
   );
 }

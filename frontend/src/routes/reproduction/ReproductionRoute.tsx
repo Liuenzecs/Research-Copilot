@@ -398,13 +398,14 @@ export default function ReproductionRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">复现工作区</h2>
-        <p className="subtle">流程：论文上下文 → 代码仓候选 → 计划生成 → 步骤跟踪 → 阻塞 / 日志记录 → 复现心得。</p>
+      <Card className="page-header-card">
+        <span className="page-kicker">复现推进</span>
+        <h2 className="page-shell-title">复现工作区</h2>
+        <p className="page-shell-copy">流程：论文上下文 → 代码仓候选 → 计划生成 → 步骤跟踪 → 阻塞 / 日志记录 → 复现心得。</p>
         <ProjectContextBanner projectId={projectId} message="当前为项目上下文复现视图。" />
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 12 }}>
+      <div className="repro-quick-panel">
         <h3 className="title" style={{ fontSize: 16, margin: 0 }}>手工入口（按论文标题选择）</h3>
         <p className="subtle" style={{ margin: 0 }}>
           不需要记住任何论文编号或复现编号。直接按论文标题搜索，或从最近复现记录中继续即可。
@@ -577,16 +578,11 @@ export default function ReproductionRoute() {
 
       {detail ? (
         <>
-          <Card>
-            <h3 className="title" style={{ fontSize: 16 }}>复现概览</h3>
-            <p className="subtle">
-              状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}% · 代码仓：{detail.repo ? `${detail.repo.owner}/${detail.repo.name}` : '仅论文上下文'}
-            </p>
-            <pre style={{ whiteSpace: 'pre-wrap' }}>{detail.plan_markdown}</pre>
-          </Card>
-
-          <div className="card" style={{ display: 'grid', gap: 8 }}>
+          <div className="repro-quick-panel">
             <h4 style={{ margin: 0 }}>更新整体进度</h4>
+            <div className="subtle">
+              当前状态：{statusLabel(detail.status)} · 进度：{detail.progress_percent ?? 0}% · 代码仓：{detail.repo ? `${detail.repo.owner}/${detail.repo.name}` : '仅论文上下文'}
+            </div>
             <input
               className="input"
               placeholder="请填写当前复现进度摘要"
@@ -619,6 +615,18 @@ export default function ReproductionRoute() {
               {busy === 'progress' ? '保存中...' : '保存进度'}
             </Button>
           </div>
+
+          <Card className="repro-plan-summary">
+            <details className="repro-plan-details">
+              <summary>查看复现计划全文</summary>
+              <div className="repro-plan-details-body">
+                <div className="subtle" style={{ marginBottom: 10 }}>
+                  先用上面的进度区推进当前工作；长计划正文按需展开查看即可。
+                </div>
+                <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{detail.plan_markdown}</pre>
+              </div>
+            </details>
+          </Card>
 
           <ReproStepTracker
             detail={detail}

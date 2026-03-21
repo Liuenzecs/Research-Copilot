@@ -162,12 +162,12 @@ export default function ProjectsHome() {
 
   return (
     <>
-      <Card className="projects-home-hero">
+      <Card className="projects-home-hero page-header-card">
         <div className="projects-home-copy">
           <span className="projects-kicker">项目制研究工作台</span>
-          <h1 className="projects-home-title">从研究问题开始，而不是从功能模块开始。</h1>
+          <h1 className="projects-home-title">从研究问题直接进入工作台。</h1>
           <p className="projects-home-text">
-            输入一个研究问题，创建一个项目工作台，然后在同一处完成论文收集、证据提取、对比表整理和综述起草。
+            先创建项目，再围绕同一个研究问题推进论文搜索、证据沉淀、对比整理和综述写作，不再先理解一堆模块名。
           </p>
         </div>
 
@@ -218,12 +218,12 @@ export default function ProjectsHome() {
         ]}
       />
 
-      <Card>
+      <Card className="library-list-card">
         <div className="projects-section-header">
           <div>
             <h2 className="title">最近项目</h2>
             <p className="subtle" style={{ margin: "6px 0 0" }}>
-              当前主入口已经切到项目工作台。旧的阅读、复现、心得、记忆仍然保留，但不再要求你先理解内部模块名。
+              项目工作台已经是主入口。阅读、复现、心得、记忆仍保留，但现在主要作为项目化深链使用。
             </p>
           </div>
         </div>

@@ -2,12 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-
 import Button from "@/components/common/Button";
-import Card from "@/components/common/Card";
-import EmptyState from "@/components/common/EmptyState";
-import StatusStack from "@/components/common/StatusStack";
+import ProjectSearchWorkbenchLayout from "@/components/projects/ProjectSearchWorkbenchLayout";
 import {
   batchAddProjectPapers,
   createProjectSavedSearch,
@@ -26,7 +22,6 @@ import {
   updateProjectSavedSearchCandidate,
 } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
-import { paperReaderPath } from "@/lib/routes";
 import type {
   PaperCitationTrail,
   PaperSearchFilters,
@@ -60,12 +55,6 @@ const DEFAULT_FILTERS: PaperSearchFilters = {
   reading_status: "",
   repro_interest: "",
 };
-
-function fmt(value?: string | null) {
-  if (!value) return "刚刚";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("zh-CN", { hour12: false });
-}
 
 function normalizeFilters(filters?: Partial<PaperSearchFilters> | null): PaperSearchFilters {
   return {
@@ -106,33 +95,6 @@ function patchItems(items: SearchCandidate[], updated: SearchCandidate) {
   return items.map((item) => (item.paper.id === updated.paper.id ? updated : item));
 }
 
-function chips(candidate: SearchCandidate) {
-  const values = [
-    ...candidate.reason.matched_fields.map((item) => `命中 ${item}`),
-    ...candidate.reason.source_signals,
-    ...candidate.reason.local_signals,
-  ];
-  if (candidate.reason.duplicate_count > 1) values.push(`合并 ${candidate.reason.duplicate_count} 个来源`);
-  return values.slice(0, 6);
-}
-
-function triageText(value: string) {
-  if (value === "shortlisted") return "待重点阅读";
-  if (value === "rejected") return "已排除";
-  return "未筛选";
-}
-
-function aiBucketLabel(bucket: string) {
-  return AI_BUCKET_OPTIONS.find((item) => item.key === bucket)?.label ?? bucket;
-}
-
-function topicScoreLabel(score: number) {
-  if (score >= 0.9) return "主题非常贴合";
-  if (score >= 0.7) return "主题较贴合";
-  if (score >= 0.5) return "主题基本贴合";
-  return "主题贴合度一般";
-}
-
 export default function ProjectSearchWorkbench({
   projectId,
   project,
@@ -167,6 +129,8 @@ export default function ProjectSearchWorkbench({
   const [aiTargetCount, setAiTargetCount] = useState(100);
   const [aiProfile, setAiProfile] = useState<"balanced" | "repro_first" | "frontier_first">("balanced");
   const [aiPreviewBucket, setAiPreviewBucket] = useState<(typeof AI_BUCKET_OPTIONS)[number]["key"]>("all");
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
   const hasProject = Boolean(projectId);
   const savedSearchesQuery = useQuery({
@@ -196,6 +160,26 @@ export default function ProjectSearchWorkbench({
   const selectedCandidates = items.filter((item) => selectedPaperIds.includes(item.paper.id));
   const trailItems = trail ? [...trail.references, ...trail.cited_by] : [];
   const selectedTrailItems = trailItems.filter((item) => trailSelection.includes(item.paper.id));
+  const filterSummary = useMemo(() => {
+    const values: string[] = [];
+    if (filters.year_from || filters.year_to) values.push(`年份 ${filters.year_from ?? "不限"}-${filters.year_to ?? "不限"}`);
+    if (filters.venue_query.trim()) values.push(`Venue ${filters.venue_query.trim()}`);
+    if (filters.require_pdf === true) values.push("必须有 PDF");
+    if (filters.require_pdf === false) values.push("仅无 PDF");
+    if (hasProject && filters.project_membership === "not_in_project") values.push("仅未加入项目");
+    if (hasProject && filters.project_membership === "in_project") values.push("仅已在项目");
+    if (filters.has_summary === true) values.push("已有摘要");
+    if (filters.has_summary === false) values.push("暂无摘要");
+    if (filters.has_reflection === true) values.push("已有心得");
+    if (filters.has_reflection === false) values.push("暂无心得");
+    if (filters.has_reproduction === true) values.push("已有复现");
+    if (filters.has_reproduction === false) values.push("暂无复现");
+    if (filters.reading_status) values.push(`阅读状态 ${filters.reading_status}`);
+    if (filters.repro_interest) values.push(`复现意向 ${filters.repro_interest}`);
+    if (filters.sources.length !== DEFAULT_FILTERS.sources.length) values.push(`数据源 ${filters.sources.join(" / ")}`);
+    return values;
+  }, [filters, hasProject]);
+  const hasActiveFilters = filterSummary.length > 0;
 
   async function refreshCollections() {
     if (!projectId) return;
@@ -569,6 +553,73 @@ export default function ProjectSearchWorkbench({
   }
 
   return (
+    <ProjectSearchWorkbenchLayout
+      hasProject={hasProject}
+      projectId={projectId}
+      query={query}
+      setQuery={setQuery}
+      filters={filters}
+      setFilters={setFilters}
+      sortMode={sortMode}
+      setSortMode={setSortMode}
+      loading={loading}
+      busy={busy}
+      error={error}
+      warnings={warnings}
+      notice={notice}
+      savedTitle={savedTitle}
+      setSavedTitle={setSavedTitle}
+      savedSearches={savedSearches}
+      runs={runs}
+      localRecent={localRecent}
+      onLoadLocalRecent={(item) => {
+        setQuery(item.query);
+        setFilters(normalizeFilters(item.filters));
+        setSortMode(item.sort_mode);
+      }}
+      activeSavedSearch={activeSavedSearch}
+      activeCandidate={activeCandidate}
+      displayedItems={displayedItems}
+      items={items}
+      setActivePaperId={setActivePaperId}
+      selectedPaperIds={selectedPaperIds}
+      setSelectedPaperIds={setSelectedPaperIds}
+      selectedCandidates={selectedCandidates}
+      trail={trail}
+      trailSelection={trailSelection}
+      setTrailSelection={setTrailSelection}
+      selectedTrailItems={selectedTrailItems}
+      aiNeed={aiNeed}
+      setAiNeed={setAiNeed}
+      aiTargetCount={aiTargetCount}
+      setAiTargetCount={setAiTargetCount}
+      aiProfile={aiProfile}
+      setAiProfile={setAiProfile}
+      aiPreviewBucket={aiPreviewBucket}
+      setAiPreviewBucket={setAiPreviewBucket}
+      aiPanelOpen={aiPanelOpen}
+      setAiPanelOpen={setAiPanelOpen}
+      advancedFiltersOpen={advancedFiltersOpen}
+      setAdvancedFiltersOpen={setAdvancedFiltersOpen}
+      hasActiveFilters={hasActiveFilters}
+      filterSummary={filterSummary}
+      isAiPreview={isAiPreview}
+      onRunSearch={runSearch}
+      onSaveSearch={saveSearch}
+      onUpdateSavedSearch={updateCurrentSavedSearch}
+      onDeleteSavedSearch={removeSavedSearch}
+      onOpenSavedSearch={openSavedSearch}
+      onRerunSavedSearch={rerunSavedSearch}
+      onRunAiCuration={() => runAiCuration()}
+      onAddCandidatesToProject={addCandidatesToProject}
+      onBatchTriage={batchTriage}
+      onGenerateAiReason={generateAiReason}
+      onLoadTrail={loadTrail}
+    />
+  );
+
+  /*
+  return (
     <Card>
       <div className="projects-section-header">
         <div>
@@ -799,4 +850,5 @@ export default function ProjectSearchWorkbench({
       </div>
     </Card>
   );
+  */
 }

@@ -189,11 +189,12 @@ export default function WeeklyReportRoute() {
 
   return (
     <>
-      <Card>
+      <Card className="page-header-card">
         <div className="projects-section-header">
           <div>
-            <h2 className="title">{projectId ? '项目周报工作区' : '周报工作区'}</h2>
-            <p className="subtle">
+            <span className="page-kicker">{projectId ? '项目周报' : '周报工作区'}</span>
+            <h2 className="page-shell-title" style={{ marginTop: 10 }}>{projectId ? '项目周报工作区' : '周报工作区'}</h2>
+            <p className="page-shell-copy">
               {projectId ? '当前正在项目上下文下生成周报，只聚合这个项目相关的论文、心得、复现和轨迹。' : '先确认本周上下文，再决定继续旧草稿还是新建一份草稿，避免误覆盖。'}
             </p>
           </div>
@@ -205,7 +206,7 @@ export default function WeeklyReportRoute() {
         </div>
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 8 }}>
+      <div className="library-toolbar-card">
         <div className="grid-2">
           <input className="input" type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
           <input className="input" type="date" value={weekEnd} onChange={(event) => setWeekEnd(event.target.value)} />
@@ -231,12 +232,12 @@ export default function WeeklyReportRoute() {
         ]}
       />
 
-      <div className="grid-2" style={{ alignItems: 'start' }}>
+      <div className="report-layout">
         <WeeklyReportPanel context={context} contextSource={contextSource} />
         <ReportDraftEditor draft={draft} onSave={saveDraft} />
       </div>
 
-      <div className="card">
+      <div className="weekly-history-panel">
         <h3 className="title" style={{ fontSize: 16 }}>
           历史草稿
         </h3>

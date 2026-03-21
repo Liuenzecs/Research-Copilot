@@ -66,12 +66,13 @@ export default function LibraryRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">文库</h2>
-        <p className="subtle">这里优先展示你已经积累下来的论文资产。需要找新论文时，使用右上角“搜索论文”入口。</p>
+      <Card className="page-header-card">
+        <span className="page-kicker">已积累资产</span>
+        <h2 className="page-shell-title">文库</h2>
+        <p className="page-shell-copy">这里优先展示你已经沉淀下来的论文资产。需要找新论文时，再走搜索入口。</p>
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 10 }}>
+      <div className="library-toolbar-card">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -119,7 +120,7 @@ export default function LibraryRoute() {
 
       <StatusStack items={error ? [{ variant: 'error' as const, message: error }] : []} />
 
-      <Card>
+      <Card className="library-list-card">
         {loading ? <Loading text="正在加载阅读入口..." /> : null}
         {!loading && filtered.length === 0 ? (
           <EmptyState

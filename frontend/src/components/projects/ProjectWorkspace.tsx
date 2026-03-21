@@ -428,6 +428,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [questionDraft, setQuestionDraft] = useState("");
   const [goalDraft, setGoalDraft] = useState("");
   const [statusDraft, setStatusDraft] = useState("active");
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [actionDetailsOpen, setActionDetailsOpen] = useState(false);
+  const [activeStage, setActiveStage] = useState<"papers" | "evidence" | "compare" | "review" | "citations">("papers");
   const [savingProject, setSavingProject] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -1273,8 +1276,18 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function openStage(stage: "papers" | "evidence" | "compare" | "review" | "citations") {
+    setActiveStage(stage);
+    if (stage === "papers") {
+      window.setTimeout(() => {
+        scrollToSection(paperPoolRef);
+      }, 80);
+    }
+  }
+
   function activateSmartView(viewKey: string) {
     if (!workspace) return;
+    setActiveStage("papers");
     setActiveSmartView(viewKey);
     setSelectedPaperIds(
       workspace.papers
@@ -1383,15 +1396,15 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     focusDescription = `你已经积累了 ${evidenceItems.length} 张证据卡，适合先起一版可编辑综述稿，把结构搭起来。`;
     focusActions = [
       { label: "起草综述", onClick: launchReviewAction },
-      { label: "去证据板", onClick: () => scrollToSection(evidenceBoardRef), secondary: true },
+      { label: "去证据板", onClick: () => openStage("evidence"), secondary: true },
     ];
   } else if (unusedEvidenceItems.length > 0) {
     focusEyebrow = "写作推进";
     focusTitle = "把现成证据写进稿子";
     focusDescription = `还有 ${unusedEvidenceItems.length} 张证据卡没进入综述稿。先消化这批证据，稿件会更快成形。`;
     focusActions = [
-      { label: "查看综述稿", onClick: () => scrollToSection(reviewSectionRef) },
-      { label: "回到证据板", onClick: () => scrollToSection(evidenceBoardRef), secondary: true },
+      { label: "查看综述稿", onClick: () => openStage("review") },
+      { label: "回到证据板", onClick: () => openStage("evidence"), secondary: true },
     ];
   } else if (riskyCount > 0) {
     focusEyebrow = "收尾检查";
@@ -1415,7 +1428,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     focusDescription = `当前已有 ${reviewCitations.length} 条引用、${evidenceItems.length} 张证据卡、${pendingWritingCount} 项待写作沉淀，适合开始整理周报或导师汇报。`;
     focusActions = [
       { label: "打开项目周报", onClick: () => navigate(weeklyReportPath(projectId)) },
-      { label: "查看综述稿", onClick: () => scrollToSection(reviewSectionRef), secondary: true },
+      { label: "查看综述稿", onClick: () => openStage("review"), secondary: true },
     ];
   }
 
@@ -1469,8 +1482,77 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
           </div>
         </div>
 
-        <div className="project-top-grid">
-          <div className="project-metadata-editor">
+        <div className="project-action-toolbar">
+          <div className="page-toolbar-row">
+            <div>
+              <strong>项目操作台</strong>
+              <div className="subtle">默认只保留当前最常用动作；附加要求和次级动作按需展开。</div>
+            </div>
+            <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+              <Button className="secondary" type="button" onClick={() => setProjectEditorOpen((current) => !current)}>
+                {projectEditorOpen ? "收起编辑项目" : "编辑项目"}
+              </Button>
+              <Button className="secondary" type="button" onClick={() => navigate(projectPath())}>
+                返回项目列表
+              </Button>
+            </div>
+          </div>
+
+          <div className="project-action-toolbar-main">
+            <Button className="secondary" type="button" disabled={runningAction !== ""} onClick={launchSummariesAction}>
+              {runningAction === "summaries" ? "启动中..." : "补齐摘要"}
+            </Button>
+            <Button type="button" disabled={runningAction !== ""} data-testid="project-action-extract" onClick={launchEvidenceAction}>
+              {runningAction === "extract" ? "启动中..." : "提取证据"}
+            </Button>
+            <Button className="secondary" type="button" disabled={runningAction !== ""} data-testid="project-action-compare" onClick={() => void launchAction("compare", generateProjectCompareTable(projectId, { paper_ids: activePaperIds, instruction: actionInstruction.trim() }))}>
+              {runningAction === "compare" ? "启动中..." : "生成对比表"}
+            </Button>
+            <Button className="secondary" type="button" disabled={runningAction !== ""} data-testid="project-action-review" onClick={launchReviewAction}>
+              {runningAction === "review" ? "启动中..." : "起草综述"}
+            </Button>
+            <Link className="button secondary" to={`/search?project_id=${projectId}`}>
+              搜索论文
+            </Link>
+            <Button className="secondary" type="button" onClick={() => setActionDetailsOpen((current) => !current)}>
+              {actionDetailsOpen ? "收起更多动作" : "更多动作"}
+            </Button>
+          </div>
+
+          {actionDetailsOpen ? (
+            <div className="project-action-toolbar-more">
+              <textarea
+                className="textarea project-action-input"
+                value={actionInstruction}
+                onChange={(event) => setActionInstruction(event.target.value)}
+                placeholder="这次动作的附加要求，例如：优先比较数据集、指标和局限。"
+              />
+              <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                <Button className="secondary" type="button" disabled={runningAction !== ""} onClick={launchPdfAction}>
+                  {runningAction === "pdfs" ? "启动中..." : "补全 PDF"}
+                </Button>
+                <Button className="secondary" type="button" disabled={runningAction !== ""} onClick={launchMetadataAction}>
+                  {runningAction === "metadata" ? "启动中..." : "刷新可信度"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTaskForPanel ? (
+            <div className="project-task-live-banner">
+              <strong>{taskTypeLabel(activeTaskForPanel.task_type)}</strong>
+              <span className={`project-step-status status-${activeTaskForPanel.status}`.trim()}>{taskStatusLabel(activeTaskForPanel.status)}</span>
+              <span className="subtle">更新于 {formatDateTime(activeTaskForPanel.updated_at)}</span>
+              {activeTaskForPanel.error_log === "interrupted_by_backend_restart" ? (
+                <span className="subtle">任务被后端重启中断，请重新触发。</span>
+              ) : null}
+              {taskConnectionNotice ? <span className="subtle">{taskConnectionNotice}</span> : null}
+            </div>
+          ) : null}
+        </div>
+
+        {projectEditorOpen ? (
+          <div className="project-editor-drawer">
             <label className="projects-field">
               <span>项目标题</span>
               <input className="input" value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} />
@@ -1491,150 +1573,16 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 <option value="archived">已归档</option>
               </select>
             </label>
-            <div className="projects-inline-actions">
+            <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
               <Button type="button" onClick={() => void handleSaveProject()} disabled={savingProject}>
                 {savingProject ? "保存中..." : "保存项目信息"}
               </Button>
-              <Button className="secondary" type="button" onClick={() => navigate(projectPath())}>
-                返回项目首页
+              <Button className="secondary" type="button" onClick={() => setProjectEditorOpen(false)}>
+                取消
               </Button>
             </div>
           </div>
-
-          <div className="project-action-card">
-            <div className="projects-section-header">
-              <div>
-                <h2 className="title">AI 动作条</h2>
-                <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  这里只收这一次动作的附加要求，不保留聊天历史。
-                </p>
-              </div>
-            </div>
-
-            <textarea
-              className="textarea project-action-input"
-              value={actionInstruction}
-              onChange={(event) => setActionInstruction(event.target.value)}
-              placeholder="这次动作的附加要求，例如：优先比较数据集、指标和局限。"
-            />
-
-            <div className="project-action-buttons">
-              <Button
-                className="secondary"
-                type="button"
-                disabled={runningAction !== ""}
-                onClick={() =>
-                  void launchAction(
-                    "summaries",
-                    ensureProjectSummaries(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "summaries" ? "启动中..." : "补齐摘要"}
-              </Button>
-              <Button
-                type="button"
-                disabled={runningAction !== ""}
-                data-testid="project-action-extract"
-                onClick={() =>
-                  void launchAction(
-                    "extract",
-                    extractProjectEvidence(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "extract" ? "启动中..." : "提取证据"}
-              </Button>
-              <Button
-                className="secondary"
-                type="button"
-                disabled={runningAction !== ""}
-                data-testid="project-action-compare"
-                onClick={() =>
-                  void launchAction(
-                    "compare",
-                    generateProjectCompareTable(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "compare" ? "启动中..." : "生成对比表"}
-              </Button>
-              <Button
-                className="secondary"
-                type="button"
-                disabled={runningAction !== ""}
-                data-testid="project-action-review"
-                onClick={() =>
-                  void launchAction(
-                    "review",
-                    draftProjectLiteratureReview(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "review" ? "启动中..." : "起草综述"}
-              </Button>
-              <Link className="button secondary" to={`/search?project_id=${projectId}`}>
-                搜索论文
-              </Link>
-              <Button
-                className="secondary"
-                type="button"
-                disabled={runningAction !== ""}
-                onClick={() =>
-                  void launchAction(
-                    "pdfs",
-                    fetchProjectPdfs(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "pdfs" ? "启动中..." : "补全 PDF"}
-              </Button>
-              <Button
-                className="secondary"
-                type="button"
-                disabled={runningAction !== ""}
-                onClick={() =>
-                  void launchAction(
-                    "metadata",
-                    refreshProjectMetadata(projectId, {
-                      paper_ids: activePaperIds,
-                      instruction: actionInstruction.trim(),
-                    }),
-                  )
-                }
-              >
-                {runningAction === "metadata" ? "启动中..." : "刷新可信度"}
-              </Button>
-            </div>
-
-            {activeTaskForPanel ? (
-              <div className="project-task-live-banner">
-                <strong>{taskTypeLabel(activeTaskForPanel.task_type)}</strong>
-                <span className={`project-step-status status-${activeTaskForPanel.status}`.trim()}>{taskStatusLabel(activeTaskForPanel.status)}</span>
-                <span className="subtle">更新于 {formatDateTime(activeTaskForPanel.updated_at)}</span>
-                {activeTaskForPanel.error_log === "interrupted_by_backend_restart" ? (
-                  <span className="subtle">任务被后端重启中断，请重新触发。</span>
-                ) : null}
-                {taskConnectionNotice ? <span className="subtle">{taskConnectionNotice}</span> : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        ) : null}
       </Card>
 
       <StatusStack
@@ -1827,6 +1775,72 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
           </Card>
         </div>
         <div className="project-main">
+          <Card className="project-stage-card">
+            <div className="page-toolbar-row">
+              <div>
+                <strong>主舞台</strong>
+                <div className="subtle">同一时刻只突出一个工作面，避免证据、对比表、综述稿和引用同时抢注意力。</div>
+              </div>
+            </div>
+            <div className="project-stage-tabs">
+              {[
+                { key: "papers", label: "论文池" },
+                { key: "evidence", label: "证据板" },
+                { key: "compare", label: "对比表" },
+                { key: "review", label: "综述稿" },
+                { key: "citations", label: "引用管理" },
+              ].map((stage) => (
+                <button
+                  key={stage.key}
+                  type="button"
+                  className={`project-stage-tab${activeStage === stage.key ? " is-active" : ""}`.trim()}
+                  onClick={() => setActiveStage(stage.key as typeof activeStage)}
+                >
+                  {stage.label}
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {activeStage === "papers" ? (
+            <Card className="project-stage-card">
+              <div className="projects-section-header">
+                <div>
+                  <h2 className="title">论文池主舞台</h2>
+                  <p className="subtle" style={{ margin: "6px 0 0" }}>
+                    当前论文池与搜索收集台位于左侧。先完成筛选和批量状态调整，再切换到证据、对比表或综述稿。
+                  </p>
+                </div>
+              </div>
+              <div className="project-status-grid">
+                <div className="project-mini-stat">
+                  <strong>已收集论文</strong>
+                  <div className="subtle">{workspace.papers.length} 篇</div>
+                </div>
+                <div className="project-mini-stat">
+                  <strong>当前智能视图</strong>
+                  <div className="subtle">{workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文"}</div>
+                </div>
+                <div className="project-mini-stat">
+                  <strong>当前批量选中</strong>
+                  <div className="subtle">{selectedPaperIds.length} 篇</div>
+                </div>
+              </div>
+              <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                <Button className="secondary" type="button" onClick={() => scrollToSection(searchWorkbenchRef)}>
+                  回到搜索与收集台
+                </Button>
+                <Button className="secondary" type="button" onClick={() => scrollToSection(paperPoolRef)}>
+                  查看论文池列表
+                </Button>
+                <Button className="secondary" type="button" onClick={() => setActiveStage("evidence")}>
+                  转到证据板
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
+          {activeStage === "evidence" ? (
           <div ref={evidenceBoardRef} className="project-section-anchor">
             <Card>
             <div className="projects-section-header">
@@ -1893,6 +1907,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             )}
             </Card>
           </div>
+          ) : null}
+
+          {activeStage === "compare" ? (
           <Card>
             <div className="projects-section-header">
               <div>
@@ -1938,7 +1955,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               </div>
             )}
           </Card>
+          ) : null}
 
+          {activeStage === "review" ? (
           <div ref={reviewSectionRef} className="project-section-anchor">
             <Card>
             <div className="projects-section-header">
@@ -1966,7 +1985,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             )}
             </Card>
           </div>
+          ) : null}
 
+          {activeStage === "citations" ? (
           <Card>
             <div className="projects-section-header">
               <div>
@@ -2009,8 +2030,10 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               </div>
             </div>
             <div className="project-linked-artifacts">
-              {unusedEvidenceItems.length === 0 ? (
-                <div className="subtle">当前所有证据卡都已经进入综述稿。</div>
+              {evidenceItems.length === 0 ? (
+                <EmptyState title="还没有证据卡" hint="先从阅读器、摘要或 AI 提取中积累证据，这里才会出现待写入项。" />
+              ) : unusedEvidenceItems.length === 0 ? (
+                <EmptyState title="当前证据都已进入综述稿" hint="这说明现有证据已完成写作落位；接下来可以继续补新证据或整理稿件结构。" />
               ) : (
                 unusedEvidenceItems.slice(0, 8).map((item) => (
                   <div key={`unused-evidence-${item.id}`} className="project-linked-card">
@@ -2029,6 +2052,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               )}
             </div>
             </Card>
+          ) : null}
         </div>
 
         <div className="project-sidebar-right">
@@ -2131,93 +2155,74 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             </div>
           </Card>
 
-          <Card>
-            <div className="projects-section-header">
-              <div>
-                <h2 className="title">重复项面板</h2>
-                <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  采用软合并，不直接删除原始记录。
-                </p>
-              </div>
-            </div>
-
-            {duplicateGroups.length === 0 ? (
-              <EmptyState title="还没有加载重复组" hint="点击状态中心里的“查看重复项”后，这里会列出待合并候选。" />
-            ) : (
-              <div className="project-linked-artifacts">
-                {duplicateGroups.map((group) => (
-                  <div key={group.key} className="project-linked-card">
-                    <strong>{group.reason}</strong>
-                    <div className="subtle">{group.papers.map((item) => item.paper.title_en).join(" / ")}</div>
-                    <div className="subtle">默认保留第一篇为 canonical，其余软合并过去。</div>
-                    <Button
-                      className="secondary"
-                      type="button"
-                      onClick={() => void handleMergeDuplicateGroup(group)}
-                      disabled={duplicateBusy !== ""}
-                    >
-                      {duplicateBusy === group.key ? "合并中..." : "执行软合并"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card>
-            <div className="projects-section-header">
-              <div>
-                <h2 className="title">历史工作聚合</h2>
-                <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  这里会直接聚合已关联论文既有的摘要、心得和复现记录，不迁移也不丢历史。
-                </p>
-              </div>
-            </div>
-
-            <div className="project-linked-artifacts">
-              {workspace.linked_existing_artifacts.length === 0 ? (
-                <EmptyState title="还没有已链接成果" hint="把论文加入项目后，这里会显示它已经积累的历史工作。" />
+          <details className="project-side-details">
+            <summary>重复项面板</summary>
+            <div className="project-side-details-body">
+              <div className="subtle">采用软合并，不直接删除原始记录。</div>
+              {duplicateGroups.length === 0 ? (
+                <EmptyState title="还没有加载重复组" hint="点击状态中心里的“查看重复项”后，这里会列出待合并候选。" />
               ) : (
-                workspace.linked_existing_artifacts.map((artifact) => (
-                  <div key={artifact.paper_id} className="project-linked-card">
-                    <strong>{artifact.paper_title}</strong>
-                    <div className="subtle">{linkedArtifactSummary(artifact)}</div>
-                    {artifact.summaries[0] ? <div className="subtle">最新摘要：{summaryTypeLabel(artifact.summaries[0].summary_type)}</div> : null}
-                    {artifact.reflections[0] ? <div className="subtle">最新心得：{artifact.reflections[0].report_summary || artifact.reflections[0].stage}</div> : null}
-                    {artifact.reproductions[0] ? (
-                      <div className="subtle">
-                        最新复现：{reproductionStatusLabel(artifact.reproductions[0].status)} · {artifact.reproductions[0].progress_summary || "暂无摘要"}
-                      </div>
-                    ) : null}
-                  </div>
-                ))
+                <div className="project-linked-artifacts">
+                  {duplicateGroups.map((group) => (
+                    <div key={group.key} className="project-linked-card">
+                      <strong>{group.reason}</strong>
+                      <div className="subtle">{group.papers.map((item) => item.paper.title_en).join(" / ")}</div>
+                      <div className="subtle">默认保留第一篇为 canonical，其余软合并过去。</div>
+                      <Button className="secondary" type="button" onClick={() => void handleMergeDuplicateGroup(group)} disabled={duplicateBusy !== ""}>
+                        {duplicateBusy === group.key ? "合并中..." : "执行软合并"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </Card>
+          </details>
 
-          <Card>
-            <div className="projects-section-header">
-              <div>
-                <h2 className="title">研究轨迹</h2>
-                <p className="subtle" style={{ margin: "6px 0 0" }}>
-                  帮你回看这个项目是怎么一步步推进到现在的。
-                </p>
+          <details className="project-side-details">
+            <summary>历史工作聚合</summary>
+            <div className="project-side-details-body">
+              <div className="subtle">这里会直接聚合已关联论文既有的摘要、心得和复现记录，不迁移也不丢历史。</div>
+              <div className="project-linked-artifacts">
+                {workspace.linked_existing_artifacts.length === 0 ? (
+                  <EmptyState title="还没有已链接成果" hint="把论文加入项目后，这里会显示它已经积累的历史工作。" />
+                ) : (
+                  workspace.linked_existing_artifacts.map((artifact) => (
+                    <div key={artifact.paper_id} className="project-linked-card">
+                      <strong>{artifact.paper_title}</strong>
+                      <div className="subtle">{linkedArtifactSummary(artifact)}</div>
+                      {artifact.summaries[0] ? <div className="subtle">最新摘要：{summaryTypeLabel(artifact.summaries[0].summary_type)}</div> : null}
+                      {artifact.reflections[0] ? <div className="subtle">最新心得：{artifact.reflections[0].report_summary || artifact.reflections[0].stage}</div> : null}
+                      {artifact.reproductions[0] ? (
+                        <div className="subtle">
+                          最新复现：{reproductionStatusLabel(artifact.reproductions[0].status)} · {artifact.reproductions[0].progress_summary || "暂无摘要"}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-            {workspace.activity_timeline_preview.length === 0 ? (
-              <EmptyState title="还没有项目轨迹" hint="后续的搜索、加论文、提证据、生成周报等动作都会出现在这里。" />
-            ) : (
-              <div className="project-linked-artifacts">
-                {workspace.activity_timeline_preview.map((event) => (
-                  <div key={event.id} className="project-linked-card">
-                    <strong>{event.title}</strong>
-                    <div className="subtle">{event.message}</div>
-                    <div className="subtle">{formatDateTime(event.created_at)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          </details>
+
+          <details className="project-side-details">
+            <summary>研究轨迹</summary>
+            <div className="project-side-details-body">
+              <div className="subtle">帮你回看这个项目是怎么一步步推进到现在的。</div>
+              {workspace.activity_timeline_preview.length === 0 ? (
+                <EmptyState title="还没有项目轨迹" hint="后续的搜索、加论文、提证据、生成周报等动作都会出现在这里。" />
+              ) : (
+                <div className="project-linked-artifacts">
+                  {workspace.activity_timeline_preview.map((event) => (
+                    <div key={event.id} className="project-linked-card">
+                      <strong>{event.title}</strong>
+                      <div className="subtle">{event.message}</div>
+                      <div className="subtle">{formatDateTime(event.created_at)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       </div>
     </div>

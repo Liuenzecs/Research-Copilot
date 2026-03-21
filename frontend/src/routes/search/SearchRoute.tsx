@@ -48,9 +48,10 @@ export default function SearchRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">论文搜索</h2>
-        <p className="subtle">
+      <Card className="page-header-card">
+        <span className="page-kicker">{projectId ? "项目内搜索" : "独立搜索"}</span>
+        <h2 className="page-shell-title">论文搜索</h2>
+        <p className="page-shell-copy">
           {projectId
             ? "当前页复用项目搜索与收集台：支持保存搜索、搜索历史、批量加入项目和单跳引文链。"
             : "当前页为独立搜索模式：保留本地最近搜索，但不创建项目级保存搜索。"}

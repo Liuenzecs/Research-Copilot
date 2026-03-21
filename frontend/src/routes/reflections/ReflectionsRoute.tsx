@@ -166,9 +166,10 @@ export default function ReflectionsRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">研究心得</h2>
-        <p className="subtle">按周节奏查看论文心得和复现心得，保留时间线回顾与深链定位能力。</p>
+      <Card className="page-header-card">
+        <span className="page-kicker">研究记录</span>
+        <h2 className="page-shell-title">研究心得</h2>
+        <p className="page-shell-copy">按周节奏查看论文心得和复现心得，支持时间线回顾、项目过滤和深链定位。</p>
         {projectId ? (
           <ProjectContextBanner
             projectId={projectId}
@@ -192,7 +193,7 @@ export default function ReflectionsRoute() {
         ) : null}
       </Card>
 
-      <div className="card" style={{ display: 'grid', gap: 10 }}>
+      <div className="reflections-toolbar-card">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Button className={preset === 'today' ? '' : 'secondary'} onClick={() => applyPreset('today')}>今天</Button>
           <Button className={preset === 'yesterday' ? '' : 'secondary'} onClick={() => applyPreset('yesterday')}>昨天</Button>
@@ -271,7 +272,7 @@ export default function ReflectionsRoute() {
       {loading ? <Loading text="加载心得时间线..." /> : null}
       <ReflectionTimeline reflections={items} highlightedReflectionId={highlightedReflectionId} projectId={projectId} />
 
-      <Card>
+      <Card className="library-list-card">
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
             <h3 className="title" style={{ fontSize: 16, margin: 0 }}>

@@ -189,9 +189,10 @@ export default function SettingsRoute() {
 
   return (
     <>
-      <Card>
-        <h2 className="title">设置</h2>
-        <p className="subtle">
+      <Card className="page-header-card">
+        <span className="page-kicker">桌面配置</span>
+        <h2 className="page-shell-title">设置</h2>
+        <p className="page-shell-copy">
           在这里配置大模型提供方、API Key、兼容网关和桌面运行信息。桌面版会把这些设置保存在你当前应用的数据目录中，不再要求你每次都回终端改环境变量。
         </p>
       </Card>
