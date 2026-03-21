@@ -49,3 +49,4 @@ scripts/.frontend_url
 # Local UI review artifacts
 .tmp-ui-review/
 *ui-review*.log
+LOCAL_CHANGE_NOTES.md
