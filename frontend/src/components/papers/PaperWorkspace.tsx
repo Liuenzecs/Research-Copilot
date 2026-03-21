@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import EmptyState from '@/components/common/EmptyState';
@@ -126,7 +126,7 @@ export default function PaperWorkspaceView({
   showPaperHeader = true,
   projectId = null,
 }: PaperWorkspaceViewProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [workspace, setWorkspace] = useState<PaperWorkspaceData | null>(initialWorkspace);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -446,10 +446,10 @@ export default function PaperWorkspaceView({
       >
         {busy === 'memory' ? '处理中...' : '推送到记忆'}
       </Button>
-      <Button className="secondary" type="button" onClick={() => router.push(reproductionPath({ paperId: currentPaper.id, projectId }))}>
+      <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: currentPaper.id, projectId }))}>
         进入复现工作区
       </Button>
-      <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+      <Button className="secondary" type="button" onClick={() => navigate(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
         查看这篇论文的心得
       </Button>
     </div>
@@ -473,10 +473,10 @@ export default function PaperWorkspaceView({
             已同步到“研究心得”页，也会出现在下方的关联记录里。
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            <Button type="button" onClick={() => router.push(reflectionsPath({ reflectionId: lastCreatedReflectionId, paperId: currentPaper.id, projectId }))}>
+            <Button type="button" onClick={() => navigate(reflectionsPath({ reflectionId: lastCreatedReflectionId, paperId: currentPaper.id, projectId }))}>
               查看刚保存的心得
             </Button>
-            <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+            <Button className="secondary" type="button" onClick={() => navigate(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
               查看这篇论文的所有心得
             </Button>
           </div>
@@ -766,7 +766,7 @@ export default function PaperWorkspaceView({
           这里只显示最近 5 条心得；完整记录可以在“研究心得”页里按当前论文筛选查看。
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, marginBottom: 10 }}>
-          <Button className="secondary" type="button" onClick={() => router.push(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
+          <Button className="secondary" type="button" onClick={() => navigate(reflectionsPath({ paperId: currentPaper.id, projectId }))}>
             查看这篇论文的全部心得
           </Button>
         </div>

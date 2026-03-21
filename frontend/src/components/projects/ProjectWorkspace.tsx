@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Link, useNavigate } from "react-router-dom";
 import {
   DndContext,
   PointerSensor,
@@ -374,7 +373,7 @@ function SortableEvidenceCard({
         </div>
         <div className="projects-inline-actions">
           {sourcePath ? (
-            <Link className="button secondary" href={sourcePath}>
+            <Link className="button secondary" to={sourcePath}>
               回到来源
             </Link>
           ) : null}
@@ -391,7 +390,7 @@ function SortableEvidenceCard({
 }
 
 export default function ProjectWorkspace({ projectId }: { projectId: number }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   usePageTitle("项目工作台");
 
   const paperPoolRef = useRef<HTMLDivElement | null>(null);
@@ -1246,7 +1245,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               <Button type="button" onClick={() => void handleSaveProject()} disabled={savingProject}>
                 {savingProject ? "保存中..." : "保存项目信息"}
               </Button>
-              <Button className="secondary" type="button" onClick={() => router.push(projectPath())}>
+              <Button className="secondary" type="button" onClick={() => navigate(projectPath())}>
                 返回项目首页
               </Button>
             </div>
@@ -1336,7 +1335,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               >
                 {runningAction === "review" ? "启动中..." : "起草综述"}
               </Button>
-              <Link className="button secondary" href={`/search?project_id=${projectId}`}>
+              <Link className="button secondary" to={`/search?project_id=${projectId}`}>
                 搜索论文
               </Link>
               <Button
@@ -1557,13 +1556,13 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                           {item.integrity_note ? ` · ${item.integrity_note}` : ""}
                         </div>
                         <div className="projects-inline-actions">
-                          <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} href={paperReaderPath(item.paper.id, undefined, undefined, projectId)}>
+                          <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={paperReaderPath(item.paper.id, undefined, undefined, projectId)}>
                             打开高级阅读器
                           </Link>
                           <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
                             加入证据板
                           </Button>
-                          <Button className="secondary" type="button" onClick={() => router.push(reproductionPath({ paperId: item.paper.id, projectId }))}>
+                          <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: item.paper.id, projectId }))}>
                             进入复现工作区
                           </Button>
                         </div>
@@ -1735,7 +1734,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     {citation.paper_id ? (
                       <Link
                         className="button secondary"
-                        href={paperReaderPath(citation.paper_id, citation.summary_id ?? undefined, citation.paragraph_id ?? undefined, projectId)}
+                        to={paperReaderPath(citation.paper_id, citation.summary_id ?? undefined, citation.paragraph_id ?? undefined, projectId)}
                       >
                         回到阅读器
                       </Link>
@@ -1808,7 +1807,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               <Button className="secondary" type="button" onClick={() => void loadDuplicateGroups()} disabled={duplicateBusy !== ""}>
                 {duplicateBusy === "loading" ? "加载中..." : "查看重复项"}
               </Button>
-              <Link className="button secondary" href={weeklyReportPath(projectId)}>
+              <Link className="button secondary" to={weeklyReportPath(projectId)}>
                 生成本项目周报
               </Link>
             </div>
@@ -1858,19 +1857,19 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               </div>
             </div>
             <div className="project-quick-links">
-              <Link className="button secondary" data-testid="quick-link-search" href={`/search?project_id=${projectId}`}>
+              <Link className="button secondary" data-testid="quick-link-search" to={`/search?project_id=${projectId}`}>
                 打开搜索页
               </Link>
-              <Link className="button secondary" href={weeklyReportPath(projectId)}>
+              <Link className="button secondary" to={weeklyReportPath(projectId)}>
                 打开项目周报
               </Link>
-              <Link className="button secondary" data-testid="quick-link-reflections" href={reflectionsPath({ projectId })}>
+              <Link className="button secondary" data-testid="quick-link-reflections" to={reflectionsPath({ projectId })}>
                 打开心得页
               </Link>
-              <Link className="button secondary" data-testid="quick-link-memory" href={memoryPath(projectId)}>
+              <Link className="button secondary" data-testid="quick-link-memory" to={memoryPath(projectId)}>
                 打开记忆页
               </Link>
-              <Link className="button secondary" data-testid="quick-link-reproduction" href={reproductionPath({ projectId })}>
+              <Link className="button secondary" data-testid="quick-link-reproduction" to={reproductionPath({ projectId })}>
                 打开复现页
               </Link>
             </div>

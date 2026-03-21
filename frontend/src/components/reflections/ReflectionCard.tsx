@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "react-router-dom";
 
 import { reflectionLifecycleLabel, reflectionStageLabel, reflectionTypeLabel } from "@/lib/presentation";
 import { paperReaderPath, reproductionPath } from "@/lib/routes";
@@ -39,19 +39,19 @@ export default function ReflectionCard({
       </p>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
         {reflection.related_paper_id ? (
-          <Link href={paperReaderPath(reflection.related_paper_id, undefined, undefined, projectId)} style={{ textDecoration: "none" }}>
+          <Link to={paperReaderPath(reflection.related_paper_id, undefined, undefined, projectId)} style={{ textDecoration: "none" }}>
             {chip("打开论文工作区")}
           </Link>
         ) : null}
         {reflection.related_summary_id && reflection.related_paper_id ? (
-          <Link href={paperReaderPath(reflection.related_paper_id, reflection.related_summary_id, undefined, projectId)} style={{ textDecoration: "none" }}>
+          <Link to={paperReaderPath(reflection.related_paper_id, reflection.related_summary_id, undefined, projectId)} style={{ textDecoration: "none" }}>
             {chip("定位到关联摘要")}
           </Link>
         ) : reflection.related_summary_id ? (
           chip("已关联摘要")
         ) : null}
         {reflection.related_reproduction_id ? (
-          <Link href={reproductionPath({ reproductionId: reflection.related_reproduction_id, projectId })} style={{ textDecoration: "none" }}>
+          <Link to={reproductionPath({ reproductionId: reflection.related_reproduction_id, projectId })} style={{ textDecoration: "none" }}>
             {chip("打开复现工作区")}
           </Link>
         ) : null}

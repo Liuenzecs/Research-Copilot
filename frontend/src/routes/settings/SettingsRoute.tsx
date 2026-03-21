@@ -7,16 +7,16 @@ import Card from '@/components/common/Card';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import { providerSettings } from '@/lib/api';
-import { getRuntimeConfig, openDataDir, openLogsDir, restartBackend } from '@/lib/runtime';
+import { openDataDir, openLogsDir, restartBackend, useRuntimeConfig } from '@/lib/runtime';
 import { ProviderSettings } from '@/lib/types';
 import { usePageTitle } from '@/lib/usePageTitle';
 
 type NoticeVariant = 'success' | 'info' | 'warning' | 'error';
 
-export default function SettingsPage() {
+export default function SettingsRoute() {
   usePageTitle('设置');
 
-  const runtimeConfig = useMemo(() => getRuntimeConfig(), []);
+  const runtimeConfig = useRuntimeConfig();
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -36,7 +36,12 @@ export default function SettingsPage() {
     void loadSettings();
   }, []);
 
-  async function runDesktopAction(action: string, task: () => Promise<void>, successMessage: string) {
+  async function runDesktopAction(
+    action: string,
+    task: () => Promise<unknown>,
+    successMessage: string,
+    options?: { reloadSettings?: boolean },
+  ) {
     setBusy(action);
     setError('');
     setNotice('');
@@ -44,7 +49,7 @@ export default function SettingsPage() {
       await task();
       setNotice(successMessage);
       setNoticeVariant('success');
-      if (action === 'restart-backend') {
+      if (options?.reloadSettings) {
         await loadSettings();
       }
     } catch (actionError) {
@@ -78,6 +83,9 @@ export default function SettingsPage() {
               <div className="subtle">运行形态：{runtimeConfig.is_desktop ? 'Tauri 桌面应用' : '浏览器开发态'}</div>
               <div className="subtle">平台：{runtimeConfig.platform || 'unknown'}</div>
               <div className="subtle">API 地址：{runtimeConfig.api_base}</div>
+              <div className="subtle">后端状态：{runtimeConfig.backend_status}</div>
+              <div className="subtle">当前阶段：{runtimeConfig.backend_stage || '未提供'}</div>
+              {runtimeConfig.backend_error ? <div className="subtle">最近错误：{runtimeConfig.backend_error}</div> : null}
               <div className="subtle">桌面数据目录：{runtimeConfig.app_data_dir || '当前不是桌面正式运行态'}</div>
               <div className="subtle">日志目录：{runtimeConfig.logs_dir || '当前不是桌面正式运行态'}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
@@ -100,11 +108,27 @@ export default function SettingsPage() {
                 <Button
                   type="button"
                   disabled={!runtimeConfig.is_desktop || busy !== ''}
-                  onClick={() => void runDesktopAction('restart-backend', restartBackend, '桌面后端已重启。')}
+                  onClick={() =>
+                    void runDesktopAction(
+                      'restart-backend',
+                      () => restartBackend({ waitForReady: true, timeoutMs: 30_000 }),
+                      '桌面后端已重启并恢复就绪。',
+                      { reloadSettings: true },
+                    )
+                  }
                 >
                   {busy === 'restart-backend' ? '重启中...' : '重启后端'}
                 </Button>
               </div>
+            </div>
+
+            <div className="reader-meta-card" data-testid="desktop-build-card">
+              <strong>构建信息</strong>
+              <div className="subtle">应用版本：{runtimeConfig.app_version || '0.1.0'}</div>
+              <div className="subtle">构建时间：{runtimeConfig.build_timestamp || '未注入'}</div>
+              <div className="subtle">Git Commit：{runtimeConfig.git_commit || '未注入'}</div>
+              <div className="subtle">构建模式：{runtimeConfig.build_mode || 'desktop'}</div>
+              <div className="subtle">当前可执行文件：{runtimeConfig.executable_path || '当前不是桌面正式运行态'}</div>
             </div>
 
             <div className="reader-meta-card">
@@ -130,6 +154,7 @@ export default function SettingsPage() {
               <div className="subtle">桌面版正式数据写入用户目录，与仓库开发数据隔离。</div>
               <div className="subtle">本期不导入仓库里的旧 `backend/data`，也不自动迁移历史项目。</div>
               <div className="subtle">pytest 和 Playwright E2E 默认使用临时数据库，不会污染你当前开发中的数据。</div>
+              <div className="subtle">如果发现 exe 时间不对、行为像旧包、或 MSI 遇到文件锁，优先执行 `npm run desktop:build:fresh`。</div>
             </div>
 
             <div style={{ display: 'grid', gap: 8 }}>

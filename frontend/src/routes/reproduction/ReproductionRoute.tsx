@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -85,9 +85,9 @@ function contextModeLabel(mode: ContextMode) {
   }
 }
 
-function ReproductionPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export default function ReproductionRoute() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const queryPaperId = parsePositiveInt(searchParams.get('paper_id'));
   const queryReproductionId = parsePositiveInt(searchParams.get('reproduction_id'));
@@ -429,7 +429,7 @@ function ReproductionPageContent() {
                 type="button"
                 className="reader-meta-card"
                 style={{ textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => router.push(buildReproductionUrl({ paperId: paper.id, projectId }))}
+                onClick={() => navigate(buildReproductionUrl({ paperId: paper.id, projectId }))}
               >
                 <strong>{paper.title_en}</strong>
                 <div className="subtle">{paper.source} · {paper.year ?? '年份未知'}</div>
@@ -437,16 +437,17 @@ function ReproductionPageContent() {
             ))}
           </div>
         ) : null}
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ display: 'grid', gap: 8 }} data-testid="recent-reproductions">
           <strong>最近复现记录</strong>
           {recentReproductions.length > 0 ? (
             recentReproductions.map((item) => (
               <button
                 key={item.reproduction_id}
                 type="button"
+                data-testid={`recent-reproduction-${item.reproduction_id}`}
                 className="reader-meta-card"
                 style={{ textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => router.push(buildReproductionUrl({ reproductionId: item.reproduction_id, projectId }))}
+                onClick={() => navigate(buildReproductionUrl({ reproductionId: item.reproduction_id, projectId }))}
               >
                 <strong>{item.paperTitle || '未绑定论文'}</strong>
                 <div className="subtle">
@@ -528,7 +529,7 @@ function ReproductionPageContent() {
                     repo_id: selectedRepoId,
                   });
                   setNotice(selectedRepoId ? '已基于选中代码仓创建新的复现记录。' : '已按仅论文上下文创建新的复现记录。');
-                  router.push(buildReproductionUrl({ paperId: activePaper.id, reproductionId: result.reproduction_id, projectId }));
+                  navigate(buildReproductionUrl({ paperId: activePaper.id, reproductionId: result.reproduction_id, projectId }));
                 })
               }
             >
@@ -682,13 +683,5 @@ function ReproductionPageContent() {
         <EmptyState title="等待复现上下文" hint="请从论文阅读页进入，或在上方按论文标题搜索/从最近复现记录中选择。" />
       ) : null}
     </>
-  );
-}
-
-export default function ReproductionPage() {
-  return (
-    <Suspense fallback={<Loading text="加载复现工作区..." />}>
-      <ReproductionPageContent />
-    </Suspense>
   );
 }

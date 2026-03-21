@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import Card from "@/components/common/Card";
 import Loading from "@/components/common/Loading";
@@ -19,9 +19,9 @@ function parsePositiveInt(raw: string | null) {
   return parsed;
 }
 
-function SearchPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export default function SearchRoute() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const requestedPaperId = parsePositiveInt(searchParams.get("paper_id"));
   const requestedSummaryId = parsePositiveInt(searchParams.get("summary_id"));
   const projectId = parsePositiveInt(searchParams.get("project_id"));
@@ -43,8 +43,8 @@ function SearchPageContent() {
 
   useEffect(() => {
     if (!requestedPaperId) return;
-    router.replace(paperReaderPath(requestedPaperId, requestedSummaryId, undefined, projectId));
-  }, [projectId, requestedPaperId, requestedSummaryId, router]);
+    navigate(paperReaderPath(requestedPaperId, requestedSummaryId, undefined, projectId), { replace: true });
+  }, [navigate, projectId, requestedPaperId, requestedSummaryId]);
 
   if (requestedPaperId) {
     return <Loading text="正在跳转到阅读器..." />;
@@ -71,13 +71,5 @@ function SearchPageContent() {
         initialQuery={project?.seed_query || project?.research_question || ""}
       />
     </>
-  );
-}
-
-export default function SearchPage() {
-  return (
-    <Suspense fallback={<Loading text="正在加载搜索页..." />}>
-      <SearchPageContent />
-    </Suspense>
   );
 }

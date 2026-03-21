@@ -147,7 +147,7 @@ test("keeps search, reflections, reproduction, and memory scoped to the project 
   await page.goto(projectUrl);
   await page.getByTestId("quick-link-reproduction").click();
   await expect(page).toHaveURL(/\/reproduction\?project_id=\d+/);
-  await expect(page.getByText("E2E Retrieval Study for Evidence Synthesis")).toBeVisible();
+  await expect(page.getByTestId("recent-reproductions").getByText("E2E Retrieval Study for Evidence Synthesis")).toBeVisible();
   await expect(page.getByText("Hidden Control Paper for Unrelated Vision Tasks")).toHaveCount(0);
 
   await page.goto(projectUrl);

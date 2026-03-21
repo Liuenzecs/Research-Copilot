@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import { projectPath } from '@/lib/routes';
@@ -15,7 +15,7 @@ export default function ProjectContextBanner({
   message: string;
   actions?: ReactNode;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   if (!projectId) {
     return null;
@@ -26,7 +26,7 @@ export default function ProjectContextBanner({
       <span className="subtle">{message}</span>
       <div className="projects-inline-actions">
         {actions}
-        <Button className="secondary" type="button" onClick={() => router.push(projectPath(projectId))}>
+        <Button className="secondary" type="button" onClick={() => navigate(projectPath(projectId))}>
           返回项目工作台
         </Button>
       </div>

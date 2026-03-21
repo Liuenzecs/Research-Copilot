@@ -6,7 +6,7 @@ export type HelpSection = {
 
 export const HELP_HEADER = {
   title: 'Research Copilot 使用说明',
-  subtitle: '当前主线已经切到桌面版。日常开发最推荐直接运行 `cd frontend && npm run desktop:dev`，应用会自动拉起前端和本地后端。',
+  subtitle: '当前主线已经切到桌面版。日常开发最推荐直接运行 `cd frontend && npm run desktop:dev`，应用会先显示启动页，再自动拉起前端和本地后端。',
 };
 
 export const HELP_SECTIONS: HelpSection[] = [
@@ -15,6 +15,7 @@ export const HELP_SECTIONS: HelpSection[] = [
     bullets: [
       '日常开发最常用命令：`cd frontend && npm run desktop:dev`。',
       '这条命令会自动启动 Vite、Tauri 桌面壳和 FastAPI sidecar，不需要你再手动分别开前后端。',
+      '桌面版会先显示启动页，再后台等待本地后端就绪；如果失败，也能直接看到错误和日志入口。',
       '如果你只是想直接使用应用，安装 Windows MSI 后双击打开即可。',
     ],
   },
@@ -65,6 +66,8 @@ export const HELP_SECTIONS: HelpSection[] = [
     bullets: [
       '前端构建检查：`cd frontend && npm run build`。',
       '桌面打包：`cd frontend && npm run desktop:build`。',
+      '桌面 fresh build：`cd frontend && npm run desktop:build:fresh`。当 exe 时间不对、行为像旧包、MSI 文件锁、sidecar 异常时优先使用这条命令。',
+      '桌面清理：`cd frontend && npm run desktop:clean`。',
       '后端测试：`pytest backend/app/tests -q`。',
     ],
   },

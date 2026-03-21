@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -70,9 +70,9 @@ function parsePositiveInt(value: string | null): number | null {
   return parsed;
 }
 
-function ReflectionsPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export default function ReflectionsRoute() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const requestedReflectionId = parsePositiveInt(searchParams.get('reflection_id'));
   const requestedPaperId = parsePositiveInt(searchParams.get('paper_id'));
   const projectId = parsePositiveInt(searchParams.get('project_id'));
@@ -175,7 +175,7 @@ function ReflectionsPageContent() {
             message={requestedPaperId ? `当前为项目上下文心得视图，并已聚焦到论文 #${requestedPaperId}。` : '当前为项目上下文心得视图。'}
             actions={
               requestedPaperId ? (
-                <Button className="secondary" type="button" onClick={() => router.push(`/reflections?project_id=${projectId}`)}>
+                <Button className="secondary" type="button" onClick={() => navigate(`/reflections?project_id=${projectId}`)}>
                   查看项目全部心得
                 </Button>
               ) : undefined
@@ -185,7 +185,7 @@ function ReflectionsPageContent() {
         {requestedPaperId && !projectId ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
             <span className="subtle">当前仅显示论文 #{requestedPaperId} 的心得</span>
-            <Button className="secondary" type="button" onClick={() => router.push('/reflections')}>
+            <Button className="secondary" type="button" onClick={() => navigate('/reflections')}>
               查看全部心得
             </Button>
           </div>
@@ -291,13 +291,5 @@ function ReflectionsPageContent() {
 
       {showComposer ? <ReflectionEditor onCreated={reload} /> : null}
     </>
-  );
-}
-
-export default function ReflectionsPage() {
-  return (
-    <Suspense fallback={<Loading text="加载心得页面..." />}>
-      <ReflectionsPageContent />
-    </Suspense>
   );
 }

@@ -6,9 +6,14 @@ $frontendRoot = Join-Path $repoRoot "frontend"
 $resourcesRoot = Join-Path $frontendRoot "src-tauri\\resources\\backend-sidecar"
 $workRoot = Join-Path $frontendRoot ".pyinstaller-desktop"
 $entryScript = Join-Path $backendRoot "run_desktop_backend.py"
+$specFile = Join-Path $frontendRoot "scripts\\research-copilot-backend.spec"
 
 if (-not (Test-Path $entryScript)) {
     throw "Desktop backend entry script not found: $entryScript"
+}
+
+if (-not (Test-Path $specFile)) {
+    throw "Desktop backend spec file not found: $specFile"
 }
 
 if (Test-Path $resourcesRoot) {
@@ -33,18 +38,9 @@ try {
     python -m PyInstaller `
         --noconfirm `
         --clean `
-        --onedir `
-        --noconsole `
-        --name research-copilot-backend `
-        --paths $backendRoot `
-        --collect-submodules app `
-        --collect-submodules chromadb `
-        --collect-submodules uvicorn `
-        --collect-submodules pydantic_settings `
         --distpath $resourcesRoot `
         --workpath (Join-Path $workRoot "build") `
-        --specpath (Join-Path $workRoot "spec") `
-        $entryScript
+        $specFile
 } finally {
     Pop-Location
 }

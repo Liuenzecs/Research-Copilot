@@ -1,12 +1,11 @@
-﻿"use client";
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { Link, useLocation } from 'react-router-dom';
 
 import { NAV_ITEMS } from '@/lib/constants';
 
 export default function Sidebar() {
-  const pathname = usePathname();
+  const pathname = useLocation().pathname;
   const sidebarItems = NAV_ITEMS.map((item) => {
     const active = item.href === '/projects'
       ? pathname === '/' || pathname === '/dashboard' || pathname === '/projects' || pathname.startsWith('/projects/')
@@ -22,7 +21,7 @@ export default function Sidebar() {
         {sidebarItems.map((item) => (
           <Link
             key={item.href}
-            href={item.href}
+            to={item.href}
             className={`nav-item ${item.active ? 'active' : ''}`}
           >
             {item.label}

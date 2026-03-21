@@ -1,5 +1,5 @@
 import ProjectsHome from '@/components/projects/ProjectsHome';
 
-export default function ProjectsPage() {
+export default function ProjectsHomeRoute() {
   return <ProjectsHome />;
 }

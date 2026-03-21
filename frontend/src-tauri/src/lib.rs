@@ -12,6 +12,18 @@ use reqwest::blocking::Client;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State};
 
+const BACKEND_STATUS_IDLE: &str = "idle";
+const BACKEND_STATUS_STARTING: &str = "starting";
+const BACKEND_STATUS_READY: &str = "ready";
+const BACKEND_STATUS_FAILED: &str = "failed";
+
+const BACKEND_STAGE_WAITING_HOST: &str = "等待桌面宿主响应";
+const BACKEND_STAGE_PREPARING_RUNTIME: &str = "准备运行目录";
+const BACKEND_STAGE_STARTING_BACKEND: &str = "启动后端";
+const BACKEND_STAGE_WAITING_HEALTH: &str = "等待健康检查";
+const BACKEND_STAGE_READY: &str = "已就绪";
+const BACKEND_STAGE_FAILED: &str = "启动失败";
+
 #[derive(Clone, Debug, Serialize)]
 struct RuntimeConfigResponse {
     api_base: String,
@@ -19,6 +31,14 @@ struct RuntimeConfigResponse {
     logs_dir: String,
     platform: String,
     is_desktop: bool,
+    backend_status: String,
+    backend_stage: String,
+    backend_error: String,
+    app_version: String,
+    build_timestamp: String,
+    git_commit: String,
+    build_mode: String,
+    executable_path: String,
 }
 
 #[derive(Debug)]
@@ -31,19 +51,56 @@ impl Default for ManagedBackend {
     fn default() -> Self {
         Self {
             child: None,
-            runtime_config: RuntimeConfigResponse {
-                api_base: "http://127.0.0.1:8000".to_string(),
-                app_data_dir: String::new(),
-                logs_dir: String::new(),
-                platform: env::consts::OS.to_string(),
-                is_desktop: true,
-            },
+            runtime_config: default_runtime_config(),
         }
     }
 }
 
 struct BackendState {
     inner: Mutex<ManagedBackend>,
+}
+
+fn build_timestamp() -> String {
+    option_env!("RESEARCH_COPILOT_BUILD_TIMESTAMP")
+        .unwrap_or("unset")
+        .to_string()
+}
+
+fn git_commit() -> String {
+    option_env!("RESEARCH_COPILOT_GIT_COMMIT")
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn build_mode() -> String {
+    option_env!("RESEARCH_COPILOT_BUILD_MODE")
+        .unwrap_or("desktop")
+        .to_string()
+}
+
+fn executable_path() -> String {
+    env::current_exe()
+        .ok()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default()
+}
+
+fn default_runtime_config() -> RuntimeConfigResponse {
+    RuntimeConfigResponse {
+        api_base: "http://127.0.0.1:8000".to_string(),
+        app_data_dir: String::new(),
+        logs_dir: String::new(),
+        platform: env::consts::OS.to_string(),
+        is_desktop: true,
+        backend_status: BACKEND_STATUS_IDLE.to_string(),
+        backend_stage: BACKEND_STAGE_WAITING_HOST.to_string(),
+        backend_error: String::new(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        build_timestamp: build_timestamp(),
+        git_commit: git_commit(),
+        build_mode: build_mode(),
+        executable_path: executable_path(),
+    }
 }
 
 fn repo_root() -> PathBuf {
@@ -85,14 +142,14 @@ fn resolve_runtime_dirs(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
 
 fn build_runtime_config(app: &AppHandle, port: u16) -> Result<RuntimeConfigResponse, String> {
     let (app_data_dir, logs_dir) = resolve_runtime_dirs(app)?;
-
-    Ok(RuntimeConfigResponse {
-        api_base: format!("http://127.0.0.1:{port}"),
-        app_data_dir: app_data_dir.display().to_string(),
-        logs_dir: logs_dir.display().to_string(),
-        platform: env::consts::OS.to_string(),
-        is_desktop: true,
-    })
+    let mut config = default_runtime_config();
+    config.api_base = format!("http://127.0.0.1:{port}");
+    config.app_data_dir = app_data_dir.display().to_string();
+    config.logs_dir = logs_dir.display().to_string();
+    config.backend_status = BACKEND_STATUS_STARTING.to_string();
+    config.backend_stage = BACKEND_STAGE_PREPARING_RUNTIME.to_string();
+    config.backend_error.clear();
+    Ok(config)
 }
 
 fn resolve_packaged_backend_executable(app: &AppHandle) -> Option<PathBuf> {
@@ -205,24 +262,96 @@ fn stop_backend_locked(backend: &mut ManagedBackend) {
     backend.child = None;
 }
 
-fn start_or_restart_backend(app: &AppHandle, state: &BackendState) -> Result<RuntimeConfigResponse, String> {
-    let port = reserve_local_port()?;
-    let runtime_config = build_runtime_config(app, port)?;
-    let mut child = spawn_backend_process(app, &runtime_config)?;
-
-    if let Err(error) = wait_for_backend_health(&runtime_config.api_base) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(error);
-    }
-
+fn set_backend_runtime(app: &AppHandle, runtime_config: RuntimeConfigResponse) -> Result<RuntimeConfigResponse, String> {
+    let state = app.state::<BackendState>();
     let mut backend = state
         .inner
         .lock()
         .map_err(|_| "Desktop backend state lock poisoned.".to_string())?;
-    stop_backend_locked(&mut backend);
-    backend.child = Some(child);
     backend.runtime_config = runtime_config.clone();
+    Ok(runtime_config)
+}
+
+fn set_backend_failed(app: &AppHandle, runtime_config: &RuntimeConfigResponse, error: String) {
+    if let Some(state) = app.try_state::<BackendState>() {
+        match state.inner.lock() {
+            Ok(mut backend) => {
+                stop_backend_locked(&mut backend);
+                let mut failed_config = runtime_config.clone();
+                failed_config.backend_status = BACKEND_STATUS_FAILED.to_string();
+                failed_config.backend_stage = BACKEND_STAGE_FAILED.to_string();
+                failed_config.backend_error = error;
+                backend.runtime_config = failed_config;
+            }
+            Err(_) => {}
+        };
+    }
+}
+
+fn queue_backend_start(app: &AppHandle) -> Result<RuntimeConfigResponse, String> {
+    let state = app.state::<BackendState>();
+    {
+        let backend = state
+            .inner
+            .lock()
+            .map_err(|_| "Desktop backend state lock poisoned.".to_string())?;
+        if backend.runtime_config.backend_status == BACKEND_STATUS_STARTING {
+            return Ok(backend.runtime_config.clone());
+        }
+    }
+
+    let port = reserve_local_port()?;
+    let runtime_config = build_runtime_config(app, port)?;
+
+    {
+        let mut backend = state
+            .inner
+            .lock()
+            .map_err(|_| "Desktop backend state lock poisoned.".to_string())?;
+        stop_backend_locked(&mut backend);
+        backend.runtime_config = runtime_config.clone();
+    }
+
+    let app_handle = app.clone();
+    let runtime_for_worker = runtime_config.clone();
+    std::thread::spawn(move || {
+        let mut starting_config = runtime_for_worker.clone();
+        starting_config.backend_stage = BACKEND_STAGE_STARTING_BACKEND.to_string();
+        let _ = set_backend_runtime(&app_handle, starting_config);
+
+        let child = match spawn_backend_process(&app_handle, &runtime_for_worker) {
+            Ok(child) => child,
+            Err(error) => {
+                set_backend_failed(&app_handle, &runtime_for_worker, error);
+                return;
+            }
+        };
+
+        {
+            let state = app_handle.state::<BackendState>();
+            match state.inner.lock() {
+                Ok(mut backend) => {
+                    let mut waiting_config = runtime_for_worker.clone();
+                    waiting_config.backend_stage = BACKEND_STAGE_WAITING_HEALTH.to_string();
+                    backend.child = Some(child);
+                    backend.runtime_config = waiting_config;
+                }
+                Err(_) => return,
+            };
+        }
+
+        if let Err(error) = wait_for_backend_health(&runtime_for_worker.api_base) {
+            set_backend_failed(&app_handle, &runtime_for_worker, error);
+            return;
+        }
+
+        let mut ready_config = runtime_for_worker.clone();
+        ready_config.backend_status = BACKEND_STATUS_READY.to_string();
+        ready_config.backend_stage = BACKEND_STAGE_READY.to_string();
+        ready_config.backend_error.clear();
+        let _ = set_backend_runtime(&app_handle, ready_config);
+    });
+
     Ok(runtime_config)
 }
 
@@ -263,14 +392,28 @@ fn open_logs_dir(state: State<'_, BackendState>) -> Result<(), String> {
 
 #[tauri::command]
 fn restart_backend(app: AppHandle, state: State<'_, BackendState>) -> Result<RuntimeConfigResponse, String> {
-    start_or_restart_backend(&app, state.inner())
+    match queue_backend_start(&app) {
+        Ok(runtime) => Ok(runtime),
+        Err(error) => {
+            let mut backend = state
+                .inner
+                .lock()
+                .map_err(|_| "Desktop backend state lock poisoned.".to_string())?;
+            stop_backend_locked(&mut backend);
+            backend.runtime_config.backend_status = BACKEND_STATUS_FAILED.to_string();
+            backend.runtime_config.backend_stage = BACKEND_STAGE_FAILED.to_string();
+            backend.runtime_config.backend_error = error;
+            Ok(backend.runtime_config.clone())
+        }
+    }
 }
 
 fn stop_backend(app: &AppHandle) {
     if let Some(state) = app.try_state::<BackendState>() {
-        if let Ok(mut backend) = state.inner.lock() {
-            stop_backend_locked(&mut backend);
-        }
+        match state.inner.lock() {
+            Ok(mut backend) => stop_backend_locked(&mut backend),
+            Err(_) => {}
+        };
     }
 }
 
@@ -280,8 +423,19 @@ pub fn run() {
             inner: Mutex::new(ManagedBackend::default()),
         })
         .setup(|app| {
-            let state = app.state::<BackendState>();
-            start_or_restart_backend(&app.handle(), state.inner())?;
+            let handle = app.handle().clone();
+            if let Err(error) = queue_backend_start(&handle) {
+                if let Some(state) = handle.try_state::<BackendState>() {
+                    match state.inner.lock() {
+                        Ok(mut backend) => {
+                            backend.runtime_config.backend_status = BACKEND_STATUS_FAILED.to_string();
+                            backend.runtime_config.backend_stage = BACKEND_STAGE_FAILED.to_string();
+                            backend.runtime_config.backend_error = error;
+                        }
+                        Err(_) => {}
+                    };
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 
 import EmptyState from '@/components/common/EmptyState';
 import {
@@ -55,7 +55,7 @@ export default function MemoryList({
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span className="subtle">记录时间：{formatDateTime(item.created_at)}</span>
               {item.jump_target ? (
-                <Link href={item.jump_target.path} className="button secondary">
+                <Link to={item.jump_target.path} className="button secondary">
                   {memoryJumpButtonLabel(item.jump_target.kind)}
                 </Link>
               ) : null}

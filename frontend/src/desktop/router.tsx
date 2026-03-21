@@ -1,23 +1,18 @@
-import { Navigate, Outlet, createBrowserRouter, useParams, useSearchParams } from 'react-router-dom';
+import { Suspense, lazy, type ReactNode } from 'react';
+import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom';
 
+import RouteLoadingFallback from '@/desktop/RouteLoadingFallback';
 import Topbar from '@/components/layout/Topbar';
-import PaperReaderScreen from '@/components/papers/PaperReaderScreen';
-import ProjectsHome from '@/components/projects/ProjectsHome';
-import LibraryPage from '@/app/library/page';
-import MemoryPage from '@/app/memory/page';
-import ReflectionsPage from '@/app/reflections/page';
-import ReproductionPage from '@/app/reproduction/page';
-import SearchPage from '@/app/search/page';
-import SettingsPage from '@/app/settings/page';
-import WeeklyReportPage from '@/app/dashboard/weekly-report/page';
-import ProjectWorkspace from '@/components/projects/ProjectWorkspace';
-
-function parseRouteNumber(raw?: string): number | null {
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) return null;
-  return value;
-}
+const ProjectsHomeRoute = lazy(() => import('@/routes/projects/ProjectsHomeRoute'));
+const ProjectWorkspaceRoute = lazy(() => import('@/routes/projects/ProjectWorkspaceRoute'));
+const PaperReaderRoute = lazy(() => import('@/routes/papers/PaperReaderRoute'));
+const SearchRoute = lazy(() => import('@/routes/search/SearchRoute'));
+const LibraryRoute = lazy(() => import('@/routes/library/LibraryRoute'));
+const ReflectionsRoute = lazy(() => import('@/routes/reflections/ReflectionsRoute'));
+const ReproductionRoute = lazy(() => import('@/routes/reproduction/ReproductionRoute'));
+const MemoryRoute = lazy(() => import('@/routes/memory/MemoryRoute'));
+const WeeklyReportRoute = lazy(() => import('@/routes/reports/WeeklyReportRoute'));
+const SettingsRoute = lazy(() => import('@/routes/settings/SettingsRoute'));
 
 function AppShell() {
   return (
@@ -30,37 +25,8 @@ function AppShell() {
   );
 }
 
-function ProjectWorkspaceRoute() {
-  const params = useParams();
-  const projectId = parseRouteNumber(params.projectId);
-
-  if (!projectId) {
-    return <Navigate replace to="/projects" />;
-  }
-
-  return <ProjectWorkspace projectId={projectId} />;
-}
-
-function PaperReaderRoute() {
-  const params = useParams();
-  const [searchParams] = useSearchParams();
-  const paperId = parseRouteNumber(params.paperId);
-  const requestedSummaryId = parseRouteNumber(searchParams.get('summary_id') ?? undefined);
-  const requestedParagraphId = parseRouteNumber(searchParams.get('paragraph_id') ?? undefined);
-  const projectId = parseRouteNumber(searchParams.get('project_id') ?? undefined);
-
-  if (!paperId) {
-    return <Navigate replace to="/library" />;
-  }
-
-  return (
-    <PaperReaderScreen
-      paperId={paperId}
-      projectId={projectId}
-      requestedParagraphId={requestedParagraphId}
-      requestedSummaryId={requestedSummaryId}
-    />
-  );
+function lazyPage(element: ReactNode) {
+  return <Suspense fallback={<RouteLoadingFallback />}>{element}</Suspense>;
 }
 
 export const desktopRouter = createBrowserRouter([
@@ -78,43 +44,43 @@ export const desktopRouter = createBrowserRouter([
       },
       {
         path: 'projects',
-        element: <ProjectsHome />,
+        element: lazyPage(<ProjectsHomeRoute />),
       },
       {
         path: 'projects/:projectId',
-        element: <ProjectWorkspaceRoute />,
+        element: lazyPage(<ProjectWorkspaceRoute />),
       },
       {
         path: 'papers/:paperId',
-        element: <PaperReaderRoute />,
+        element: lazyPage(<PaperReaderRoute />),
       },
       {
         path: 'search',
-        element: <SearchPage />,
+        element: lazyPage(<SearchRoute />),
       },
       {
         path: 'library',
-        element: <LibraryPage />,
+        element: lazyPage(<LibraryRoute />),
       },
       {
         path: 'reflections',
-        element: <ReflectionsPage />,
+        element: lazyPage(<ReflectionsRoute />),
       },
       {
         path: 'reproduction',
-        element: <ReproductionPage />,
+        element: lazyPage(<ReproductionRoute />),
       },
       {
         path: 'memory',
-        element: <MemoryPage />,
+        element: lazyPage(<MemoryRoute />),
       },
       {
         path: 'dashboard/weekly-report',
-        element: <WeeklyReportPage />,
+        element: lazyPage(<WeeklyReportRoute />),
       },
       {
         path: 'settings',
-        element: <SettingsPage />,
+        element: lazyPage(<SettingsRoute />),
       },
       {
         path: '*',

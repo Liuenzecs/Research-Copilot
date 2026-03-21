@@ -10,8 +10,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(rootDir, 'src'),
-      'next/link': path.resolve(rootDir, 'src/desktop-shims/next-link.tsx'),
-      'next/navigation': path.resolve(rootDir, 'src/desktop-shims/next-navigation.ts'),
     },
   },
   server: {

@@ -24,6 +24,8 @@ npm run desktop:dev
 - 拉起 Tauri 桌面壳
 - 由桌面壳自动启动 FastAPI sidecar
 
+桌面版现在会先显示启动页，再在后台等待本地后端就绪。即使后端启动失败，你也能直接看到当前阶段、错误提示、日志目录和重试按钮，不会再长时间黑屏等待。
+
 也就是说，当前桌面主线下，你平时最推荐的启动方式就是 `npm run desktop:dev`，不需要再手动分别开前后端。
 
 ## 旧脚本现在怎么用
@@ -57,6 +59,13 @@ npm run desktop:dev
 ```powershell
 cd frontend
 npm run desktop:build
+```
+
+如果你怀疑当前产物像旧包，例如 exe / msi 时间不对、启动行为和最新代码不一致、MSI 打包遇到文件锁，或 sidecar 看起来像旧版本，请改用全量 fresh build：
+
+```powershell
+cd frontend
+npm run desktop:build:fresh
 ```
 
 单独打包 Python sidecar：
@@ -101,6 +110,13 @@ cd frontend
 npm run build
 ```
 
+桌面缓存清理：
+
+```powershell
+cd frontend
+npm run desktop:clean
+```
+
 后端测试：
 
 ```powershell
@@ -128,6 +144,7 @@ pytest backend/app/tests -q
 - 历史阅读、心得、复现、记忆不会自动迁成项目
 
 如果你想确认当前桌面版到底用了哪个数据目录和数据库路径，直接到应用里的“设置”页面查看。
+设置页现在也会显示当前运行构建的版本、构建时间、Git commit、构建模式和可执行文件路径，方便确认“这是不是最新打包出来的桌面版”。
 
 ## 当前产品口径
 

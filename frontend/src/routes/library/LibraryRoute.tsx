@@ -1,7 +1,7 @@
 "use client";
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
@@ -25,7 +25,7 @@ function buildItemTags(item: LibraryItem): string[] {
   return tags;
 }
 
-export default function LibraryPage() {
+export default function LibraryRoute() {
   usePageTitle('文库');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -165,7 +165,7 @@ export default function LibraryPage() {
                   </div>
 
                   <div className="library-item-actions">
-                    <Link className="button secondary" href={paperReaderPath(item.id)}>
+                    <Link className="button secondary" to={paperReaderPath(item.id)}>
                       继续阅读
                     </Link>
                   </div>

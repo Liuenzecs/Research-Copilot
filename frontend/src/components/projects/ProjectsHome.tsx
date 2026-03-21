@@ -1,8 +1,7 @@
 "use client";
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Link, useNavigate } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -35,7 +34,7 @@ function statusLabel(status: string) {
 }
 
 export default function ProjectsHome() {
-  const router = useRouter();
+  const navigate = useNavigate();
   usePageTitle('项目');
 
   const [projects, setProjects] = useState<ResearchProjectListItem[]>([]);
@@ -83,7 +82,7 @@ export default function ProjectsHome() {
         research_question: researchQuestion.trim(),
         goal: goal.trim(),
       });
-      router.push(projectPath(project.id));
+      navigate(projectPath(project.id));
     } catch (createError) {
       setError((createError as Error).message || '创建项目失败，请稍后重试。');
     } finally {
@@ -230,19 +229,19 @@ export default function ProjectsHome() {
               <div className="subtle">当前项目首页只读取 `research_projects` 中的新项目对象。</div>
               <div className="subtle">旧的阅读、心得、复现、记忆记录不会自动迁成项目，但原入口仍然保留。</div>
               <div className="projects-empty-links">
-                <Link className="button secondary" href="/library">
+                <Link className="button secondary" to="/library">
                   打开文库
                 </Link>
-                <Link className="button secondary" href={reflectionsPath()}>
+                <Link className="button secondary" to={reflectionsPath()}>
                   打开心得
                 </Link>
-                <Link className="button secondary" href={reproductionPath()}>
+                <Link className="button secondary" to={reproductionPath()}>
                   打开复现
                 </Link>
-                <Link className="button secondary" href={memoryPath()}>
+                <Link className="button secondary" to={memoryPath()}>
                   打开记忆
                 </Link>
-                <Link className="button secondary" href="/settings">
+                <Link className="button secondary" to="/settings">
                   查看设置
                 </Link>
               </div>
@@ -276,7 +275,7 @@ export default function ProjectsHome() {
                     最近打开：{formatDateTime(project.last_opened_at || project.updated_at)}
                   </div>
                   <div className="projects-inline-actions">
-                    <Button type="button" onClick={() => router.push(projectPath(project.id))}>
+                    <Button type="button" onClick={() => navigate(projectPath(project.id))}>
                       进入工作台
                     </Button>
                     <Button className="secondary" type="button" onClick={() => beginProjectEdit(project)} disabled={isSaving || isDeleting}>

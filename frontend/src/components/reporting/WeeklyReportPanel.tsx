@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 
 import { formatDateTime, reproductionStatusLabel } from '@/lib/presentation';
 import { WeeklyReportContext } from '@/lib/types';
@@ -79,7 +79,7 @@ export default function WeeklyReportPanel({
                 {item.related_paper_id ? (
                   <>
                     {' '}
-                    <Link href={`/papers/${item.related_paper_id}`} className="button secondary">
+                    <Link to={`/papers/${item.related_paper_id}`} className="button secondary">
                       打开论文工作区
                     </Link>
                   </>
@@ -105,7 +105,7 @@ export default function WeeklyReportPanel({
                 <div className="subtle">最近活动：{formatDateTime(item.last_activity_at)} · {activityTypeLabel(item.activity_type)}</div>
                 <div className="subtle">{item.activity_summary}</div>
                 <div style={{ marginTop: 4 }}>
-                  <Link href={`/papers/${item.paper_id}`} className="button secondary">
+                  <Link to={`/papers/${item.paper_id}`} className="button secondary">
                     打开论文工作区
                   </Link>
                 </div>
@@ -135,7 +135,7 @@ export default function WeeklyReportPanel({
                 <div className="subtle">摘要：{item.progress_summary || '暂无进展摘要。'}</div>
                 <div className="subtle">更新于：{formatDateTime(item.updated_at)}</div>
                 <div style={{ marginTop: 4 }}>
-                  <Link href={`/reproduction?reproduction_id=${item.reproduction_id}`} className="button secondary">
+                  <Link to={`/reproduction?reproduction_id=${item.reproduction_id}`} className="button secondary">
                     打开复现工作区
                   </Link>
                 </div>
@@ -160,7 +160,7 @@ export default function WeeklyReportPanel({
                 <div className="subtle">{item.blocker_reason || '待补充阻塞说明。'}</div>
                 <div className="subtle">阻塞时间：{formatDateTime(item.blocked_at)}</div>
                 <div style={{ marginTop: 4 }}>
-                  <Link href={`/reproduction?reproduction_id=${item.reproduction_id}`} className="button secondary">
+                  <Link to={`/reproduction?reproduction_id=${item.reproduction_id}`} className="button secondary">
                     打开复现工作区
                   </Link>
                 </div>

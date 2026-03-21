@@ -1,8 +1,7 @@
 "use client";
 
-import Link from 'next/link';
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -55,8 +54,8 @@ function normalizeWeeklyReportContext(
   };
 }
 
-function WeeklyReportPageContent() {
-  const searchParams = useSearchParams();
+export default function WeeklyReportRoute() {
+  const [searchParams] = useSearchParams();
   const projectIdParam = searchParams.get('project_id');
   const parsedProjectId = projectIdParam ? Number(projectIdParam) : null;
   const projectId = parsedProjectId && Number.isFinite(parsedProjectId) ? parsedProjectId : null;
@@ -199,7 +198,7 @@ function WeeklyReportPageContent() {
             </p>
           </div>
           {projectId ? (
-            <Link className="button secondary" href={projectPath(projectId)}>
+            <Link className="button secondary" to={projectPath(projectId)}>
               返回项目工作台
             </Link>
           ) : null}
@@ -300,13 +299,5 @@ function WeeklyReportPageContent() {
         ]}
       />
     </>
-  );
-}
-
-export default function WeeklyReportPage() {
-  return (
-    <Suspense fallback={<Card><p className="subtle">正在加载周报页面...</p></Card>}>
-      <WeeklyReportPageContent />
-    </Suspense>
   );
 }

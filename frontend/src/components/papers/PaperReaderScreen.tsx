@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 
 import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
@@ -136,7 +136,7 @@ export default function PaperReaderScreen({
   requestedParagraphId?: number | null;
   projectId?: number | null;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   usePageTitle("论文阅读器");
 
   const articleRef = useRef<HTMLDivElement | null>(null);
@@ -319,7 +319,10 @@ export default function PaperReaderScreen({
   }, [viewMode, currentPageIndex, pageNumbers]);
 
   function updateReaderUrl(paragraphId?: number | null) {
-    router.replace(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined, projectId ?? undefined), { scroll: false });
+    navigate(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined, projectId ?? undefined), {
+      replace: true,
+      preventScrollReset: true,
+    });
   }
 
   function goToPage(pageNo: number) {
@@ -595,7 +598,7 @@ export default function PaperReaderScreen({
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {projectId ? (
-              <Button className="secondary" type="button" data-testid="reader-return-project" onClick={() => router.push(projectPath(projectId))}>
+              <Button className="secondary" type="button" data-testid="reader-return-project" onClick={() => navigate(projectPath(projectId))}>
                 返回项目工作台
               </Button>
             ) : null}

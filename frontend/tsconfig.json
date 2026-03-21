@@ -15,12 +15,6 @@
     "moduleResolution": "bundler",
     "baseUrl": "",
     "paths": {
-      "next/link": [
-        "src/desktop-shims/next-link.tsx"
-      ],
-      "next/navigation": [
-        "src/desktop-shims/next-navigation.ts"
-      ],
       "@/*": [
         "src/*"
       ]

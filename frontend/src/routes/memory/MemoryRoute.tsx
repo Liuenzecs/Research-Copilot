@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
 import Card from '@/components/common/Card';
@@ -22,8 +22,8 @@ function parsePositiveInt(value: string | null): number | null {
   return parsed;
 }
 
-function MemoryPageContent() {
-  const searchParams = useSearchParams();
+export default function MemoryRoute() {
+  const [searchParams] = useSearchParams();
   const projectId = parsePositiveInt(searchParams.get('project_id'));
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<MemoryItem[]>([]);
@@ -180,13 +180,5 @@ function MemoryPageContent() {
       <MemoryGraph />
       <ProfilePanel />
     </>
-  );
-}
-
-export default function MemoryPage() {
-  return (
-    <Suspense fallback={<Loading text="加载记忆页面..." />}>
-      <MemoryPageContent />
-    </Suspense>
   );
 }

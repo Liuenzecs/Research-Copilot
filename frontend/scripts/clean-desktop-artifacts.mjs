@@ -1,7 +1,14 @@
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 
-const targets = ['dist', '.next', 'tsconfig.tsbuildinfo'];
+const targets = [
+  'dist',
+  '.next',
+  'tsconfig.tsbuildinfo',
+  '.pyinstaller-desktop',
+  path.join('src-tauri', 'target'),
+  path.join('src-tauri', 'resources', 'backend-sidecar', 'research-copilot-backend'),
+];
 const root = process.cwd();
 
 for (const target of targets) {
