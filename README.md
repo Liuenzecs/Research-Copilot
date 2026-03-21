@@ -9,42 +9,48 @@ Research Copilot 当前主线已经切到桌面版：
 
 本期不再把 Next.js Web 版作为主运行时，也不导入仓库里的旧 `backend/data`。桌面版会把数据写到用户目录，和仓库开发数据隔离。
 
-## 日常使用
+## 你平时怎么启动
 
-普通用户推荐直接安装 MSI 安装包。
-
-- 打开应用即可使用
-- 不需要先手动启动后端
-- 不需要再手动启动前端
-
-## 开发启动
-
-桌面开发主命令：
+如果你是日常开发，最常用的就是这一条：
 
 ```powershell
 cd frontend
 npm run desktop:dev
 ```
 
-这条命令会：
+这条命令会同时完成三件事：
 
 - 启动 Vite 前端开发服务器
 - 拉起 Tauri 桌面壳
 - 由桌面壳自动启动 FastAPI sidecar
 
-如果你只是单独调后端接口，仍然可以继续使用：
+也就是说，当前桌面主线下，你平时最推荐的启动方式就是 `npm run desktop:dev`，不需要再手动分别开前后端。
+
+## 旧脚本现在怎么用
+
+如果你只是想单独调后端接口，仍然可以继续使用：
 
 ```powershell
 .\scripts\run_backend.ps1
 ```
 
-如果你习惯用旧脚本启动前端，当前它也已经收口到桌面开发模式：
+如果你习惯继续用旧的前端脚本：
 
 ```powershell
 .\scripts\run_frontend.ps1
 ```
 
-## 打包桌面安装包
+它现在实际也会收口到桌面开发模式，本质上还是帮你跑 `cd frontend && npm run desktop:dev`。
+
+## 普通使用者怎么打开
+
+如果你不是在开发，而是想直接用应用，推荐安装 MSI 安装包。
+
+- 安装后直接打开应用即可
+- 不需要先手动启动后端
+- 不需要再手动启动前端
+
+## 怎么打包桌面安装包
 
 构建 Windows MSI：
 
@@ -60,20 +66,7 @@ cd frontend
 npm run desktop:backend:bundle
 ```
 
-## 前端构建检查
-
-```powershell
-cd frontend
-npm run build
-```
-
-## 后端测试
-
-```powershell
-pytest backend/app/tests -q
-```
-
-## E2E 是什么
+## 什么时候才需要跑 E2E
 
 `E2E` 是 `End-to-End`，也就是“端到端回归测试”。
 
@@ -97,6 +90,21 @@ npx playwright test
 ```powershell
 cd frontend
 npx playwright install chromium
+```
+
+## 其他常用命令
+
+前端构建检查：
+
+```powershell
+cd frontend
+npm run build
+```
+
+后端测试：
+
+```powershell
+pytest backend/app/tests -q
 ```
 
 ## 数据位置

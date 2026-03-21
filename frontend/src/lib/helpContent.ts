@@ -6,15 +6,23 @@ export type HelpSection = {
 
 export const HELP_HEADER = {
   title: 'Research Copilot 使用说明',
-  subtitle: '当前主线已经切到桌面版：桌面应用会自动拉起本地后端，不再要求你先手动开两个终端。',
+  subtitle: '当前主线已经切到桌面版。日常开发最推荐直接运行 `cd frontend && npm run desktop:dev`，应用会自动拉起前端和本地后端。',
 };
 
 export const HELP_SECTIONS: HelpSection[] = [
   {
-    title: '桌面版入口',
+    title: '你平时怎么启动',
     bullets: [
-      '普通使用者推荐直接安装 Windows MSI 安装包，打开应用即可使用。',
-      '开发态推荐运行 `cd frontend && npm run desktop:dev`，Tauri 会自动启动前端和 FastAPI sidecar。',
+      '日常开发最常用命令：`cd frontend && npm run desktop:dev`。',
+      '这条命令会自动启动 Vite、Tauri 桌面壳和 FastAPI sidecar，不需要你再手动分别开前后端。',
+      '如果你只是想直接使用应用，安装 Windows MSI 后双击打开即可。',
+    ],
+  },
+  {
+    title: '旧脚本怎么用',
+    bullets: [
+      '单独调后端接口时，仍然可以运行 `.\\scripts\\run_backend.ps1`。',
+      '如果你继续运行 `.\\scripts\\run_frontend.ps1`，它现在本质上也会收口到桌面开发模式。',
       '桌面版数据写入用户目录，与仓库里的 `backend/data` 开发数据隔离。',
     ],
   },
@@ -44,12 +52,20 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
-    title: '开发与测试',
+    title: '什么时候跑回归测试',
     bullets: [
-      '前端构建：`cd frontend && npm run build`。',
-      '桌面开发：`cd frontend && npm run desktop:dev`。',
+      '`E2E` 是端到端回归测试，不是你每次日常启动都要跑的命令。',
+      '当你改了项目工作台、搜索、阅读器、自动保存、导航等关键路径时，再运行 `cd frontend && npx playwright test`。',
+      '第一次运行 Playwright，如果本机还没装浏览器，先执行 `cd frontend && npx playwright install chromium`。',
+      'Playwright E2E 和 pytest 都使用临时数据库，不会污染桌面版正式数据目录。',
+    ],
+  },
+  {
+    title: '其他常用命令',
+    bullets: [
+      '前端构建检查：`cd frontend && npm run build`。',
       '桌面打包：`cd frontend && npm run desktop:build`。',
-      'Playwright E2E 仍然使用浏览器方式回归主流程，不会污染桌面版的正式数据目录。',
+      '后端测试：`pytest backend/app/tests -q`。',
     ],
   },
 ];
