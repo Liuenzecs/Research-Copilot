@@ -1,21 +1,12 @@
 from __future__ import annotations
 
 from app.models.schemas.paper import SearchCandidateOut
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider
 
 
 class PaperSearchRecommender:
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     async def generate_reason(self, candidate: SearchCandidateOut, research_question: str = '') -> str:
         rule_summary = candidate.reason.summary or '与当前检索目标相关。'

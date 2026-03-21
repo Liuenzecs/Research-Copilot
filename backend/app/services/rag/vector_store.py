@@ -10,19 +10,39 @@ class VectorStore:
     def __init__(self) -> None:
         self._collection = None
         self._memory_fallback: dict[str, dict[str, Any]] = {}
+        self._last_error = ''
 
-    def _get_collection(self):
+    def ensure_ready(self) -> bool:
         if self._collection is not None:
-            return self._collection
+            return True
         try:
             import chromadb
 
             settings = get_settings()
             client = chromadb.PersistentClient(path=settings.vector_dir)
             self._collection = client.get_or_create_collection('memory_semantic_v1')
+            self._last_error = ''
+            return True
+        except Exception as exc:
+            self._last_error = str(exc)
+            return False
+
+    def is_initialized(self) -> bool:
+        return self._collection is not None
+
+    def status_snapshot(self) -> dict[str, Any]:
+        return {
+            'initialized': self._collection is not None,
+            'fallback_items': len(self._memory_fallback),
+            'last_error': self._last_error,
+        }
+
+    def _get_collection(self):
+        if self._collection is not None:
             return self._collection
-        except Exception:
-            return None
+        if self.ensure_ready():
+            return self._collection
+        return None
 
     def add(self, vector_id: str, text: str, metadata: dict[str, Any]) -> None:
         emb = embedding_service.embed(text)

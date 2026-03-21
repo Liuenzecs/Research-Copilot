@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from app.core.logging import setup_logging
 from app.db.init_db import initialize_database
 from app.db.session import SessionLocal
 from app.services.project.runtime import project_task_runtime
+from app.services.rag.vector_store import vector_store
 from app.services.project.service import project_service
 
 
@@ -36,7 +38,10 @@ async def lifespan(_: FastAPI):
     initialize_database()
     with SessionLocal() as db:
         project_service.mark_interrupted_project_tasks_failed(db)
+    vector_warmup = asyncio.create_task(asyncio.to_thread(vector_store.ensure_ready))
     yield
+    if not vector_warmup.done():
+        vector_warmup.cancel()
     await project_task_runtime.shutdown()
 
 

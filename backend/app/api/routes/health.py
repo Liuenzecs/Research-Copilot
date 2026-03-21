@@ -18,12 +18,13 @@ def health_check() -> dict:
         except Exception:
             db_ok = False
 
-    vector_ok = vector_store._get_collection() is not None  # noqa: SLF001
+    vector_status = vector_store.status_snapshot()
     settings = get_settings()
     return {
         'status': 'ok',
         'db': db_ok,
-        'vector': vector_ok,
+        'vector': bool(vector_status['initialized']),
+        'vector_state': vector_status,
         'providers': {
             'openai': bool(settings.openai_api_key),
             'deepseek': bool(settings.deepseek_api_key),

@@ -1,21 +1,12 @@
 ﻿from __future__ import annotations
 
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider
 from app.services.llm.prompts.repro_plan import REPRO_PLAN_SYSTEM, repro_plan_prompt
 
 
 class ReproductionPlanner:
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     async def plan(self, context: str) -> tuple[str, list[dict]]:
         provider = self._provider()

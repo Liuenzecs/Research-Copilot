@@ -6,8 +6,7 @@ import re
 from sqlalchemy import select
 
 from app.models.db.translation_record import TranslationRecord
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider, get_selection_provider
 from app.services.llm.prompts.translate import TRANSLATE_SYSTEM, translation_prompt
 
 
@@ -15,23 +14,11 @@ class TranslationService:
     DISCLAIMER = 'AI翻译，仅供辅助理解。英文原文始终保留。'
     FALLBACK_DISCLAIMER = '模型翻译暂不可用，当前结果为中文辅助占位，请优先参考英文原文。'
 
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     def selection_provider(self):
-        if self.deepseek.enabled:
-            return self.deepseek
-        if self.openai.enabled:
-            return self.openai
-        return None
+        return get_selection_provider()
 
     @staticmethod
     def _contains_chinese(text: str) -> bool:

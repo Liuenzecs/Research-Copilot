@@ -17,8 +17,7 @@ from app.models.db.research_project_record import (
 )
 from app.models.schemas.paper import PaperSearchRequest, SearchCandidateOut
 from app.models.schemas.project import ProjectSearchFilters
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider
 from app.services.paper_search.normalizer import build_provider_queries, build_query_profile
 from app.services.paper_search.service import paper_search_service
 
@@ -99,16 +98,8 @@ def _safe_json_object(raw_text: str) -> dict:
 
 
 class ProjectCurationService:
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     def _fallback_queries(self, user_need: str, selection_profile: str) -> list[str]:
         base_queries = build_provider_queries(user_need)

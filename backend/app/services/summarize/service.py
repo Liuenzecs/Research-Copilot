@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider
 from app.services.summarize.deep import fallback_deep, llm_deep
 from app.services.summarize.quick import fallback_quick, llm_quick
 from app.services.llm.prompts.summarize import (
@@ -15,16 +14,8 @@ from app.services.llm.prompts.summarize import (
 
 
 class SummarizeService:
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     async def quick(self, title: str, abstract: str, body: str) -> tuple[dict[str, str], str, str]:
         provider = self._provider()

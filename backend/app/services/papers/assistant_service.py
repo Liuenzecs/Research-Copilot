@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.db.paper_record import PaperRecord
 from app.models.db.research_project_record import ResearchProjectEvidenceItemRecord
 from app.models.schemas.paper import PaperAssistantReply
-from app.services.llm.deepseek_provider import DeepSeekProvider
-from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider_registry import get_primary_provider
 from app.services.pdf.reader import paper_reader_service
 from app.services.translation.service import translation_service
 
@@ -31,16 +30,8 @@ def _compact(text: str, limit: int = 240) -> str:
 
 
 class PaperAssistantService:
-    def __init__(self) -> None:
-        self.openai = OpenAIProvider()
-        self.deepseek = DeepSeekProvider()
-
     def _provider(self):
-        if self.openai.enabled:
-            return self.openai
-        if self.deepseek.enabled:
-            return self.deepseek
-        return None
+        return get_primary_provider()
 
     def _paragraph_text(self, paper: PaperRecord, paragraph_id: int | None) -> tuple[str, dict[str, Any]]:
         if not paragraph_id:
