@@ -19,17 +19,14 @@ class GitHubSearchResult:
 
 
 class GitHubService:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.token = settings.github_token
-
     def _headers(self) -> dict[str, str]:
+        token = get_settings().github_token
         headers = {
             'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
         }
-        if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
         return headers
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(1), reraise=True)
@@ -39,10 +36,11 @@ class GitHubService:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(url, params=params, headers=self._headers())
 
+        token = get_settings().github_token
         reset = resp.headers.get('x-ratelimit-reset', '')
         remaining = resp.headers.get('x-ratelimit-remaining', '')
         if resp.status_code == 403 and remaining == '0':
-            return GitHubSearchResult(items=[], rate_limited=True, rate_limit_reset=reset, used_token=bool(self.token))
+            return GitHubSearchResult(items=[], rate_limited=True, rate_limit_reset=reset, used_token=bool(token))
 
         resp.raise_for_status()
         payload = resp.json()
@@ -50,7 +48,7 @@ class GitHubService:
             items=payload.get('items', []),
             rate_limited=False,
             rate_limit_reset=reset,
-            used_token=bool(self.token),
+            used_token=bool(token),
         )
 
     async def fetch_readme(self, owner: str, repo: str) -> tuple[str, str]:

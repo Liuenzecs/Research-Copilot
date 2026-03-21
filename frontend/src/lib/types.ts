@@ -684,18 +684,44 @@ export type TranslationResult = {
 };
 
 export type ProviderSettings = {
+  primary_llm_provider: string;
+  selection_llm_provider: string;
+  llm_mode: string;
   openai_enabled: boolean;
   openai_model: string;
+  openai_api_key_configured: boolean;
   deepseek_enabled: boolean;
   deepseek_model: string;
+  deepseek_api_key_configured: boolean;
+  openai_compatible_enabled: boolean;
+  openai_compatible_model: string;
+  openai_compatible_base_url: string;
+  openai_compatible_api_key_configured: boolean;
   libretranslate_enabled: boolean;
   libretranslate_api_url: string;
+  libretranslate_api_key_configured: boolean;
   semantic_scholar_api_key_configured: boolean;
   github_token_configured: boolean;
-  llm_mode: string;
   runtime_db_url: string;
   runtime_db_path: string;
   runtime_data_dir: string;
   runtime_vector_dir: string;
+  runtime_settings_path: string;
   notes: string[];
 };
+
+export type ProviderSettingsUpdate = Partial<{
+  primary_llm_provider: string;
+  selection_llm_provider: string;
+  openai_api_key: string;
+  openai_model: string;
+  deepseek_api_key: string;
+  deepseek_model: string;
+  openai_compatible_api_key: string;
+  openai_compatible_model: string;
+  openai_compatible_base_url: string;
+  semantic_scholar_api_key: string;
+  github_token: string;
+  libretranslate_api_url: string;
+  libretranslate_api_key: string;
+}>;

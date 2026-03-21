@@ -28,5 +28,8 @@ def health_check() -> dict:
         'providers': {
             'openai': bool(settings.openai_api_key),
             'deepseek': bool(settings.deepseek_api_key),
+            'openai_compatible': bool(
+                settings.openai_compatible_api_key and settings.openai_compatible_base_url and settings.openai_compatible_model
+            ),
         },
     }

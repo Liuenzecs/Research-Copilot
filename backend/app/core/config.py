@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.runtime_settings import EDITABLE_RUNTIME_FIELDS, load_runtime_settings_overrides
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CANONICAL_RUNTIME_DATA_ROOT = PROJECT_ROOT / 'backend' / 'data'
 
@@ -33,6 +35,11 @@ class Settings(BaseSettings):
     openai_model: str = Field(default='gpt-4o-mini', alias='OPENAI_MODEL')
     deepseek_api_key: str = Field(default='', alias='DEEPSEEK_API_KEY')
     deepseek_model: str = Field(default='deepseek-chat', alias='DEEPSEEK_MODEL')
+    openai_compatible_api_key: str = Field(default='', alias='OPENAI_COMPAT_API_KEY')
+    openai_compatible_model: str = Field(default='', alias='OPENAI_COMPAT_MODEL')
+    openai_compatible_base_url: str = Field(default='', alias='OPENAI_COMPAT_BASE_URL')
+    primary_llm_provider: str = Field(default='openai', alias='PRIMARY_LLM_PROVIDER')
+    selection_llm_provider: str = Field(default='deepseek', alias='SELECTION_LLM_PROVIDER')
     semantic_scholar_api_key: str = Field(default='', alias='SEMANTIC_SCHOLAR_API_KEY')
 
     github_token: str = Field(default='', alias='GITHUB_TOKEN')
@@ -75,10 +82,20 @@ class Settings(BaseSettings):
         canonical_data_dir = self._resolve_project_path(self.data_dir, CANONICAL_RUNTIME_DATA_ROOT)
         self.data_dir = str(canonical_data_dir)
 
+        overrides = load_runtime_settings_overrides(canonical_data_dir)
+        for key, value in overrides.items():
+            if key not in EDITABLE_RUNTIME_FIELDS or not hasattr(self, key):
+                continue
+            if isinstance(value, str):
+                setattr(self, key, value.strip())
+            else:
+                setattr(self, key, value)
+
         canonical_vector_dir = self._resolve_project_path(self.vector_dir, canonical_data_dir / 'vectors')
         self.vector_dir = str(canonical_vector_dir)
 
         self.db_url = self._normalize_sqlite_url(self.db_url, canonical_data_dir)
+        self.openai_compatible_base_url = self.openai_compatible_base_url.rstrip('/')
 
     def ensure_dirs(self) -> None:
         base = Path(self.data_dir)
@@ -100,3 +117,7 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.ensure_dirs()
     return settings
+
+
+def reset_settings_cache() -> None:
+    get_settings.cache_clear()
