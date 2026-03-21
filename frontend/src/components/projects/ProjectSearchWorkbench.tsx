@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import Button from "@/components/common/Button";
@@ -24,6 +25,7 @@ import {
   updateProjectSavedSearch,
   updateProjectSavedSearchCandidate,
 } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { paperReaderPath } from "@/lib/routes";
 import type {
   PaperCitationTrail,
@@ -124,6 +126,13 @@ function aiBucketLabel(bucket: string) {
   return AI_BUCKET_OPTIONS.find((item) => item.key === bucket)?.label ?? bucket;
 }
 
+function topicScoreLabel(score: number) {
+  if (score >= 0.9) return "主题非常贴合";
+  if (score >= 0.7) return "主题较贴合";
+  if (score >= 0.5) return "主题基本贴合";
+  return "主题贴合度一般";
+}
+
 export default function ProjectSearchWorkbench({
   projectId,
   project,
@@ -135,12 +144,12 @@ export default function ProjectSearchWorkbench({
   initialQuery?: string;
   onProjectMutated?: () => Promise<void> | void;
 }) {
+  const queryClient = useQueryClient();
+  const searchAbortRef = useRef<AbortController | null>(null);
   const [query, setQuery] = useState(initialQuery ?? "");
   const [filters, setFilters] = useState<PaperSearchFilters>(normalizeFilters());
   const [sortMode, setSortMode] = useState<PaperSearchSortMode | string>("relevance");
   const [savedTitle, setSavedTitle] = useState("");
-  const [savedSearches, setSavedSearches] = useState<ProjectSavedSearch[]>([]);
-  const [runs, setRuns] = useState<ProjectSearchRun[]>([]);
   const [localRecent, setLocalRecent] = useState<LocalRecent[]>([]);
   const [activeSavedSearch, setActiveSavedSearch] = useState<ProjectSavedSearch | null>(null);
   const [activeRun, setActiveRun] = useState<ProjectSearchRun | null>(null);
@@ -160,6 +169,18 @@ export default function ProjectSearchWorkbench({
   const [aiPreviewBucket, setAiPreviewBucket] = useState<(typeof AI_BUCKET_OPTIONS)[number]["key"]>("all");
 
   const hasProject = Boolean(projectId);
+  const savedSearchesQuery = useQuery({
+    queryKey: projectId ? queryKeys.projects.savedSearches(projectId) : ["projects", "saved-searches", "inactive"],
+    queryFn: ({ signal }) => listProjectSavedSearches(projectId!, { signal }),
+    enabled: Boolean(projectId),
+  });
+  const runsQuery = useQuery({
+    queryKey: projectId ? queryKeys.projects.searchRuns(projectId) : ["projects", "search-runs", "inactive"],
+    queryFn: ({ signal }) => listProjectSearchRuns(projectId!, { signal }),
+    enabled: Boolean(projectId),
+  });
+  const savedSearches = savedSearchesQuery.data ?? [];
+  const runs = runsQuery.data ?? [];
   const isAiPreview = activeSavedSearch?.search_mode === "ai_curated";
   const displayedItems = useMemo(
     () =>
@@ -178,9 +199,10 @@ export default function ProjectSearchWorkbench({
 
   async function refreshCollections() {
     if (!projectId) return;
-    const [nextSaved, nextRuns] = await Promise.all([listProjectSavedSearches(projectId), listProjectSearchRuns(projectId)]);
-    setSavedSearches(nextSaved);
-    setRuns(nextRuns);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.savedSearches(projectId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.searchRuns(projectId) }),
+    ]);
   }
 
   function applySavedSearchDetail(payload: ProjectSavedSearchDetail) {
@@ -215,9 +237,16 @@ export default function ProjectSearchWorkbench({
   }, [aiNeed, initialQuery, project]);
 
   useEffect(() => {
-    if (projectId) void refreshCollections();
-    else setLocalRecent(readLocalRecent());
+    if (!projectId) {
+      setLocalRecent(readLocalRecent());
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    return () => {
+      searchAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     setSelectedPaperIds((current) => current.filter((paperId) => items.some((item) => item.paper.id === paperId)));
@@ -235,9 +264,16 @@ export default function ProjectSearchWorkbench({
     setLoading(true);
     setError("");
     setNotice("");
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
     try {
       if (projectId) {
-        const payload = await createProjectSearchRun(projectId, { query: query.trim(), filters, sort_mode: sortMode });
+        const payload = await createProjectSearchRun(
+          projectId,
+          { query: query.trim(), filters, sort_mode: sortMode },
+          { signal: controller.signal },
+        );
         setActiveSavedSearch(null);
         setActiveRun(payload.run);
         setSavedTitle("");
@@ -260,7 +296,7 @@ export default function ProjectSearchWorkbench({
           reading_status: filters.reading_status,
           repro_interest: filters.repro_interest,
           sort_mode: sortMode,
-        });
+        }, LIMIT, { signal: controller.signal });
         setItems(payload.items);
         setWarnings(payload.warnings ?? []);
         const nextRecent = [{ query: query.trim(), filters, sort_mode: sortMode, updated_at: new Date().toISOString() }, ...readLocalRecent()]
@@ -271,9 +307,15 @@ export default function ProjectSearchWorkbench({
         setNotice(payload.items.length ? `已找到 ${payload.items.length} 条候选。` : "当前没有命中结果。");
       }
     } catch (runError) {
+      if (runError instanceof DOMException && runError.name === "AbortError") {
+        return;
+      }
       setError((runError as Error).message || "搜索失败");
     } finally {
-      setLoading(false);
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -282,7 +324,10 @@ export default function ProjectSearchWorkbench({
     setBusy("saved");
     setError("");
     try {
-      const payload = await getProjectSavedSearch(projectId, searchId);
+      const payload = await queryClient.fetchQuery({
+        queryKey: queryKeys.projects.savedSearchDetail(projectId, searchId),
+        queryFn: ({ signal }) => getProjectSavedSearch(projectId, searchId, { signal }),
+      });
       applySavedSearchDetail(payload);
       setNotice(`已打开“${payload.saved_search.title}”。`);
     } catch (loadError) {
@@ -457,6 +502,10 @@ export default function ProjectSearchWorkbench({
             }
           : current,
       );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
+      ]);
       await Promise.resolve(onProjectMutated?.());
       setNotice(`已加入 ${targetItems.length} 篇论文。`);
     } catch (addError) {
@@ -477,6 +526,7 @@ export default function ProjectSearchWorkbench({
           .map((item) => updateProjectSavedSearchCandidate(projectId, activeSavedSearch.id, item.candidate_id!, { triage_status: nextStatus })),
       );
       setItems((current) => updated.reduce((next, item) => patchItems(next, item), current));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects.savedSearchDetail(projectId, activeSavedSearch.id) });
       setNotice("已批量更新候选状态。");
     } catch (triageError) {
       setError((triageError as Error).message || "批量更新失败");
@@ -492,6 +542,7 @@ export default function ProjectSearchWorkbench({
     try {
       const payload = await generateProjectSavedSearchCandidateAiReason(projectId, activeSavedSearch.id, candidate.candidate_id);
       setItems((current) => patchItems(current, payload.item));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects.savedSearchDetail(projectId, activeSavedSearch.id) });
       setNotice("已生成 AI 推荐理由。");
     } catch (aiError) {
       setError((aiError as Error).message || "生成 AI 推荐理由失败");
@@ -504,7 +555,10 @@ export default function ProjectSearchWorkbench({
     setBusy("trail");
     setError("");
     try {
-      const payload = await getPaperCitationTrail(candidate.paper.id);
+      const payload = await queryClient.fetchQuery({
+        queryKey: queryKeys.papers.citationTrail(candidate.paper.id),
+        queryFn: ({ signal }) => getPaperCitationTrail(candidate.paper.id, { signal }),
+      });
       setTrail(payload);
       setTrailSelection([]);
     } catch (trailError) {
@@ -710,6 +764,8 @@ export default function ProjectSearchWorkbench({
                 </div>
               </div>
               <strong>{candidate.paper.title_en}</strong>
+              <div className="subtle">主题分 {candidate.reason.topic_match_score.toFixed(2)} · {topicScoreLabel(candidate.reason.topic_match_score)}</div>
+              <div className="subtle">{candidate.reason.ranking_reason || candidate.reason.filter_reason}</div>
               <div className="subtle">{candidate.paper.authors || "作者未知"} · {candidate.paper.year ?? "年份未知"} · 引用 {candidate.paper.citation_count ?? 0}</div>
               <div className="subtle">摘要 {candidate.summary_count} · 心得 {candidate.reflection_count} · 复现 {candidate.reproduction_count}</div>
               <div className="project-chip-row">{chips(candidate).map((chip) => <span key={`${candidate.paper.id}-${chip}`} className="project-filter-chip is-static">{chip}</span>)}</div>
@@ -722,7 +778,16 @@ export default function ProjectSearchWorkbench({
             <>
               <div className="projects-section-header"><div><h3 className="title" style={{ fontSize: 20 }}>{activeCandidate.paper.title_en}</h3><p className="subtle" style={{ margin: "6px 0 0" }}>{activeCandidate.paper.authors || "作者未知"} · {activeCandidate.paper.venue || "Venue 未知"} · {activeCandidate.paper.year ?? "年份未知"}</p></div><span className="project-stat-chip">排序 #{activeCandidate.rank_position}</span></div>
               <div className="subtle">{activeCandidate.paper.abstract_en || "当前没有摘要。"}</div>
-              <div className="project-search-detail-card"><strong>为什么这篇值得看</strong><div className="subtle">{activeCandidate.reason.summary || "系统会展示规则解释。"}</div><div className="project-chip-row">{chips(activeCandidate).map((chip) => <span key={`inspector-${chip}`} className="project-filter-chip is-static">{chip}</span>)}</div></div>
+              <div className="project-search-detail-card">
+                <strong>为什么这篇值得看</strong>
+                <div className="subtle">{activeCandidate.reason.summary || "系统会展示规则解释。"}</div>
+                <div className="subtle">主题分 {activeCandidate.reason.topic_match_score.toFixed(2)} · {activeCandidate.reason.passed_topic_gate ? "已通过高精度主题门槛" : "未通过高精度主题门槛"}</div>
+                <div className="subtle">{activeCandidate.reason.ranking_reason || activeCandidate.reason.filter_reason}</div>
+                {activeCandidate.reason.matched_terms.length > 0 ? (
+                  <div className="subtle">命中主题词：{activeCandidate.reason.matched_terms.join("、")}</div>
+                ) : null}
+                <div className="project-chip-row">{chips(activeCandidate).map((chip) => <span key={`inspector-${chip}`} className="project-filter-chip is-static">{chip}</span>)}</div>
+              </div>
               <div className="project-search-detail-card"><strong>AI 推荐理由</strong><div className="subtle">{activeCandidate.ai_reason_text || "默认先展示规则解释；需要时可按需生成 AI 推荐理由。"}</div><div className="projects-inline-actions"><Button className="secondary" data-testid="generate-ai-reason-button" type="button" onClick={() => void generateAiReason(activeCandidate)} disabled={!projectId || !activeSavedSearch || !activeCandidate.candidate_id || busy !== ""}>{busy === `ai-${activeCandidate.paper.id}` ? "生成中..." : "生成 AI 推荐理由"}</Button><Link className="button secondary" to={paperReaderPath(activeCandidate.paper.id, undefined, undefined, projectId)}>打开阅读器</Link>{projectId ? <Button type="button" onClick={() => void addCandidatesToProject([activeCandidate])} disabled={busy !== ""}>{activeCandidate.is_in_project ? "已在项目中" : "加入项目"}</Button> : null}<Button className="secondary" data-testid="load-citation-trail-button" type="button" onClick={() => void loadTrail(activeCandidate)} disabled={busy !== ""}>{busy === "trail" ? "加载中..." : "查看单跳引文链"}</Button></div></div>
               <div className="project-search-detail-card">
                 <div className="projects-section-header"><div><strong>单跳引文链</strong><div className="subtle">展示参考文献和被引论文各一跳。</div></div>{projectId ? <Button className="secondary" data-testid="citation-batch-add-button" type="button" onClick={() => void addCandidatesToProject(selectedTrailItems)} disabled={!selectedTrailItems.length || busy !== ""}>{busy === "add" ? "加入中..." : `批量加入项目 (${selectedTrailItems.length})`}</Button> : null}</div>

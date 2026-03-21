@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import Button from "@/components/common/Button";
@@ -20,6 +22,7 @@ import {
   translateSegmentStream,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/presentation";
+import { queryKeys } from "@/lib/queryKeys";
 import { paperReaderPath, projectPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -29,6 +32,8 @@ import {
   PaperReaderFigure,
   PaperReaderPagePreview,
   PaperReaderParagraph,
+  ResearchProjectListItem,
+  ResearchProjectWorkspace,
   TranslationResult,
 } from "@/lib/types";
 
@@ -137,6 +142,7 @@ export default function PaperReaderScreen({
   projectId?: number | null;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   usePageTitle("论文阅读器");
 
   const articleRef = useRef<HTMLDivElement | null>(null);
@@ -166,30 +172,48 @@ export default function PaperReaderScreen({
   const [translationDrawerOpen, setTranslationDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
+  const readerQuery = useQuery({
+    queryKey: queryKeys.papers.reader(paperId),
+    queryFn: ({ signal }) => getPaperReader(paperId, { signal }),
+  });
 
   const loadReader = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const payload = await getPaperReader(paperId);
+      const payload = await queryClient.fetchQuery({
+        queryKey: queryKeys.papers.reader(paperId),
+        queryFn: ({ signal }) => getPaperReader(paperId, { signal }),
+      });
       setReader(payload);
     } catch (loadError) {
       setError((loadError as Error).message || "论文阅读页加载失败，请稍后重试。");
     } finally {
       setLoading(false);
     }
-  }, [paperId]);
+  }, [paperId, queryClient]);
 
   useEffect(() => {
-    void loadReader();
-  }, [loadReader]);
+    if (readerQuery.data) {
+      setError("");
+      setLoading(false);
+      setReader(readerQuery.data);
+    }
+  }, [readerQuery.data]);
+
+  useEffect(() => {
+    if (readerQuery.error) {
+      setLoading(false);
+      setError((readerQuery.error as Error).message || "论文阅读页加载失败，请稍后重试。");
+    }
+  }, [readerQuery.error]);
 
   useEffect(() => {
     let cancelled = false;
     void markPaperOpened(paperId)
       .then((payload) => {
         if (cancelled) return;
-        setReader((current) =>
+        queryClient.setQueryData<PaperReader | null>(queryKeys.papers.reader(paperId), (current) =>
           current && current.paper.id === paperId
             ? {
                 ...current,
@@ -207,7 +231,7 @@ export default function PaperReaderScreen({
     return () => {
       cancelled = true;
     };
-  }, [paperId]);
+  }, [paperId, queryClient]);
 
   const pageNumbers = useMemo(() => {
     const source = reader?.pages.length
@@ -478,7 +502,9 @@ export default function PaperReaderScreen({
       setAnnotationDraft("");
       setNotice("当前段落批注已保存。");
       await loadReader();
-      focusParagraph(activeParagraphId, { behavior: "auto", updateUrl: false });
+      if (activeParagraphId) {
+        focusParagraph(activeParagraphId, { behavior: "auto", updateUrl: false });
+      }
     } catch (annotationError) {
       setLocatorError((annotationError as Error).message || "保存批注失败，请稍后重试。");
     } finally {
@@ -491,8 +517,12 @@ export default function PaperReaderScreen({
       return;
     }
 
-    const paragraphId = activeParagraphId ?? selection?.paragraphId ?? null;
-    const excerpt = (selectedQuoteForAnnotation || selection?.text || activeParagraph?.text || "").trim();
+    const fallbackActiveParagraphId = Number(
+      articleRef.current?.querySelector<HTMLElement>(".reader-text-block-active")?.dataset.paragraphId ?? 0,
+    ) || null;
+    const paragraphId = activeParagraphId ?? selection?.paragraphId ?? fallbackActiveParagraphId;
+    const resolvedParagraph = paragraphId ? paragraphMap.get(paragraphId) ?? activeParagraph : activeParagraph;
+    const excerpt = (selectedQuoteForAnnotation || selection?.text || resolvedParagraph?.text || "").trim();
 
     if (!paragraphId || !excerpt) {
       setLocatorError("请先选中文本，或先激活一个段落。");
@@ -502,7 +532,7 @@ export default function PaperReaderScreen({
     setProjectEvidenceSaving(true);
     setLocatorError("");
     try {
-      await createProjectEvidence(projectId, {
+      const evidence = await createProjectEvidence(projectId, {
         paper_id: paperId,
         paragraph_id: paragraphId,
         kind: "claim",
@@ -511,6 +541,38 @@ export default function PaperReaderScreen({
         source_label: activeParagraph ? `阅读器段落 p.${activeParagraph.page_no}` : "阅读器选区",
       });
       setNotice("已加入当前项目证据板。");
+      queryClient.setQueryData<ResearchProjectWorkspace | null>(queryKeys.projects.workspace(projectId), (current) => {
+        if (!current || current.evidence_items.some((item) => item.id === evidence.id)) {
+          return current;
+        }
+
+        return {
+          ...current,
+          papers: current.papers.map((item) =>
+            item.paper.id === paperId
+              ? {
+                  ...item,
+                  evidence_count: item.evidence_count + 1,
+                }
+              : item,
+          ),
+          evidence_items: [...current.evidence_items, evidence].sort((left, right) => left.sort_order - right.sort_order),
+        };
+      });
+      queryClient.setQueryData<ResearchProjectListItem[] | undefined>(queryKeys.projects.list(), (current) =>
+        current?.map((item) =>
+          item.id === projectId
+            ? {
+                ...item,
+                evidence_count: item.evidence_count + 1,
+              }
+            : item,
+        ),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
+      ]);
       setAnnotationDraft("");
     } catch (projectError) {
       setLocatorError((projectError as Error).message || "加入项目证据板失败，请稍后重试。");
@@ -831,7 +893,7 @@ export default function PaperReaderScreen({
                       paragraphRefs.current[paragraph.paragraph_id] = element;
                     },
                     () => {
-                      setActiveParagraphId(paragraph.paragraph_id);
+                      flushSync(() => setActiveParagraphId(paragraph.paragraph_id));
                       updateReaderUrl(paragraph.paragraph_id);
                     },
                   );

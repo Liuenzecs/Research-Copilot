@@ -52,6 +52,10 @@ class PaperSearchReasonOut(BaseModel):
     merged_sources: list[str] = Field(default_factory=list)
     duplicate_count: int = 1
     score_breakdown: dict[str, float] = Field(default_factory=dict)
+    topic_match_score: float = 0.0
+    passed_topic_gate: bool = True
+    filter_reason: str = ''
+    ranking_reason: str = ''
 
 
 class SearchCandidateOut(BaseModel):

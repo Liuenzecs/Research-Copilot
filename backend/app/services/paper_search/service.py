@@ -416,6 +416,10 @@ class PaperSearchService:
             merged_sources=list(ranked.reason.merged_sources),
             duplicate_count=ranked.reason.duplicate_count,
             score_breakdown=dict(ranked.reason.score_breakdown),
+            topic_match_score=ranked.reason.topic_match_score,
+            passed_topic_gate=ranked.reason.passed_topic_gate,
+            filter_reason=ranked.reason.filter_reason,
+            ranking_reason=ranked.reason.ranking_reason,
         )
         return SearchCandidateOut(
             candidate_id=candidate_id,
@@ -454,7 +458,36 @@ class PaperSearchService:
                 stored_ranked_by_paper_id[row.id] = (row, ranked)
 
         stored_ranked = list(stored_ranked_by_paper_id.values())
-        stored_ranked.sort(key=lambda item: (item[1].rank_score, item[0].year or 0, item[0].citation_count or 0), reverse=True)
+        if payload.sort_mode == 'year_desc':
+            stored_ranked.sort(
+                key=lambda item: (
+                    item[0].year or 0,
+                    item[1].reason.topic_match_score,
+                    item[1].rank_score,
+                    item[0].citation_count or 0,
+                ),
+                reverse=True,
+            )
+        elif payload.sort_mode == 'citation_desc':
+            stored_ranked.sort(
+                key=lambda item: (
+                    item[0].citation_count or 0,
+                    item[1].reason.topic_match_score,
+                    item[1].rank_score,
+                    item[0].year or 0,
+                ),
+                reverse=True,
+            )
+        else:
+            stored_ranked.sort(
+                key=lambda item: (
+                    item[1].reason.topic_match_score,
+                    item[1].rank_score,
+                    item[0].year or 0,
+                    item[0].citation_count or 0,
+                ),
+                reverse=True,
+            )
 
         paper_ids = [row.id for row, _ in stored_ranked]
         status_maps = self._local_status_maps(db, paper_ids, payload.project_id)

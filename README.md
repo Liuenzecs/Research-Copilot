@@ -11,7 +11,7 @@ Research Copilot 当前主线已经切到桌面版：
 
 ## 你平时怎么启动
 
-如果你是日常开发，最常用的就是这一条：
+如果你是日常开发，最常用的就是这条：
 
 ```powershell
 cd frontend
@@ -24,7 +24,7 @@ npm run desktop:dev
 - 拉起 Tauri 桌面壳
 - 由桌面壳自动启动 FastAPI sidecar
 
-桌面版现在会先显示启动页，再在后台等待本地后端就绪。即使后端启动失败，你也能直接看到当前阶段、错误提示、日志目录和重试按钮，不会再长时间黑屏等待。
+桌面版现在会先显示启动页，再在后台等待本地后端就绪。即使后端启动失败，你也能直接看到当前阶段、错误提示、日志入口和重试按钮，不会再长时间黑屏等待。
 
 也就是说，当前桌面主线下，你平时最推荐的启动方式就是 `npm run desktop:dev`，不需要再手动分别开前后端。
 
@@ -42,11 +42,11 @@ npm run desktop:dev
 .\scripts\run_frontend.ps1
 ```
 
-它现在实际也会收口到桌面开发模式，本质上还是帮你跑 `cd frontend && npm run desktop:dev`。
+它现在本质上也会收口到桌面开发模式，也就是帮你跑 `cd frontend && npm run desktop:dev`。
 
 ## 普通使用者怎么打开
 
-如果你不是在开发，而是想直接用应用，推荐安装 MSI 安装包。
+如果你不是在开发，而是想直接用应用，推荐安装 MSI 安装包：
 
 - 安装后直接打开应用即可
 - 不需要先手动启动后端
@@ -54,14 +54,14 @@ npm run desktop:dev
 
 ## 怎么打包桌面安装包
 
-构建 Windows MSI：
+日常增量打包：
 
 ```powershell
 cd frontend
 npm run desktop:build
 ```
 
-如果你怀疑当前产物像旧包，例如 exe / msi 时间不对、启动行为和最新代码不一致、MSI 打包遇到文件锁，或 sidecar 看起来像旧版本，请改用全量 fresh build：
+如果你怀疑当前产物像旧包，例如 exe / msi 时间不对、启动行为和最新代码不一致、MSI 打包遇到文件锁，或者 sidecar 看起来像旧版本，请改用全量 fresh build：
 
 ```powershell
 cd frontend
@@ -74,6 +74,21 @@ npm run desktop:build:fresh
 cd frontend
 npm run desktop:backend:bundle
 ```
+
+## `target` 要不要删
+
+一般不用删。
+
+- `frontend/src-tauri/target` 是桌面构建缓存的主要来源
+- 日常开发和打包，优先直接用 `desktop:dev` / `desktop:build`
+- 只有出现下面这些情况时，再用 `desktop:build:fresh`
+
+适合 fresh build 的场景：
+
+- exe 看起来像旧包
+- 设置页显示的构建时间或 commit 不对
+- MSI 文件被占用
+- sidecar 行为异常，怀疑缓存没刷干净
 
 ## 什么时候才需要跑 E2E
 
@@ -143,8 +158,7 @@ pytest backend/app/tests -q
 - 项目首页只显示新的项目对象
 - 历史阅读、心得、复现、记忆不会自动迁成项目
 
-如果你想确认当前桌面版到底用了哪个数据目录和数据库路径，直接到应用里的“设置”页面查看。
-设置页现在也会显示当前运行构建的版本、构建时间、Git commit、构建模式和可执行文件路径，方便确认“这是不是最新打包出来的桌面版”。
+如果你想确认当前桌面版到底用了哪个数据目录和数据库路径，直接到应用里的“设置”页面查看。设置页现在也会显示当前运行构建的版本、构建时间、Git commit、构建模式和可执行文件路径，方便确认“这是不是最新打包出来的桌面版”。
 
 ## 当前产品口径
 

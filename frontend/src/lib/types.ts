@@ -44,6 +44,10 @@ export type PaperSearchReason = {
   merged_sources: string[];
   duplicate_count: number;
   score_breakdown: Record<string, number>;
+  topic_match_score: number;
+  passed_topic_gate: boolean;
+  filter_reason: string;
+  ranking_reason: string;
 };
 
 export type SearchCandidate = {

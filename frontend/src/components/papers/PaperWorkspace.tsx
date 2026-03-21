@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
 import Button from '@/components/common/Button';
@@ -20,6 +21,7 @@ import {
   updatePaperResearchState,
 } from '@/lib/api';
 import { formatDateTime, summaryTypeLabel, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   readingStatusLabel,
   READING_STATUS_OPTIONS,
@@ -127,8 +129,9 @@ export default function PaperWorkspaceView({
   projectId = null,
 }: PaperWorkspaceViewProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [workspace, setWorkspace] = useState<PaperWorkspaceData | null>(initialWorkspace);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(paperId) && !initialWorkspace);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
@@ -154,6 +157,11 @@ export default function PaperWorkspaceView({
   const [appliedRequestedSummaryKey, setAppliedRequestedSummaryKey] = useState('');
   const [streamingSummary, setStreamingSummary] = useState<{ type: 'quick' | 'deep'; content: string } | null>(null);
   const [lastCreatedReflectionId, setLastCreatedReflectionId] = useState<number | null>(null);
+  const workspaceQuery = useQuery({
+    queryKey: paperId ? queryKeys.papers.workspace(paperId) : ['papers', 'workspace', 'inactive'],
+    queryFn: ({ signal }) => getPaperWorkspace(paperId!, { signal }),
+    enabled: Boolean(paperId),
+  });
 
   const summaries = workspace?.summaries ?? [];
   const effectiveSummarySelection: Exclude<SummarySelection, 'auto'> =
@@ -184,6 +192,21 @@ export default function PaperWorkspaceView({
     });
   }
 
+  useEffect(() => {
+    if (workspaceQuery.data) {
+      setError('');
+      setLoading(false);
+      applyWorkspaceState(workspaceQuery.data);
+    }
+  }, [workspaceQuery.data]);
+
+  useEffect(() => {
+    if (workspaceQuery.error) {
+      setLoading(false);
+      setError((workspaceQuery.error as Error).message);
+    }
+  }, [workspaceQuery.error]);
+
   async function reload() {
     if (!paperId) {
       setWorkspace(null);
@@ -193,7 +216,10 @@ export default function PaperWorkspaceView({
     setLoading(true);
     setError('');
     try {
-      const data = await getPaperWorkspace(paperId);
+      const data = await queryClient.fetchQuery({
+        queryKey: queryKeys.papers.workspace(paperId),
+        queryFn: ({ signal }) => getPaperWorkspace(paperId, { signal }),
+      });
       applyWorkspaceState(data);
     } catch (loadError) {
       setError((loadError as Error).message);
@@ -210,11 +236,9 @@ export default function PaperWorkspaceView({
 
     if (initialWorkspace && initialWorkspace.paper.id === paperId) {
       applyWorkspaceState(initialWorkspace);
-      return;
+      queryClient.setQueryData(queryKeys.papers.workspace(paperId), initialWorkspace);
     }
-
-    void reload();
-  }, [initialWorkspace, paperId]);
+  }, [initialWorkspace, paperId, queryClient]);
 
   useEffect(() => {
     if (!paperId) return;
@@ -222,7 +246,7 @@ export default function PaperWorkspaceView({
     void markPaperOpened(paperId)
       .then((payload) => {
         if (cancelled) return;
-        setWorkspace((current) =>
+        queryClient.setQueryData<PaperWorkspaceData | null>(queryKeys.papers.workspace(paperId), (current) =>
           current && current.paper.id === paperId
             ? {
                 ...current,
@@ -240,7 +264,7 @@ export default function PaperWorkspaceView({
     return () => {
       cancelled = true;
     };
-  }, [paperId]);
+  }, [paperId, queryClient]);
 
   useEffect(() => {
     setLastCreatedReflectionId(null);

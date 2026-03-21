@@ -167,6 +167,8 @@ class ProjectCurationService:
         haystack = f"{item.paper.title_en} {item.paper.abstract_en}".lower()
         if any(query in haystack for query in profile.normalized_queries if query):
             return True
+        if any(phrase in haystack for phrase in profile.topic_phrases if phrase):
+            return True
         return any(token in haystack for token in profile.query_tokens if len(token) >= 2)
 
     def _repro_score(self, item: SearchCandidateOut) -> float:

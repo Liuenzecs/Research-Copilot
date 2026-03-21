@@ -40,6 +40,9 @@ def test_search_respects_requested_sources_and_returns_rich_candidates(client, m
     assert data[0]['paper']['source'] == 'arxiv'
     assert data[0]['reason']['matched_terms'] == ['test']
     assert 'title' in data[0]['reason']['matched_fields']
+    assert data[0]['reason']['topic_match_score'] > 0
+    assert data[0]['reason']['filter_reason'] == 'passed_topic_gate'
+    assert data[0]['reason']['ranking_reason']
     assert calls['arxiv'] == 1
     assert calls['semantic'] == 1
     assert calls['openalex'] == 1
@@ -89,3 +92,6 @@ def test_search_expands_chinese_query_and_filters_irrelevant_results(client, mon
     assert any('large language model' in query for query in seen_queries)
     assert titles[0] == 'Large Language Models are Zero-Shot Reasoners'
     assert 'The visual dehumanisation of refugees' not in titles
+    assert data[0]['reason']['passed_topic_gate'] is True
+    assert data[0]['reason']['topic_match_score'] > 0
+    assert data[0]['reason']['ranking_reason']

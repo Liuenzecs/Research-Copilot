@@ -27,6 +27,7 @@ def test_exact_title_should_rank_above_newer_partial_matches():
 
     assert ranked[0].paper.source_id == '1706.03762'
     assert ranked[0].paper.title_en == 'Attention Is All You Need'
+    assert ranked[0].reason.topic_match_score > ranked[1].reason.topic_match_score
 
 
 def test_chinese_query_expands_to_llm_terms():
@@ -60,3 +61,6 @@ def test_chinese_query_filters_irrelevant_high_citation_noise():
 
     assert titles[0] == 'Large Language Models are Zero-Shot Reasoners'
     assert 'The visual dehumanisation of refugees' not in titles
+    assert ranked[0].reason.passed_topic_gate is True
+    assert ranked[0].reason.filter_reason == 'passed_topic_gate'
+    assert ranked[0].reason.topic_match_score > 0

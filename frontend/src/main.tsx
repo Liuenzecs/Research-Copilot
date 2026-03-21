@@ -1,7 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
 
 import DesktopApp from '@/desktop/DesktopApp';
+import { queryClient } from '@/lib/queryClient';
 
 import '@/styles/globals.css';
 
@@ -12,6 +14,8 @@ if (!root) {
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <DesktopApp />
+    <QueryClientProvider client={queryClient}>
+      <DesktopApp />
+    </QueryClientProvider>
   </React.StrictMode>,
 );

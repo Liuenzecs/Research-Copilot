@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
   DndContext,
@@ -48,6 +49,7 @@ import {
   updateProjectEvidence,
   updateProjectOutput,
 } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { memoryPath, paperReaderPath, projectPath, reflectionsPath, reproductionPath, weeklyReportPath } from "@/lib/routes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type {
@@ -391,6 +393,7 @@ function SortableEvidenceCard({
 
 export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   usePageTitle("项目工作台");
 
   const paperPoolRef = useRef<HTMLDivElement | null>(null);
@@ -455,6 +458,11 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const reviewDraftRef = useRef(reviewDraft);
   const compareSaveStateRef = useRef(compareSaveState);
   const reviewSaveStateRef = useRef(reviewSaveState);
+  const workspaceQuery = useQuery({
+    queryKey: queryKeys.projects.workspace(projectId),
+    queryFn: ({ signal }) => getProjectWorkspace(projectId, { signal }),
+    refetchOnMount: "always",
+  });
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -585,11 +593,34 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     }
   }
 
+  useEffect(() => {
+    if (workspaceQuery.data) {
+      setError("");
+      setLoading(false);
+      applyWorkspace(workspaceQuery.data);
+    }
+  }, [workspaceQuery.data]);
+
+  useEffect(() => {
+    if (workspaceQuery.error) {
+      setLoading(false);
+      setError((workspaceQuery.error as Error).message || "项目工作台加载失败");
+    }
+  }, [workspaceQuery.error]);
+
   async function loadWorkspace(options?: { quiet?: boolean }) {
     if (!options?.quiet) setLoading(true);
     setError("");
     try {
-      const nextWorkspace = await getProjectWorkspace(projectId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
+      ]);
+      const nextWorkspace = await queryClient.fetchQuery({
+        queryKey: queryKeys.projects.workspace(projectId),
+        queryFn: ({ signal }) => getProjectWorkspace(projectId, { signal }),
+        staleTime: 0,
+      });
       applyWorkspace(nextWorkspace);
     } catch (loadError) {
       setError((loadError as Error).message || "项目工作台加载失败");
@@ -599,8 +630,6 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }
 
   useEffect(() => {
-    void loadWorkspace();
-
     return () => {
       streamAbortRef.current?.abort();
       if (fallbackPollRef.current) window.clearTimeout(fallbackPollRef.current);
