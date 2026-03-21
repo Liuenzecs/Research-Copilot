@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CANONICAL_RUNTIME_DATA_ROOT = PROJECT_ROOT / 'backend' / 'data'
-LEGACY_RUNTIME_DATA_ROOT = PROJECT_ROOT / 'backend' / 'backend' / 'data'
 
 
 class Settings(BaseSettings):
@@ -44,15 +43,6 @@ class Settings(BaseSettings):
     default_search_sources: str = 'arxiv,semantic_scholar'
 
     @staticmethod
-    def _collapse_legacy_runtime_path(path: Path, canonical_root: Path) -> Path:
-        resolved = path.resolve()
-        try:
-            relative = resolved.relative_to(LEGACY_RUNTIME_DATA_ROOT.resolve())
-        except ValueError:
-            return resolved
-        return (canonical_root.resolve() / relative).resolve()
-
-    @staticmethod
     def _resolve_project_path(value: str, fallback: Path) -> Path:
         clean = (value or '').strip()
         if not clean:
@@ -60,7 +50,7 @@ class Settings(BaseSettings):
         path = Path(clean).expanduser()
         if not path.is_absolute():
             path = (PROJECT_ROOT / path).resolve()
-        return Settings._collapse_legacy_runtime_path(path, CANONICAL_RUNTIME_DATA_ROOT)
+        return path.resolve()
 
     @staticmethod
     def _normalize_sqlite_url(value: str, data_root: Path) -> str:
@@ -77,7 +67,7 @@ class Settings(BaseSettings):
         db_path = Path(raw_path).expanduser()
         if not db_path.is_absolute():
             db_path = (PROJECT_ROOT / db_path).resolve()
-        db_path = Settings._collapse_legacy_runtime_path(db_path, data_root)
+        db_path = db_path.resolve()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path.as_posix()}"
 
