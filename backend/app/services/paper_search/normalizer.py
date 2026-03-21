@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.models.schemas.paper import PaperSearchReasonOut
+from app.services.paper_search.classic_seeds import match_classic_seed
 from app.services.paper_search.base import SearchPaper
 
 _CJK_RE = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff]')
@@ -61,6 +62,65 @@ _LOW_SIGNAL_QUERY_TOKENS = {
     'using',
     'about',
     'related',
+}
+_PRIMARY_TOPIC_KEYS = {'llm', 'agent', 'rag', 'multimodal'}
+_DOMAIN_APPLICATION_TERMS = {
+    'biomedical',
+    'clinical',
+    'clinic',
+    'medical',
+    'medicine',
+    'health',
+    'healthcare',
+    'diagnostics',
+    'disease',
+    'drug',
+    'sickle',
+    'cell',
+    'finance',
+    'financial',
+    'cybersecurity',
+    'security',
+    'hardware',
+    'circuit',
+    'materials',
+    'geoscience',
+    'water',
+    'urban',
+    'power',
+    'video',
+    'multimedia',
+    'german',
+    'arabic',
+    'taiwan',
+    'sovereignty',
+    'openfoam',
+    'fluid',
+    'dynamics',
+}
+_GENERIC_TECHNICAL_TERMS = {
+    'survey',
+    'review',
+    'benchmark',
+    'evaluation',
+    'framework',
+    'method',
+    'methods',
+    'reasoning',
+    'planning',
+    'tool',
+    'agent',
+    'agents',
+    'agentic',
+    'retrieval',
+    'prompt',
+    'alignment',
+    'multiagent',
+    'multi',
+    'open',
+    'source',
+    'reproducibility',
+    'code',
 }
 _TOPIC_PROFILES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
@@ -177,6 +237,25 @@ _TOPIC_PROFILES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ),
     ),
     (
+        'tool_use',
+        (
+            '工具使用',
+            '工具调用',
+            'tool use',
+            'tool-use',
+            'tool calling',
+            'function calling',
+            'function call',
+            'api calling',
+        ),
+        (
+            'tool use',
+            'tool calling',
+            'function calling',
+            'api calling',
+        ),
+    ),
+    (
         'alignment',
         (
             '对齐',
@@ -222,6 +301,8 @@ class QueryProfile:
     query_tokens: set[str]
     topic_phrases: list[str]
     matched_topic_keys: list[str]
+    required_topic_keys: list[str]
+    generic_technical_query: bool
     has_signal: bool
     requires_strict_match: bool
 
@@ -311,6 +392,27 @@ def _query_tokens(query_variants: list[str]) -> set[str]:
     return tokens
 
 
+def _term_in_context(term: str, normalized_text: str, token_set: set[str]) -> bool:
+    normalized_term = _normalize(term)
+    if not normalized_term:
+        return False
+    if ' ' in normalized_term or _contains_cjk(normalized_term):
+        return normalized_term in normalized_text
+    return normalized_term in token_set
+
+
+def _query_domain_terms(query_tokens: set[str]) -> set[str]:
+    return {token for token in query_tokens if token in _DOMAIN_APPLICATION_TERMS}
+
+
+def _required_topic_keys(matched_topic_keys: list[str]) -> list[str]:
+    matched = [topic for topic in matched_topic_keys if topic]
+    primary = [topic for topic in matched if topic in _PRIMARY_TOPIC_KEYS]
+    if primary:
+        return primary
+    return matched
+
+
 def build_provider_queries(query: str) -> list[str]:
     raw_query = _MULTI_SPACE.sub(' ', query.strip()).strip()
     if not raw_query:
@@ -338,13 +440,18 @@ def build_query_profile(query: str) -> QueryProfile:
     topic_matches = _topic_matches(query)
     topic_phrases = _dedupe_texts([phrase for _topic_key, phrases in topic_matches for phrase in phrases])
     query_tokens = _query_tokens(provider_queries)
+    matched_topic_keys = [topic_key for topic_key, _phrases in topic_matches]
+    required_topic_keys = _required_topic_keys(matched_topic_keys)
+    generic_technical_query = bool(matched_topic_keys) and not _query_domain_terms(query_tokens)
 
     return QueryProfile(
         provider_queries=provider_queries,
         normalized_queries=normalized_queries,
         query_tokens=query_tokens,
         topic_phrases=topic_phrases,
-        matched_topic_keys=[topic_key for topic_key, _phrases in topic_matches],
+        matched_topic_keys=matched_topic_keys,
+        required_topic_keys=required_topic_keys,
+        generic_technical_query=generic_technical_query,
         has_signal=bool(normalized_queries or query_tokens or topic_phrases),
         requires_strict_match=bool(topic_matches or topic_phrases),
     )
@@ -409,6 +516,63 @@ def _phrase_hits(text: str, phrases: list[str]) -> list[str]:
     return [phrase for phrase in phrases if phrase and phrase in normalized_text]
 
 
+def _matched_topic_families(
+    title_norm: str,
+    abstract_norm: str,
+    title_tokens: set[str],
+    abstract_tokens: set[str],
+    query_profile: QueryProfile,
+) -> tuple[set[str], set[str], set[str]]:
+    matched: set[str] = set()
+    title_hits: set[str] = set()
+    abstract_hits: set[str] = set()
+
+    for topic_key, aliases, expansions in _TOPIC_PROFILES:
+        if topic_key not in query_profile.matched_topic_keys:
+            continue
+
+        title_match = any(
+            _term_in_context(term, title_norm, title_tokens)
+            for term in [*aliases, *expansions]
+        )
+        abstract_match = any(
+            _term_in_context(term, abstract_norm, abstract_tokens)
+            for term in [*aliases, *expansions]
+        )
+
+        if title_match or abstract_match:
+            matched.add(topic_key)
+        if title_match:
+            title_hits.add(topic_key)
+        if abstract_match:
+            abstract_hits.add(topic_key)
+
+    return matched, title_hits, abstract_hits
+
+
+def _scope_penalty(
+    title_tokens: set[str],
+    abstract_tokens: set[str],
+    query_profile: QueryProfile,
+    *,
+    is_classic_seed: bool,
+) -> tuple[float, list[str]]:
+    if not query_profile.generic_technical_query or is_classic_seed:
+        return 0.0, []
+
+    paper_tokens = title_tokens | abstract_tokens
+    domain_hits = sorted(paper_tokens & _DOMAIN_APPLICATION_TERMS)
+    technical_hits = sorted(paper_tokens & _GENERIC_TECHNICAL_TERMS)
+    if not domain_hits:
+        return 0.0, []
+
+    if len(technical_hits) >= 3:
+        return 0.0, []
+
+    penalty = min(24.0, 8.0 + (len(domain_hits) - 1) * 4.0)
+    return penalty, domain_hits[:3]
+
+
 def _relevance_score(
     paper: SearchPaper,
     query_profile: QueryProfile,
@@ -438,6 +602,18 @@ def _relevance_score(
     topic_abstract_hits = _phrase_hits(paper.abstract_en, query_profile.topic_phrases)
     title_token_overlap = sorted(query_profile.query_tokens & title_tokens)
     abstract_token_overlap = sorted(query_profile.query_tokens & abstract_tokens)
+    matched_topic_families, title_topic_families, abstract_topic_families = _matched_topic_families(
+        title_norm,
+        abstract_norm,
+        title_tokens,
+        abstract_tokens,
+        query_profile,
+    )
+    matched_required_topics = set(query_profile.required_topic_keys) & matched_topic_families
+    classic_seed = match_classic_seed(paper.title_en)
+    classic_seed_hit = bool(
+        classic_seed and (set(classic_seed.topics) & set(query_profile.matched_topic_keys or query_profile.required_topic_keys))
+    )
 
     topic_match_score = 0.0
     if title_exact_match:
@@ -480,7 +656,38 @@ def _relevance_score(
         for hit in abstract_token_overlap[:4]:
             append_match(hit, 'abstract')
 
-    passed_topic_gate = (not query_profile.requires_strict_match) or topic_match_score > 0
+    if title_topic_families:
+        family_title_bonus = 18.0 * len(title_topic_families)
+        topic_match_score += family_title_bonus
+        score_breakdown['topic_family_title_bonus'] = family_title_bonus
+        for topic_key in sorted(title_topic_families):
+            append_match(topic_key, 'title')
+
+    if abstract_topic_families:
+        family_abstract_bonus = 8.0 * len(abstract_topic_families)
+        topic_match_score += family_abstract_bonus
+        score_breakdown['topic_family_abstract_bonus'] = family_abstract_bonus
+        for topic_key in sorted(abstract_topic_families):
+            append_match(topic_key, 'abstract')
+
+    if query_profile.required_topic_keys:
+        coverage_bonus = 30.0 * (len(matched_required_topics) / len(query_profile.required_topic_keys))
+        if coverage_bonus:
+            topic_match_score += coverage_bonus
+            score_breakdown['required_topic_coverage_bonus'] = coverage_bonus
+
+    if classic_seed_hit and classic_seed is not None:
+        topic_match_score += 66.0
+        score_breakdown['classic_seed_bonus'] = 66.0
+        append_match(classic_seed.canonical_title, 'title')
+
+    missing_topics = [topic for topic in query_profile.required_topic_keys if topic not in matched_topic_families]
+    passed_topic_gate = True
+    if query_profile.requires_strict_match and query_profile.required_topic_keys:
+        passed_topic_gate = not missing_topics or classic_seed_hit
+    elif query_profile.requires_strict_match:
+        passed_topic_gate = topic_match_score > 0
+
     lexical_match = bool(matched_terms or matched_fields)
 
     if paper.year:
@@ -492,6 +699,15 @@ def _relevance_score(
     if paper.pdf_url:
         score_breakdown['pdf_bonus'] = 3.0
 
+    scope_penalty, domain_hits = _scope_penalty(
+        title_tokens,
+        abstract_tokens,
+        query_profile,
+        is_classic_seed=classic_seed_hit,
+    )
+    if scope_penalty:
+        score_breakdown['narrow_domain_penalty'] = -scope_penalty
+
     rank_score = topic_match_score + sum(value for key, value in score_breakdown.items() if key != 'topic_match_score')
     score_breakdown['topic_match_score'] = topic_match_score
 
@@ -499,13 +715,22 @@ def _relevance_score(
         score_breakdown['off_topic_penalty'] = -1000.0
         rank_score -= 1000.0
 
-    filter_reason = 'passed_topic_gate' if passed_topic_gate else 'off_topic'
+    if passed_topic_gate:
+        filter_reason = 'passed_topic_gate'
+    else:
+        filter_reason = f"off_topic_missing_{'_'.join(missing_topics)}" if missing_topics else 'off_topic'
 
     ranking_parts: list[str] = []
     if title_exact_match or title_phrase_match or topic_title_hits:
         ranking_parts.append('标题命中主题')
+    if matched_topic_families:
+        ranking_parts.append(f"命中主题家族：{' / '.join(sorted(matched_topic_families))}")
     if abstract_phrase_match or topic_abstract_hits or abstract_token_overlap:
         ranking_parts.append('摘要补充相关性')
+    if classic_seed_hit and classic_seed is not None:
+        ranking_parts.append(f'命中经典必读种子：{classic_seed.canonical_title}')
+    if scope_penalty and domain_hits:
+        ranking_parts.append(f"偏垂直应用场景：{', '.join(domain_hits)}")
     if paper.pdf_url:
         ranking_parts.append('可直接获取 PDF')
     if paper.year:
@@ -556,6 +781,9 @@ def _build_reason(
         summary_parts.append(f"命中主题词：{', '.join(matched_terms[:4])}")
     if matched_fields:
         summary_parts.append(f"命中位置：{' / '.join(matched_fields)}")
+    topic_families = [term for term in matched_terms if term in {'llm', 'agent', 'rag', 'reasoning', 'tool_use', 'multimodal', 'alignment', 'fine_tuning'}]
+    if topic_families:
+        summary_parts.append(f"命中主题家族：{' / '.join(topic_families[:4])}")
     summary_parts.append(f"主题匹配分 {topic_match_score:.1f}")
     summary_parts.append('通过主题门槛' if passed_topic_gate else '未通过主题门槛')
     summary_parts.append(ranking_reason)

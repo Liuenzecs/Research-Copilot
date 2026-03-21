@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -19,8 +20,10 @@ from app.models.db.summary_record import SummaryRecord
 from app.models.schemas.paper import PaperOut, PaperSearchReasonOut, PaperSearchRequest, SearchCandidateOut
 from app.services.paper_search.arxiv import ArxivSearchService
 from app.services.paper_search.base import SearchPaper
-from app.services.paper_search.normalizer import RankedSearchPaper, build_provider_queries, dedupe_and_rank
+from app.services.paper_search.classic_seeds import match_classic_seed, relevant_classic_seeds
+from app.services.paper_search.normalizer import RankedSearchPaper, build_provider_queries, build_query_profile, dedupe_and_rank
 from app.services.paper_search.openalex import OpenAlexSearchService
+from app.services.paper_search.provider_cache import paper_search_cache
 from app.services.paper_search.semantic_scholar import SemanticScholarSearchService
 
 
@@ -28,6 +31,19 @@ from app.services.paper_search.semantic_scholar import SemanticScholarSearchServ
 class SearchExecutionResult:
     items: list[SearchCandidateOut]
     warnings: list[str]
+
+
+@dataclass(slots=True)
+class ProviderSearchPolicy:
+    timeout_seconds: float
+    retries: int
+
+
+PROVIDER_SEARCH_POLICIES = {
+    'openalex': ProviderSearchPolicy(timeout_seconds=8.0, retries=1),
+    'arxiv': ProviderSearchPolicy(timeout_seconds=10.0, retries=1),
+    'semantic_scholar': ProviderSearchPolicy(timeout_seconds=8.0, retries=1),
+}
 
 
 def _normalize_source_list(raw_sources: list[str]) -> list[str]:
@@ -148,8 +164,8 @@ class PaperSearchService:
         self.semantic_scholar = SemanticScholarSearchService()
 
     def format_search_error(self, source: str, exc: Exception) -> str:
-        import httpx
-
+        if isinstance(exc, asyncio.TimeoutError):
+            return f'{source}: 请求超时，已跳过该数据源。'
         if isinstance(exc, httpx.ConnectError):
             return f'{source}: 网络连接失败，已跳过该数据源。'
         if isinstance(exc, httpx.TimeoutException):
@@ -168,6 +184,60 @@ class PaperSearchService:
             return f'{source}: {trimmed}'
         return f'{source}: {exc.__class__.__name__}'
 
+    def _provider_for_source(self, source: str):
+        if source == 'arxiv':
+            return self.arxiv
+        if source == 'openalex':
+            return self.openalex
+        if source == 'semantic_scholar':
+            return self.semantic_scholar
+        return None
+
+    async def _search_provider_once(self, source: str, query: str, limit: int) -> list[SearchPaper]:
+        provider = self._provider_for_source(source)
+        if provider is None:
+            return []
+        policy = PROVIDER_SEARCH_POLICIES.get(source, ProviderSearchPolicy(timeout_seconds=8.0, retries=0))
+        return await asyncio.wait_for(provider.search(query, limit), timeout=policy.timeout_seconds)
+
+    async def _search_provider_with_policy(self, source: str, query: str, limit: int) -> tuple[list[SearchPaper], str | None]:
+        cached = paper_search_cache.load(source, query, limit)
+        if cached is not None:
+            _status, items, warning = cached
+            return items, warning
+
+        policy = PROVIDER_SEARCH_POLICIES.get(source, ProviderSearchPolicy(timeout_seconds=8.0, retries=0))
+        has_semantic_key = bool(get_settings().semantic_scholar_api_key)
+
+        for attempt in range(policy.retries + 1):
+            try:
+                items = await self._search_provider_once(source, query, limit)
+                paper_search_cache.store_success(source, query, limit, items)
+                return items, None
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if source == 'semantic_scholar' and status == 429 and not has_semantic_key:
+                    warning = self.format_search_error(source, exc)
+                    paper_search_cache.store_cooldown(source, query, limit, warning)
+                    return [], warning
+                if status in {500, 502, 503, 504} and attempt < policy.retries:
+                    continue
+                warning = self.format_search_error(source, exc)
+                paper_search_cache.store_cooldown(source, query, limit, warning)
+                return [], warning
+            except (asyncio.TimeoutError, httpx.TimeoutException, httpx.ConnectError) as exc:
+                if attempt < policy.retries:
+                    continue
+                warning = self.format_search_error(source, exc)
+                paper_search_cache.store_cooldown(source, query, limit, warning)
+                return [], warning
+            except Exception as exc:  # pragma: no cover - exercised through route tests with monkeypatches
+                warning = self.format_search_error(source, exc)
+                paper_search_cache.store_cooldown(source, query, limit, warning)
+                return [], warning
+
+        return [], None
+
     async def _provider_results(self, query: str, limit: int, sources: list[str]) -> tuple[list[SearchPaper], list[str], list[str]]:
         fixture_papers = load_search_fixtures(query, limit)
         if fixture_papers is not None:
@@ -180,16 +250,8 @@ class PaperSearchService:
             return [], [], []
 
         async def invoke(source: str, provider_query: str) -> tuple[str, list[SearchPaper], str | None]:
-            try:
-                if source == 'arxiv':
-                    return source, await self.arxiv.search(provider_query, limit), None
-                if source == 'openalex':
-                    return source, await self.openalex.search(provider_query, limit), None
-                if source == 'semantic_scholar':
-                    return source, await self.semantic_scholar.search(provider_query, limit), None
-                return source, [], None
-            except Exception as exc:  # pragma: no cover - exercised in route tests via monkeypatch
-                return source, [], self.format_search_error(source, exc)
+            items, warning = await self._search_provider_with_policy(source, provider_query, limit)
+            return source, items, warning
 
         results = await asyncio.gather(*[invoke(source, provider_query) for source in sources for provider_query in provider_queries])
         papers: list[SearchPaper] = []
@@ -202,6 +264,46 @@ class PaperSearchService:
             if warning and warning not in warnings:
                 warnings.append(warning)
         return papers, warnings, effective_sources
+
+    async def _recall_classic_seeds(
+        self,
+        *,
+        query: str,
+        limit: int,
+        sources: list[str],
+        existing_papers: list[SearchPaper],
+    ) -> tuple[list[SearchPaper], list[str]]:
+        profile = build_query_profile(query)
+        relevant_seeds = relevant_classic_seeds(profile.matched_topic_keys, limit=6)
+        if not relevant_seeds:
+            return [], []
+
+        existing_seed_keys = {
+            seed.key
+            for paper in existing_papers
+            if (seed := match_classic_seed(paper.title_en)) is not None
+        }
+        missing_seeds = [seed for seed in relevant_seeds if seed.key not in existing_seed_keys]
+        if not missing_seeds:
+            return [], []
+
+        recall_source = next((source for source in ('openalex', 'semantic_scholar', 'arxiv') if source in sources), '')
+        if not recall_source:
+            return [], []
+
+        async def recall_seed(seed_title: str) -> tuple[list[SearchPaper], str | None]:
+            items, warning = await self._search_provider_with_policy(recall_source, seed_title, min(limit, 3))
+            matched_items = [item for item in items if match_classic_seed(item.title_en) is not None]
+            return matched_items, warning
+
+        results = await asyncio.gather(*[recall_seed(seed.canonical_title) for seed in missing_seeds[:6]])
+        recalled: list[SearchPaper] = []
+        warnings: list[str] = []
+        for items, warning in results:
+            recalled.extend(items)
+            if warning and warning not in warnings:
+                warnings.append(warning)
+        return recalled, warnings
 
     def _paper_matches_metadata_filters(self, paper: SearchPaper, payload: PaperSearchRequest) -> bool:
         if payload.year_from is not None and (paper.year is None or paper.year < payload.year_from):
@@ -447,6 +549,18 @@ class PaperSearchService:
     async def execute_search(self, db: Session, payload: PaperSearchRequest) -> SearchExecutionResult:
         sources = _normalize_source_list(payload.sources)
         raw_papers, warnings, _effective_sources = await self._provider_results(payload.query.strip(), payload.limit, sources)
+        recalled_seeds, seed_warnings = await self._recall_classic_seeds(
+            query=payload.query.strip(),
+            limit=payload.limit,
+            sources=sources,
+            existing_papers=raw_papers,
+        )
+        for warning in seed_warnings:
+            if warning not in warnings:
+                warnings.append(warning)
+        if recalled_seeds:
+            raw_papers.extend(recalled_seeds)
+
         filtered_raw = [paper for paper in raw_papers if self._paper_matches_metadata_filters(paper, payload)]
         ranked_papers = dedupe_and_rank(filtered_raw, payload.limit * 3, payload.query, sort_mode=payload.sort_mode)
 

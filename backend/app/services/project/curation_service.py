@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
@@ -18,16 +19,18 @@ from app.models.db.research_project_record import (
 from app.models.schemas.paper import PaperSearchRequest, SearchCandidateOut
 from app.models.schemas.project import ProjectSearchFilters
 from app.services.llm.provider_registry import get_primary_provider
-from app.services.paper_search.normalizer import build_provider_queries, build_query_profile
+from app.services.paper_search.classic_seeds import match_classic_seed
+from app.services.paper_search.normalizer import build_query_profile
 from app.services.paper_search.service import paper_search_service
 
 
 MAX_TARGET_COUNT = 200
 MIN_TARGET_COUNT = 20
-MAX_QUERY_COUNT = 10
-MIN_QUERY_COUNT = 6
-MAX_POOL_SIZE = 600
-MIN_POOL_SIZE = 240
+MAX_QUERY_COUNT = 6
+MIN_QUERY_COUNT = 4
+MAX_POOL_SIZE = 320
+MIN_POOL_SIZE = 120
+_CJK_RE = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff]')
 BUCKET_ORDER = ['classic_foundations', 'core_must_read', 'recent_frontier', 'repro_ready']
 BUCKET_LABELS = {
     'classic_foundations': '基础经典',
@@ -63,6 +66,12 @@ REPRO_KEYWORDS = {
     'code', 'github', 'benchmark', 'dataset', 'datasets', 'evaluation', 'implementation',
     'reproduce', 'reproducibility', 'ablation', 'open-source', 'open source',
 }
+SURVEY_HINTS = {'survey', 'review', 'overview'}
+DOMAIN_APPLICATION_HINTS = {
+    'clinical', 'medical', 'biomedical', 'health', 'healthcare', 'video', 'urban', 'water',
+    'geoscience', 'finance', 'financial', 'drug', 'hardware', 'circuit', 'materials', 'power',
+    'german', 'arabic', 'taiwan', 'openfoam',
+}
 
 
 @dataclass(slots=True)
@@ -73,9 +82,14 @@ class CuratedCandidate:
     impact_score: float
     freshness_score: float
     repro_score: float
+    seed_score: float
+    generality_score: float
+    application_penalty: float
     overall_score: float
     classic_score: float
     frontier_score: float
+    is_classic_seed: bool = False
+    is_survey: bool = False
     bucket: str = ''
 
 
@@ -97,38 +111,119 @@ def _safe_json_object(raw_text: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _contains_cjk(text: str) -> bool:
+    return bool(_CJK_RE.search(text or ''))
+
+
+def _normalize_query_text(text: str) -> str:
+    return ' '.join((text or '').strip().split())
+
+
+def _dedupe_casefold(items: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        normalized = _normalize_query_text(item)
+        if not normalized:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(normalized)
+    return ordered
+
+
+def _is_valid_english_search_query(query: str) -> bool:
+    normalized = _normalize_query_text(query)
+    if not normalized or _contains_cjk(normalized):
+        return False
+    tokens = normalized.split()
+    if len(tokens) < 2 or len(tokens) > 16:
+        return False
+    alpha_ratio = sum(char.isascii() and char.isalpha() for char in normalized) / max(len(normalized), 1)
+    return alpha_ratio >= 0.45
+
+
 class ProjectCurationService:
     def _provider(self):
         return get_primary_provider()
 
+    def _planning_slots(self, user_need: str, selection_profile: str) -> dict[str, bool]:
+        profile = build_query_profile(user_need)
+        normalized_need = user_need.lower()
+        wants_repro = any(keyword in normalized_need for keyword in ('复现', '跑代码', '代码', 'reproduce', 'repro', 'code', 'open source'))
+        wants_benchmark = any(keyword in normalized_need for keyword in ('benchmark', 'evaluation', '评测', '基准', '综述', 'survey', 'review'))
+        wants_frontier = any(keyword in normalized_need for keyword in ('frontier', '前沿', 'recent', 'latest', '最新'))
+        wants_rag = 'rag' in profile.matched_topic_keys
+
+        return {
+            'llm': 'llm' in profile.matched_topic_keys or not profile.matched_topic_keys,
+            'agent': 'agent' in profile.matched_topic_keys,
+            'reasoning': 'reasoning' in profile.matched_topic_keys or 'agent' in profile.matched_topic_keys,
+            'tool_use': 'tool_use' in profile.matched_topic_keys or 'agent' in profile.matched_topic_keys,
+            'rag': wants_rag,
+            'multimodal': 'multimodal' in profile.matched_topic_keys,
+            'wants_repro': wants_repro or selection_profile == 'repro_first',
+            'wants_benchmark': wants_benchmark or selection_profile in {'balanced', 'frontier_first', 'repro_first'},
+            'wants_frontier': wants_frontier or selection_profile == 'frontier_first',
+        }
+
     def _fallback_queries(self, user_need: str, selection_profile: str) -> list[str]:
-        base_queries = build_provider_queries(user_need)
-        if not base_queries:
-            return []
+        slots = self._planning_slots(user_need, selection_profile)
+        queries: list[str] = []
 
-        variants = list(base_queries)
-        hints = [
-            'survey',
-            'benchmark',
-            'evaluation',
-            'recent advances',
-            'systematic review',
-            'code implementation',
-        ]
-        if selection_profile == 'repro_first':
-            hints = ['benchmark', 'code implementation', 'open source', 'reproducibility', 'ablation', 'dataset']
-        elif selection_profile == 'frontier_first':
-            hints = ['latest advances', '2025', '2026', 'recent frontier', 'state of the art', 'agent']
+        if slots['llm'] and slots['agent']:
+            queries.append('large language model agents survey')
+            queries.append('agentic workflows large language models')
+        elif slots['llm']:
+            queries.append('large language models foundation models survey')
+        elif slots['agent']:
+            queries.append('language agents agentic workflows survey')
 
-        base = base_queries[0]
-        for hint in hints:
-            variants.append(f'{base} {hint}'.strip())
-        deduped: list[str] = []
-        for item in variants:
-            normalized = ' '.join(item.split()).strip()
-            if normalized and normalized.lower() not in {value.lower() for value in deduped}:
-                deduped.append(normalized)
-        return deduped[:MAX_QUERY_COUNT]
+        if slots['reasoning'] or slots['tool_use']:
+            queries.append('large language models reasoning planning tool use')
+
+        if slots['wants_benchmark']:
+            if slots['agent']:
+                queries.append('large language model agents benchmark evaluation')
+            else:
+                queries.append('large language models benchmark evaluation')
+
+        if slots['wants_repro']:
+            if slots['agent']:
+                queries.append('open-source large language model agents reproducibility code')
+            else:
+                queries.append('open-source large language models reproducibility code')
+
+        if slots['rag']:
+            queries.append('retrieval-augmented generation large language models')
+
+        if slots['multimodal']:
+            queries.append('multimodal large language models survey')
+
+        if slots['wants_frontier']:
+            if slots['agent']:
+                queries.append('large language model agents recent advances')
+            else:
+                queries.append('large language models recent advances')
+
+        if len(queries) < MIN_QUERY_COUNT:
+            queries.extend(
+                [
+                    'large language models survey benchmark',
+                    'language agents planning reasoning survey',
+                    'foundation models benchmark evaluation',
+                    'open-source large language models code',
+                ]
+            )
+
+        cleaned = [query for query in _dedupe_casefold(queries) if _is_valid_english_search_query(query)]
+        return cleaned[:MAX_QUERY_COUNT]
+
+    def _validated_planned_queries(self, raw_queries: list[str]) -> list[str]:
+        valid = [query for query in _dedupe_casefold(raw_queries) if _is_valid_english_search_query(query)]
+        return valid[:MAX_QUERY_COUNT]
 
     async def plan_queries(self, user_need: str, selection_profile: str, target_count: int) -> list[str]:
         fallback = self._fallback_queries(user_need, selection_profile)
@@ -143,24 +238,29 @@ class ProjectCurationService:
             f'Target count: {target_count}\n'
             'Return JSON only with the shape {"queries": ["...", "..."]}.\n'
             'Requirements:\n'
-            '- 6 to 10 concise English search queries\n'
-            '- maximize topical precision and coverage\n'
-            '- avoid generic filler queries\n'
-            '- include foundational, benchmark, and recent variants when appropriate\n'
+            '- produce 4 to 6 English academic-style search queries\n'
+            '- queries must be concise, keyword-oriented, and not conversational\n'
+            '- do not copy the user request verbatim\n'
+            '- do not output any Chinese text\n'
+            '- include foundational/core, methodology, evaluation, and reproducibility angles when relevant\n'
         )
         try:
             raw = await provider.complete(prompt, system_prompt='You generate structured JSON for paper search planning.')
             payload = _safe_json_object(raw.strip())
             queries = payload.get('queries', [])
             if isinstance(queries, list):
-                cleaned = [str(item).strip() for item in queries if str(item).strip()]
-                if cleaned:
-                    return cleaned[:MAX_QUERY_COUNT]
+                cleaned = self._validated_planned_queries([str(item).strip() for item in queries if str(item).strip()])
+                if MIN_QUERY_COUNT <= len(cleaned) <= MAX_QUERY_COUNT:
+                    return cleaned
         except Exception:
             pass
         return fallback[: max(MIN_QUERY_COUNT, min(MAX_QUERY_COUNT, len(fallback)))]
 
     def _topic_match(self, user_need: str, item: SearchCandidateOut) -> bool:
+        if item.reason.passed_topic_gate:
+            return True
+        if self._has_seed_signal(item):
+            return True
         profile = build_query_profile(user_need)
         if not profile.has_signal:
             return True
@@ -206,30 +306,84 @@ class ProjectCurationService:
             return {key: (1.0 if max_value > 0 else 0.0) for key in values}
         return {key: (value - min_value) / (max_value - min_value) for key, value in values.items()}
 
+    def _generality_score(self, item: SearchCandidateOut) -> float:
+        haystack = f"{item.paper.title_en} {item.paper.abstract_en}".lower().replace('-', ' ')
+        generic_hits = sum(1 for token in SURVEY_HINTS if token in haystack)
+        if 'benchmark' in haystack or 'evaluation' in haystack:
+            generic_hits += 1
+        if 'framework' in haystack or 'method' in haystack or 'planning' in haystack:
+            generic_hits += 1
+        return min(generic_hits / 4, 1.0)
+
+    def _application_penalty(self, item: SearchCandidateOut) -> float:
+        haystack = f"{item.paper.title_en} {item.paper.abstract_en}".lower().replace('-', ' ')
+        hits = sum(1 for token in DOMAIN_APPLICATION_HINTS if token in haystack)
+        return min(hits * 0.18, 0.72)
+
+    def _has_seed_signal(self, item: SearchCandidateOut) -> bool:
+        return match_classic_seed(item.paper.title_en) is not None
+
     def _bucket_score(self, candidate: CuratedCandidate, bucket: str) -> float:
         if bucket == 'classic_foundations':
-            return (candidate.topic_score * 0.45) + (candidate.impact_score * 0.35) + ((1 - candidate.freshness_score) * 0.2)
+            return (
+                (candidate.seed_score * 0.45)
+                + (candidate.impact_score * 0.25)
+                + ((1 - candidate.freshness_score) * 0.12)
+                + (candidate.generality_score * 0.18)
+                - (candidate.application_penalty * 0.22)
+            )
         if bucket == 'recent_frontier':
-            return (candidate.topic_score * 0.45) + (candidate.freshness_score * 0.3) + (candidate.diversity_score * 0.15) + (candidate.impact_score * 0.1)
+            return (
+                (candidate.topic_score * 0.42)
+                + (candidate.freshness_score * 0.24)
+                + (candidate.diversity_score * 0.14)
+                + (candidate.impact_score * 0.1)
+                + (candidate.generality_score * 0.1)
+            )
         if bucket == 'repro_ready':
-            return (candidate.topic_score * 0.4) + (candidate.repro_score * 0.4) + (candidate.diversity_score * 0.1) + (candidate.impact_score * 0.1)
+            return (
+                (candidate.topic_score * 0.36)
+                + (candidate.repro_score * 0.34)
+                + (candidate.generality_score * 0.1)
+                + (candidate.diversity_score * 0.1)
+                + (candidate.impact_score * 0.1)
+            )
         return candidate.overall_score
 
     def _eligible_for_bucket(self, candidate: CuratedCandidate, bucket: str, current_year: int) -> bool:
         year = candidate.item.paper.year or 0
         if bucket == 'classic_foundations':
-            return year > 0 and year <= current_year - 3
+            if candidate.application_penalty >= 0.18 and candidate.generality_score < 0.5 and not candidate.is_classic_seed:
+                return False
+            return year > 0 and year <= current_year - 2
         if bucket == 'recent_frontier':
             return year >= current_year - 2
         if bucket == 'repro_ready':
             return candidate.repro_score >= 0.45
         return True
 
+    def _should_stop_collecting(
+        self,
+        *,
+        pooled_items: dict[int, SearchCandidateOut],
+        normalized_target: int,
+        processed_query_count: int,
+    ) -> bool:
+        if processed_query_count < 3:
+            return False
+        if len(pooled_items) >= min(max(normalized_target * 2, 80), MAX_POOL_SIZE):
+            return True
+        return False
+
     def _compose_reason_summary(self, candidate: CuratedCandidate) -> str:
         bucket_label = BUCKET_LABELS.get(candidate.bucket, 'AI 推荐')
         parts = [bucket_label]
+        if candidate.is_classic_seed:
+            parts.append('命中经典主干论文')
         if candidate.item.reason.summary:
             parts.append(candidate.item.reason.summary)
+        if candidate.generality_score >= 0.5:
+            parts.append('适合作为通用主干阅读')
         if candidate.repro_score >= 0.5:
             parts.append('复现友好度较高')
         return '；'.join(parts)
@@ -260,12 +414,12 @@ class ProjectCurationService:
             planned_queries = self._fallback_queries(normalized_need, normalized_profile)
         planned_queries = planned_queries[:MAX_QUERY_COUNT]
 
-        desired_pool_size = min(max(normalized_target * 4, MIN_POOL_SIZE), MAX_POOL_SIZE)
-        per_query_limit = min(max(math.ceil(desired_pool_size / max(len(planned_queries), 1)), 24), 80)
+        desired_pool_size = min(max(int(normalized_target * 2.5), MIN_POOL_SIZE), MAX_POOL_SIZE)
+        per_query_limit = min(max(math.ceil(desired_pool_size / max(len(planned_queries), 1)), 20), 60)
 
         pooled_by_paper_id: dict[int, SearchCandidateOut] = {}
         warnings: list[str] = []
-        for query in planned_queries:
+        for index, query in enumerate(planned_queries, start=1):
             result = await paper_search_service.execute_search(
                 db,
                 PaperSearchRequest(
@@ -285,7 +439,11 @@ class ProjectCurationService:
                 current = pooled_by_paper_id.get(item.paper.id)
                 if current is None or item.rank_score > current.rank_score:
                     pooled_by_paper_id[item.paper.id] = item
-            if len(pooled_by_paper_id) >= desired_pool_size:
+            if len(pooled_by_paper_id) >= desired_pool_size or self._should_stop_collecting(
+                pooled_items=pooled_by_paper_id,
+                normalized_target=normalized_target,
+                processed_query_count=index,
+            ):
                 break
 
         pooled_items = list(pooled_by_paper_id.values())
@@ -314,10 +472,19 @@ class ProjectCurationService:
         tag_frequency: dict[str, int] = {}
         tags_by_paper: dict[int, set[str]] = {}
         repro_map: dict[int, float] = {}
+        seed_map: dict[int, float] = {}
+        generality_raw: dict[int, float] = {}
+        application_penalty_map: dict[int, float] = {}
+        survey_map: dict[int, bool] = {}
         for item in pooled_items:
             tags = self._candidate_tags(item)
             tags_by_paper[item.paper.id] = tags
             repro_map[item.paper.id] = self._repro_score(item)
+            # Surveys can supplement classics, but should not dominate them.
+            survey_map[item.paper.id] = any(hint in item.paper.title_en.lower() for hint in SURVEY_HINTS)
+            seed_map[item.paper.id] = 1.0 if self._has_seed_signal(item) else 0.0
+            generality_raw[item.paper.id] = self._generality_score(item)
+            application_penalty_map[item.paper.id] = self._application_penalty(item)
             for tag in tags:
                 tag_frequency[tag] = tag_frequency.get(tag, 0) + 1
 
@@ -330,6 +497,7 @@ class ProjectCurationService:
             rarity_scores = [1 / tag_frequency[tag] for tag in tags if tag_frequency.get(tag)]
             diversity_map[item.paper.id] = sum(rarity_scores) / len(rarity_scores)
         diversity_map = self._normalize_scores(diversity_map)
+        generality_map = self._normalize_scores(generality_raw)
 
         curated_candidates: list[CuratedCandidate] = []
         for item in pooled_items:
@@ -339,12 +507,18 @@ class ProjectCurationService:
             impact_score = impact_map.get(paper_id, 0.0)
             freshness_score = freshness_map.get(paper_id, 0.0)
             repro_score = repro_map.get(paper_id, 0.0)
+            seed_score = seed_map.get(paper_id, 0.0)
+            generality_score = generality_map.get(paper_id, 0.0)
+            application_penalty = application_penalty_map.get(paper_id, 0.0)
             overall_score = (
-                (topic_score * 0.45)
-                + (diversity_score * 0.15)
+                (topic_score * 0.34)
+                + (seed_score * 0.22)
+                + (generality_score * 0.14)
                 + (impact_score * 0.10)
-                + (freshness_score * 0.10)
-                + (repro_score * 0.20)
+                + (freshness_score * 0.08)
+                + (diversity_score * 0.08)
+                + (repro_score * 0.14)
+                - (application_penalty * 0.18)
             )
             curated_candidates.append(
                 CuratedCandidate(
@@ -354,9 +528,14 @@ class ProjectCurationService:
                     impact_score=impact_score,
                     freshness_score=freshness_score,
                     repro_score=repro_score,
+                    seed_score=seed_score,
+                    generality_score=generality_score,
+                    application_penalty=application_penalty,
                     overall_score=overall_score,
-                    classic_score=(topic_score * 0.45) + (impact_score * 0.35) + ((1 - freshness_score) * 0.2),
-                    frontier_score=(topic_score * 0.45) + (freshness_score * 0.3) + (diversity_score * 0.15) + (impact_score * 0.1),
+                    classic_score=(seed_score * 0.45) + (impact_score * 0.25) + ((1 - freshness_score) * 0.12) + (generality_score * 0.18) - (application_penalty * 0.22),
+                    frontier_score=(topic_score * 0.42) + (freshness_score * 0.24) + (diversity_score * 0.14) + (impact_score * 0.1) + (generality_score * 0.1),
+                    is_classic_seed=bool(seed_score),
+                    is_survey=survey_map.get(paper_id, False),
                 )
             )
 
@@ -374,7 +553,25 @@ class ProjectCurationService:
                 key=lambda candidate: self._bucket_score(candidate, bucket),
                 reverse=True,
             )
-            for candidate in ranked[:desired]:
+            chosen: list[CuratedCandidate] = []
+            survey_cap = max(1, desired // 4) if bucket == 'classic_foundations' else desired
+            survey_count = 0
+            for candidate in ranked:
+                if len(chosen) >= desired:
+                    break
+                if bucket == 'classic_foundations' and candidate.is_survey and survey_count >= survey_cap:
+                    continue
+                chosen.append(candidate)
+                if candidate.is_survey:
+                    survey_count += 1
+
+            if len(chosen) < desired:
+                for candidate in ranked:
+                    if len(chosen) >= desired or candidate in chosen:
+                        continue
+                    chosen.append(candidate)
+
+            for candidate in chosen:
                 candidate.bucket = bucket
                 selected.append(candidate)
                 used_paper_ids.add(candidate.item.paper.id)

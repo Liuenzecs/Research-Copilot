@@ -64,3 +64,31 @@ def test_chinese_query_filters_irrelevant_high_citation_noise():
     assert ranked[0].reason.passed_topic_gate is True
     assert ranked[0].reason.filter_reason == 'passed_topic_gate'
     assert ranked[0].reason.topic_match_score > 0
+
+
+def test_multi_topic_query_keeps_classic_seed_but_filters_single_theme_application_noise():
+    papers = [
+        _paper('1706.03762', 'Attention Is All You Need', 2017, citation_count=120000),
+        _paper(
+            'react-1',
+            'ReAct: Synergizing Reasoning and Acting in Language Models',
+            2022,
+            abstract='Language agents combine reasoning and acting with tool use.',
+            citation_count=9000,
+        ),
+        _paper(
+            'clinical-1',
+            'Using fine-tuned large language models to parse clinical notes in musculoskeletal pain disorders',
+            2023,
+            abstract='Large language models help parse clinical notes in a medical setting.',
+            citation_count=38,
+        ),
+    ]
+
+    ranked = dedupe_and_rank(papers, limit=5, query='large language model agents')
+    titles = [item.paper.title_en for item in ranked]
+
+    assert 'Attention Is All You Need' in titles
+    assert 'ReAct: Synergizing Reasoning and Acting in Language Models' in titles
+    assert 'Using fine-tuned large language models to parse clinical notes in musculoskeletal pain disorders' not in titles
+    assert any('经典必读种子' in item.reason.ranking_reason for item in ranked if item.paper.title_en == 'Attention Is All You Need')

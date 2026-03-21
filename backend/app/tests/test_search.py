@@ -95,3 +95,85 @@ def test_search_expands_chinese_query_and_filters_irrelevant_results(client, mon
     assert data[0]['reason']['passed_topic_gate'] is True
     assert data[0]['reason']['topic_match_score'] > 0
     assert data[0]['reason']['ranking_reason']
+
+
+def test_search_recalls_classic_seed_for_llm_agent_query(client, monkeypatch):
+    async def fake_arxiv(query: str, limit: int = 10):
+        return [
+            SearchPaper(
+                source='arxiv',
+                source_id='noise-llm',
+                title_en='Using fine-tuned large language models to parse clinical notes in musculoskeletal pain disorders',
+                abstract_en='Large language models help parse clinical notes in a medical setting.',
+                authors='Clinical Author',
+                year=2023,
+                venue='arXiv',
+                pdf_url='https://arxiv.org/pdf/noise-llm.pdf',
+                citation_count=38,
+            )
+        ]
+
+    async def fake_openalex(query: str, limit: int = 10):
+        lowered = query.lower()
+        if 'attention is all you need' in lowered:
+            return [
+                SearchPaper(
+                    source='openalex',
+                    source_id='WATTN',
+                    title_en='Attention Is All You Need',
+                    abstract_en='The Transformer dispenses with recurrence and relies entirely on attention.',
+                    authors='Ashish Vaswani et al.',
+                    year=2017,
+                    venue='NeurIPS',
+                    pdf_url='https://example.com/attention.pdf',
+                    citation_count=120000,
+                )
+            ]
+        return []
+
+    async def fake_semantic(query: str, limit: int = 10):
+        return []
+
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.openalex.search', fake_openalex)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.semantic_scholar.search', fake_semantic)
+
+    response = client.post('/papers/search', json={'query': 'large language model agents', 'sources': ['arxiv', 'openalex'], 'limit': 5})
+    assert response.status_code == 200
+
+    titles = [item['paper']['title_en'] for item in response.json()['items']]
+    assert 'Attention Is All You Need' in titles
+    assert 'Using fine-tuned large language models to parse clinical notes in musculoskeletal pain disorders' not in titles
+
+
+def test_search_reuses_short_term_provider_cache(client, monkeypatch):
+    calls = {'arxiv': 0}
+
+    async def fake_arxiv(query: str, limit: int = 10):
+        calls['arxiv'] += 1
+        return [
+            SearchPaper(
+                source='arxiv',
+                source_id='cache-1',
+                title_en='Cacheable Test Paper',
+                abstract_en='Cacheable search result for repeated requests.',
+                authors='A. Author',
+                year=2024,
+                venue='arXiv',
+                pdf_url='https://arxiv.org/pdf/cache-1.pdf',
+            )
+        ]
+
+    async def fake_empty(query: str, limit: int = 10):
+        return []
+
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.arxiv.search', fake_arxiv)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.openalex.search', fake_empty)
+    monkeypatch.setattr('app.services.paper_search.service.paper_search_service.semantic_scholar.search', fake_empty)
+
+    first = client.post('/papers/search', json={'query': 'cacheable test', 'sources': ['arxiv'], 'limit': 5})
+    second = client.post('/papers/search', json={'query': 'cacheable test', 'sources': ['arxiv'], 'limit': 5})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls['arxiv'] == 1

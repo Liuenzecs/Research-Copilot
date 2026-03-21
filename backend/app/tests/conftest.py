@@ -33,6 +33,7 @@ def reset_db():
     Base.metadata.drop_all(bind=engine)
     with engine.begin() as connection:
         connection.execute(text('DROP TABLE IF EXISTS alembic_version'))
+    shutil.rmtree(TEST_DATA_DIR / 'cache', ignore_errors=True)
     initialize_database()
     yield
 
