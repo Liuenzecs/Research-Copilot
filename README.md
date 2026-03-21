@@ -1,122 +1,198 @@
 # Research Copilot
 
-Research Copilot 当前主线已经切到桌面版：
+Research Copilot 是一个面向论文检索、阅读、写作整理与代码复现的桌面研究工作台。
 
-- 前端：`Tauri v2 + Vite + React Router`
-- 后端：`FastAPI + SQLite + Chroma`
-- 运行形态：桌面应用自动拉起本地 FastAPI sidecar
-- 当前目标平台：`Windows`
+当前主线已经切到桌面版：
 
-本期不再把 Next.js Web 版作为主运行时，也不导入仓库里的旧 `backend/data`。桌面版会把数据写到用户目录，和仓库开发数据隔离。
+- 桌面壳：`Tauri v2`
+- 前端：`Vite + React + React Router + TanStack Query`
+- 后端：`FastAPI`
+- 本地存储：`SQLite + local filesystem + Chroma`
+- 当前主目标平台：`Windows`
 
-## 你平时怎么启动
+它的定位不是通用聊天工具，而是一个项目制、本地优先、中文 UI 优先的研究辅助环境，适合需要系统性读论文、做笔记、写综述、跟踪复现进度的人。
 
-如果你是日常开发，最常用的就是这条：
+## 这个项目是干什么的
+
+Research Copilot 主要服务这类工作流：
+
+- 围绕一个研究项目收集和筛选论文
+- 在阅读器里阅读 PDF、做摘要、写心得
+- 沿着项目上下文管理证据、对比表和综述稿
+- 跟踪复现计划、仓库线索和执行进度
+- 生成项目周报，减少整理汇报材料的重复劳动
+
+产品当前坚持这些原则：
+
+- `项目优先`，不是全局文献库优先
+- `桌面优先`，不是 Web 主线优先
+- `本地优先`，数据默认落本地
+- `中文优先`，但品牌名 `Research Copilot` 保持英文
+- 论文标题、原文、来源元数据等 canonical 内容保持原始语义
+
+## 当前已覆盖的能力
+
+- 项目工作台：论文池、搜索收集台、证据板、对比表、综述稿、引用管理
+- 项目搜索：多源搜索、保存搜索、搜索历史、候选筛选、引文链、AI 选文
+- 论文工作区：PDF 阅读、摘要、阅读状态、计入阅读日期、AI 心得草稿
+- 复现工作流：代码仓库发现、复现计划、步骤推进、日志分析
+- 周报：项目上下文周报草稿与历史草稿管理
+- 设置页：可编辑模型配置、运行时信息、数据目录与日志目录展示
+
+## 仓库结构
+
+```text
+backend/                 FastAPI 后端、服务层、数据库模型与 Alembic 迁移
+cli/                     命令行工具
+docs/                    架构、API、产品和验收文档
+frontend/                Vite React 前端 + Tauri 桌面壳
+scripts/                 仓库级开发脚本
+README.md                项目说明
+AGENTS.md                仓库协作与实现约定
+```
+
+前端重点目录：
+
+- `frontend/src/routes`：页面入口层
+- `frontend/src/components`：可复用组件与复杂业务组件
+- `frontend/src/desktop`：桌面启动壳、路由装配、启动页
+- `frontend/src/lib`：API、运行时配置、Query、常量和工具函数
+- `frontend/src-tauri`：Tauri Rust 宿主与打包配置
+
+## 开发环境要求
+
+建议在 Windows 上开发桌面主线，并准备好：
+
+- `Node.js 20+`
+- `npm 10+`
+- `Python 3.11+`
+- `Rust stable`
+- Tauri 在 Windows 上需要的系统依赖和构建工具
+
+首次拉起项目前，通常需要：
+
+```powershell
+python -m venv backend/.venv
+.\backend\.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+
+cd frontend
+npm install
+```
+
+## 日常怎么启动
+
+桌面开发主线：
 
 ```powershell
 cd frontend
 npm run desktop:dev
 ```
 
-这条命令会同时完成三件事：
+这条命令会进入当前推荐的桌面开发方式：
 
-- 启动 Vite 前端开发服务器
-- 拉起 Tauri 桌面壳
-- 由桌面壳自动启动 FastAPI sidecar
+- 启动 Vite 前端开发环境
+- 启动 Tauri 桌面壳
+- 由桌面壳自动拉起 FastAPI sidecar
+- 首屏先显示启动页，再等待后端健康检查完成
 
-桌面版现在会先显示启动页，再在后台等待本地后端就绪。即使后端启动失败，你也能直接看到当前阶段、错误提示、日志入口和重试按钮，不会再长时间黑屏等待。
-
-也就是说，当前桌面主线下，你平时最推荐的启动方式就是 `npm run desktop:dev`，不需要再手动分别开前后端。
-
-## 旧脚本现在怎么用
-
-如果你只是想单独调后端接口，仍然可以继续使用：
+如果你只想单独调试后端，仍然可以使用：
 
 ```powershell
 .\scripts\run_backend.ps1
 ```
 
-如果你习惯继续用旧的前端脚本：
+如果你习惯从仓库根目录启动桌面开发，也可以使用：
 
 ```powershell
 .\scripts\run_frontend.ps1
 ```
 
-它现在本质上也会收口到桌面开发模式，也就是帮你跑 `cd frontend && npm run desktop:dev`。
+## 如何构建桌面包
 
-## 普通使用者怎么打开
-
-如果你不是在开发，而是想直接用应用，推荐安装 MSI 安装包：
-
-- 安装后直接打开应用即可
-- 不需要先手动启动后端
-- 不需要再手动启动前端
-
-## 怎么打包桌面安装包
-
-日常增量打包：
+日常增量构建：
 
 ```powershell
 cd frontend
 npm run desktop:build
 ```
 
-如果你怀疑当前产物像旧包，例如 exe / msi 时间不对、启动行为和最新代码不一致、MSI 打包遇到文件锁，或者 sidecar 看起来像旧版本，请改用全量 fresh build：
+如果出现这些情况，改用 fresh build：
+
+- 看起来像旧包
+- 构建时间或行为和最新代码对不上
+- MSI 被占用
+- sidecar 看起来没有更新
 
 ```powershell
 cd frontend
 npm run desktop:build:fresh
 ```
 
-单独打包 Python sidecar：
+如果只想重打 Python sidecar：
 
 ```powershell
 cd frontend
 npm run desktop:backend:bundle
 ```
 
+常见桌面产物会出现在：
+
+- `frontend/src-tauri/target/release/bundle/msi/`
+
 ## `target` 要不要删
 
-一般不用删。
+一般不需要。
 
-- `frontend/src-tauri/target` 是桌面构建缓存的主要来源
-- 日常开发和打包，优先直接用 `desktop:dev` / `desktop:build`
-- 只有出现下面这些情况时，再用 `desktop:build:fresh`
+- `frontend/src-tauri/target` 是桌面构建缓存的主要位置
+- 日常开发和构建优先使用 `desktop:dev` / `desktop:build`
+- 只有怀疑缓存或旧包残留时，再使用 `desktop:build:fresh`
 
-适合 fresh build 的场景：
+## 数据目录与运行时配置
 
-- exe 看起来像旧包
-- 设置页显示的构建时间或 commit 不对
-- MSI 文件被占用
-- sidecar 行为异常，怀疑缓存没刷干净
+开发态直接跑后端时，默认使用仓库内：
 
-## 什么时候才需要跑 E2E
+- 数据目录：`backend/data`
+- 数据库：`backend/data/research_copilot.db`
 
-`E2E` 是 `End-to-End`，也就是“端到端回归测试”。
+安装后的桌面应用会使用用户目录下的独立数据目录，不会默认把数据写回仓库。
 
-它会像真实用户一样，完整走一遍主流程，确认最近的改动没有把关键链路弄坏。这个命令不是你每次日常启动都必须跑的。
+桌面运行时还会把可编辑配置保存到：
 
-通常在这些时候再跑：
+- `<desktop data dir>/config/ui_settings.json`
 
-- 你改了项目工作台、搜索、阅读器、自动保存、导航这类关键路径
-- 你准备合并或发布一批较大的改动
-- 你怀疑“以前好的流程”被新改动弄坏了
+设置页里可以直接查看：
 
-运行 E2E：
+- 当前数据目录
+- 当前数据库路径
+- 当前日志目录
+- 当前运行构建的版本、构建时间、Git commit、构建模式
+
+## 模型与外部服务接入
+
+当前主线支持这些模型提供方式：
+
+- `OpenAI`
+- `DeepSeek`
+- `OpenAI-compatible` 网关
+- `fallback` 本地兜底
+
+其中 OpenAI-compatible 模式可以接入兼容 OpenAI 请求格式的服务，例如自定义网关或聚合服务。
+
+设置方式有两种：
+
+1. 启动后在应用 `设置` 页面里直接填写
+2. 通过 `.env` 或运行时环境变量配置
+
+示例环境变量见 [`.env.example`](./.env.example)。
+
+## 常用命令
+
+后端测试：
 
 ```powershell
-cd frontend
-npx playwright test
+pytest backend/app/tests -q
 ```
-
-第一次运行 Playwright，如果本机还没装浏览器：
-
-```powershell
-cd frontend
-npx playwright install chromium
-```
-
-## 其他常用命令
 
 前端构建检查：
 
@@ -125,45 +201,38 @@ cd frontend
 npm run build
 ```
 
-桌面缓存清理：
+桌面 E2E：
 
 ```powershell
 cd frontend
-npm run desktop:clean
+npx playwright test
 ```
 
-后端测试：
+首次运行 Playwright，如果本机没有安装浏览器：
 
 ```powershell
-pytest backend/app/tests -q
+cd frontend
+npx playwright install chromium
 ```
 
-## 数据位置
+## 文档入口
 
-桌面版运行时：
+更细的设计和实现文档在 `docs/`：
 
-- 数据目录：用户 AppData 目录下的 Research Copilot 应用目录
-- 数据库：该目录下的 `research_copilot.db`
-- 日志目录：桌面应用日志目录
+- `docs/architecture.md`
+- `docs/api-spec.md`
+- `docs/database-schema.md`
+- `docs/acceptance-checklist.md`
+- `docs/product-audit-outline.md`
 
-开发态与测试态：
-
-- `pytest` 默认使用临时数据库
-- `Playwright` E2E 也使用临时数据库
-- 测试不会污染你当前开发中的桌面数据
-
-## 为什么旧项目可能看不到
-
-- 桌面版本期不会导入仓库里的旧 `backend/data`
-- 项目首页只显示新的项目对象
-- 历史阅读、心得、复现、记忆不会自动迁成项目
-
-如果你想确认当前桌面版到底用了哪个数据目录和数据库路径，直接到应用里的“设置”页面查看。设置页现在也会显示当前运行构建的版本、构建时间、Git commit、构建模式和可执行文件路径，方便确认“这是不是最新打包出来的桌面版”。
-
-## 当前产品口径
+## 当前主线口径
 
 - 主入口：`项目`
 - 二级导航：`文库 / 周报 / 设置`
-- 二级深链：`搜索 / 心得 / 复现 / 记忆`
-- 英文论文原文与英文标题继续作为 canonical 内容
-- 中文 UI 负责组织、理解、筛选和汇报
+- 其他深链工作面：`搜索 / 心得 / 复现 / 记忆 / 论文工作区`
+- 当前以桌面版为唯一主线，不再把 Next.js Web 版作为本期兼容目标
+
+## 提醒
+
+- 本仓库里会保留一些规划文档和历史设计稿，但并不代表它们都和当前桌面主线完全同步。
+- 如果你要判断“现在到底该怎么跑”，优先以本 README、`AGENTS.md`、`frontend/package.json` 和当前脚本为准。
