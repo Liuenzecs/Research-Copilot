@@ -14,6 +14,7 @@ def build_paper_index_item(paper, state=None) -> dict:
         'interest_level': getattr(state, 'interest_level', None) if state else None,
         'repro_interest': getattr(state, 'repro_interest', 'none') if state else 'none',
         'is_core_paper': getattr(state, 'is_core_paper', False) if state else False,
+        'read_at': getattr(state, 'read_at', None) if state else None,
         'last_opened_at': getattr(state, 'last_opened_at', None) if state else None,
         'summary_count': 0,
         'reflection_count': 0,

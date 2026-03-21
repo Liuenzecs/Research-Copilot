@@ -1,6 +1,7 @@
 import { getApiBase } from './runtime';
 import {
   BrainstormIdeaResult,
+  AiReflectionMode,
   LibraryItem,
   MemoryItem,
   Paper,
@@ -424,6 +425,8 @@ export async function updatePaperResearchState(
     interest_level?: number;
     repro_interest?: string;
     user_rating?: number;
+    read_at?: string | null;
+    clear_read_at?: boolean;
     topic_cluster?: string;
     is_core_paper?: boolean;
   },
@@ -431,6 +434,13 @@ export async function updatePaperResearchState(
   return request(`/papers/${paperId}/research-state`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function markPaperOpened(paperId: number) {
+  return request<{ paper_id: number; last_opened_at?: string | null }>(`/papers/${paperId}/opened`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
@@ -450,6 +460,26 @@ export async function createPaperReflection(
   return request<Reflection>(`/papers/${paperId}/reflections`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function createAiPaperReflection(
+  paperId: number,
+  payload: {
+    mode: AiReflectionMode;
+    project_id?: number | null;
+    summary_id?: number | null;
+    event_date?: string | null;
+  },
+) {
+  return request<Reflection>(`/papers/${paperId}/reflections/ai-create`, {
+    method: 'POST',
+    body: JSON.stringify({
+      mode: payload.mode,
+      project_id: payload.project_id ?? null,
+      summary_id: payload.summary_id ?? null,
+      event_date: payload.event_date ?? null,
+    }),
   });
 }
 
@@ -662,6 +692,28 @@ export async function addProjectPaper(
   });
 }
 
+export async function batchAddProjectPapers(
+  projectId: number,
+  payload: {
+    items: Array<{
+      paper_id: number;
+      selection_reason?: string;
+      saved_search_candidate_id?: number | null;
+    }>;
+  },
+) {
+  return request<{ items: ResearchProjectPaper[] }>(`/projects/${projectId}/papers/batch-add`, {
+    method: 'POST',
+    body: JSON.stringify({
+      items: payload.items.map((item) => ({
+        paper_id: item.paper_id,
+        selection_reason: item.selection_reason ?? '',
+        saved_search_candidate_id: item.saved_search_candidate_id ?? null,
+      })),
+    }),
+  });
+}
+
 export async function removeProjectPaper(projectId: number, projectPaperId: number) {
   return request<void>(`/projects/${projectId}/papers/${projectPaperId}`, {
     method: 'DELETE',
@@ -674,6 +726,8 @@ export async function batchUpdateProjectPaperState(
     paper_ids: number[];
     reading_status?: string;
     repro_interest?: string;
+    read_at?: string | null;
+    clear_read_at?: boolean;
     is_core_paper?: boolean;
   },
 ) {
@@ -860,6 +914,28 @@ export async function ensureProjectSummaries(
     body: JSON.stringify({
       paper_ids: payload.paper_ids ?? [],
       instruction: payload.instruction ?? '',
+    }),
+  });
+}
+
+export async function curateProjectReadingList(
+  projectId: number,
+  payload: {
+    user_need: string;
+    target_count?: number;
+    selection_profile?: 'balanced' | 'repro_first' | 'frontier_first' | string;
+    saved_search_id?: number | null;
+    sources?: string[];
+  },
+) {
+  return request<ProjectActionLaunchResponse>(`/projects/${projectId}/actions/curate-reading-list`, {
+    method: 'POST',
+    body: JSON.stringify({
+      user_need: payload.user_need,
+      target_count: payload.target_count ?? 100,
+      selection_profile: payload.selection_profile ?? 'balanced',
+      saved_search_id: payload.saved_search_id ?? null,
+      sources: payload.sources ?? ['arxiv', 'openalex', 'semantic_scholar'],
     }),
   });
 }

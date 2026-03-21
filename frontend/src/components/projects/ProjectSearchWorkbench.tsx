@@ -8,9 +8,10 @@ import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import StatusStack from "@/components/common/StatusStack";
 import {
-  addProjectPaper,
+  batchAddProjectPapers,
   createProjectSavedSearch,
   createProjectSearchRun,
+  curateProjectReadingList,
   deleteProjectSavedSearch,
   generateProjectSavedSearchCandidateAiReason,
   getPaperCitationTrail,
@@ -19,6 +20,7 @@ import {
   listProjectSearchRuns,
   rerunProjectSavedSearch,
   searchPapers,
+  streamProjectTask,
   updateProjectSavedSearch,
   updateProjectSavedSearchCandidate,
 } from "@/lib/api";
@@ -28,6 +30,7 @@ import type {
   PaperSearchFilters,
   PaperSearchSortMode,
   ProjectSavedSearch,
+  ProjectSavedSearchDetail,
   ProjectSearchRun,
   ResearchProject,
   SearchCandidate,
@@ -35,6 +38,13 @@ import type {
 
 const LIMIT = 24;
 const RECENT_KEY = "research-copilot:search-recent";
+const AI_BUCKET_OPTIONS = [
+  { key: "all", label: "全部" },
+  { key: "classic_foundations", label: "基础经典" },
+  { key: "core_must_read", label: "核心必读" },
+  { key: "recent_frontier", label: "近期前沿" },
+  { key: "repro_ready", label: "推荐复现" },
+] as const;
 const DEFAULT_FILTERS: PaperSearchFilters = {
   sources: ["arxiv", "openalex", "semantic_scholar"],
   year_from: null,
@@ -110,6 +120,10 @@ function triageText(value: string) {
   return "未筛选";
 }
 
+function aiBucketLabel(bucket: string) {
+  return AI_BUCKET_OPTIONS.find((item) => item.key === bucket)?.label ?? bucket;
+}
+
 export default function ProjectSearchWorkbench({
   projectId,
   project,
@@ -140,9 +154,24 @@ export default function ProjectSearchWorkbench({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [aiNeed, setAiNeed] = useState(project?.research_question || "");
+  const [aiTargetCount, setAiTargetCount] = useState(100);
+  const [aiProfile, setAiProfile] = useState<"balanced" | "repro_first" | "frontier_first">("balanced");
+  const [aiPreviewBucket, setAiPreviewBucket] = useState<(typeof AI_BUCKET_OPTIONS)[number]["key"]>("all");
 
   const hasProject = Boolean(projectId);
-  const activeCandidate = useMemo(() => items.find((item) => item.paper.id === activePaperId) ?? items[0] ?? null, [activePaperId, items]);
+  const isAiPreview = activeSavedSearch?.search_mode === "ai_curated";
+  const displayedItems = useMemo(
+    () =>
+      isAiPreview && aiPreviewBucket !== "all"
+        ? items.filter((item) => item.selection_bucket === aiPreviewBucket)
+        : items,
+    [aiPreviewBucket, isAiPreview, items],
+  );
+  const activeCandidate = useMemo(
+    () => displayedItems.find((item) => item.paper.id === activePaperId) ?? displayedItems[0] ?? null,
+    [activePaperId, displayedItems],
+  );
   const selectedCandidates = items.filter((item) => selectedPaperIds.includes(item.paper.id));
   const trailItems = trail ? [...trail.references, ...trail.cited_by] : [];
   const selectedTrailItems = trailItems.filter((item) => trailSelection.includes(item.paper.id));
@@ -154,12 +183,36 @@ export default function ProjectSearchWorkbench({
     setRuns(nextRuns);
   }
 
+  function applySavedSearchDetail(payload: ProjectSavedSearchDetail) {
+    setQuery(payload.saved_search.query);
+    setFilters(normalizeFilters(payload.saved_search.filters));
+    setSortMode(payload.saved_search.sort_mode);
+    setSavedTitle(payload.saved_search.title);
+    setActiveSavedSearch(payload.saved_search);
+    setActiveRun(payload.last_run ?? null);
+    setItems(payload.items);
+    setWarnings(payload.last_run?.warnings ?? []);
+    if (payload.saved_search.search_mode === "ai_curated") {
+      setAiNeed(payload.saved_search.user_need || payload.saved_search.query);
+      setAiTargetCount(payload.saved_search.target_count || 100);
+      setAiProfile((payload.saved_search.selection_profile as "balanced" | "repro_first" | "frontier_first") || "balanced");
+      setAiPreviewBucket("all");
+    }
+  }
+
   useEffect(() => {
     if (!query.trim()) {
       const seeded = initialQuery || project?.seed_query || project?.research_question || "";
       if (seeded.trim()) setQuery(seeded);
     }
   }, [initialQuery, project, query]);
+
+  useEffect(() => {
+    if (!aiNeed.trim()) {
+      const seeded = project?.research_question || initialQuery || project?.seed_query || "";
+      if (seeded.trim()) setAiNeed(seeded);
+    }
+  }, [aiNeed, initialQuery, project]);
 
   useEffect(() => {
     if (projectId) void refreshCollections();
@@ -230,14 +283,7 @@ export default function ProjectSearchWorkbench({
     setError("");
     try {
       const payload = await getProjectSavedSearch(projectId, searchId);
-      setQuery(payload.saved_search.query);
-      setFilters(normalizeFilters(payload.saved_search.filters));
-      setSortMode(payload.saved_search.sort_mode);
-      setSavedTitle(payload.saved_search.title);
-      setActiveSavedSearch(payload.saved_search);
-      setActiveRun(payload.last_run ?? null);
-      setItems(payload.items);
-      setWarnings(payload.last_run?.warnings ?? []);
+      applySavedSearchDetail(payload);
       setNotice(`已打开“${payload.saved_search.title}”。`);
     } catch (loadError) {
       setError((loadError as Error).message || "已保存搜索加载失败");
@@ -258,11 +304,7 @@ export default function ProjectSearchWorkbench({
         sort_mode: sortMode,
         source_run_id: activeRun?.id ?? null,
       });
-      setSavedTitle(payload.saved_search.title);
-      setActiveSavedSearch(payload.saved_search);
-      setActiveRun(payload.last_run ?? null);
-      setItems(payload.items);
-      setWarnings(payload.last_run?.warnings ?? []);
+      applySavedSearchDetail(payload);
       await refreshCollections();
       setNotice(`已保存搜索“${payload.saved_search.title}”。`);
     } catch (saveError) {
@@ -297,19 +339,73 @@ export default function ProjectSearchWorkbench({
     setBusy("rerun");
     setError("");
     try {
+      const current = savedSearches.find((item) => item.id === searchId) ?? (activeSavedSearch?.id === searchId ? activeSavedSearch : null);
+      if (current?.search_mode === "ai_curated") {
+        await runAiCuration({
+          userNeed: current.user_need || current.query,
+          targetCount: current.target_count || 100,
+          selectionProfile: current.selection_profile,
+          savedSearchId: current.id,
+        });
+        return;
+      }
       const payload = await rerunProjectSavedSearch(projectId, searchId);
-      setQuery(payload.saved_search.query);
-      setFilters(normalizeFilters(payload.saved_search.filters));
-      setSortMode(payload.saved_search.sort_mode);
-      setSavedTitle(payload.saved_search.title);
-      setActiveSavedSearch(payload.saved_search);
-      setActiveRun(payload.last_run ?? null);
-      setItems(payload.items);
-      setWarnings(payload.last_run?.warnings ?? []);
+      applySavedSearchDetail(payload);
       await refreshCollections();
       setNotice(`已重跑“${payload.saved_search.title}”。`);
     } catch (rerunError) {
       setError((rerunError as Error).message || "重跑失败");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runAiCuration(options?: {
+    userNeed?: string;
+    targetCount?: number;
+    selectionProfile?: string;
+    savedSearchId?: number | null;
+  }) {
+    if (!projectId) return;
+    const userNeed = (options?.userNeed ?? aiNeed).trim();
+    if (!userNeed) {
+      setError("请先输入你的研究需求，再让 AI 帮你挑论文。");
+      return;
+    }
+
+    setBusy("curate");
+    setError("");
+    setNotice("");
+    try {
+      const launch = await curateProjectReadingList(projectId, {
+        user_need: userNeed,
+        target_count: Math.min(200, Math.max(20, Number(options?.targetCount ?? aiTargetCount) || 100)),
+        selection_profile: options?.selectionProfile ?? aiProfile,
+        saved_search_id: options?.savedSearchId ?? null,
+        sources: filters.sources,
+      });
+
+      setNotice("AI 选文任务已启动，正在生成预览……");
+      let savedSearchId = options?.savedSearchId ?? null;
+      await streamProjectTask(projectId, launch.task.id, {
+        onEvent: (event) => {
+          if (event.type === "progress" && event.step?.message) {
+            setNotice(event.step.message);
+          }
+          if ((event.type === "task_completed" || event.type === "task_failed") && event.task?.output_json) {
+            const candidateId = Number((event.task.output_json as Record<string, unknown>).saved_search_id ?? 0);
+            if (candidateId > 0) savedSearchId = candidateId;
+          }
+        },
+      });
+
+      if (savedSearchId) {
+        await openSavedSearch(savedSearchId);
+      }
+      await refreshCollections();
+      setNotice("AI 选文预览已生成，请先检查后再确认加入项目。");
+    } catch (curateError) {
+      setError((curateError as Error).message || "AI 选文失败");
     } finally {
       setBusy("");
     }
@@ -341,14 +437,12 @@ export default function ProjectSearchWorkbench({
     setBusy("add");
     setError("");
     try {
-      await Promise.all(
-        targetItems.map((item) =>
-          addProjectPaper(projectId, {
-            paper_id: item.paper.id,
-            saved_search_candidate_id: item.candidate_id ?? undefined,
-          }),
-        ),
-      );
+      await batchAddProjectPapers(projectId, {
+        items: targetItems.map((item) => ({
+          paper_id: item.paper.id,
+          saved_search_candidate_id: item.candidate_id ?? null,
+        })),
+      });
       setItems((current) => current.map((item) => (targetItems.some((target) => target.paper.id === item.paper.id) ? { ...item, is_in_project: true } : item)));
       setTrail((current) =>
         current
@@ -430,6 +524,43 @@ export default function ProjectSearchWorkbench({
           </p>
         </div>
       </div>
+
+      {hasProject ? (
+        <div className="project-search-filter-card" style={{ marginBottom: 12 }}>
+          <strong>AI 帮我挑论文</strong>
+          <p className="subtle" style={{ marginTop: 6 }}>
+            输入你的研究需求，先生成预览，再决定是否把这批论文加入项目。
+          </p>
+          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+            <textarea
+              className="textarea"
+              value={aiNeed}
+              onChange={(event) => setAiNeed(event.target.value)}
+              placeholder="例如：帮我为 LLM Agent 入门与复现整理 100 篇最适合先读的论文，兼顾经典、近期前沿和可复现性。"
+              rows={3}
+            />
+            <div className="project-inline-compact">
+              <input
+                className="input"
+                type="number"
+                min={20}
+                max={200}
+                value={aiTargetCount}
+                onChange={(event) => setAiTargetCount(Number(event.target.value) || 100)}
+                placeholder="目标篇数"
+              />
+              <select className="select" value={aiProfile} onChange={(event) => setAiProfile(event.target.value as "balanced" | "repro_first" | "frontier_first")}>
+                <option value="balanced">平衡分层</option>
+                <option value="repro_first">复现优先</option>
+                <option value="frontier_first">前沿优先</option>
+              </select>
+              <Button type="button" onClick={() => void runAiCuration()} disabled={busy !== ""}>
+                {busy === "curate" ? "生成预览中..." : "AI 帮我挑论文"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="project-search-toolbar">
         <input className="input" data-testid="project-search-input" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void runSearch()} placeholder="输入研究问题或关键词" />
@@ -534,21 +665,49 @@ export default function ProjectSearchWorkbench({
 
       <StatusStack items={[...(error ? [{ variant: "error" as const, message: error }] : []), ...warnings.map((message) => ({ variant: "warning" as const, message })), ...(notice ? [{ variant: "success" as const, message: notice }] : [])]} />
 
+      {isAiPreview ? (
+        <div className="project-search-filter-card" style={{ marginTop: 12 }}>
+          <strong>AI 100 篇预览</strong>
+          <div className="subtle" style={{ marginTop: 6 }}>
+            需求：{activeSavedSearch?.user_need || aiNeed || "未填写"} · 目标篇数 {activeSavedSearch?.target_count || aiTargetCount}
+          </div>
+          <div className="project-chip-row" style={{ marginTop: 10 }}>
+            {AI_BUCKET_OPTIONS.map((bucket) => {
+              const count = bucket.key === "all" ? items.length : items.filter((item) => item.selection_bucket === bucket.key).length;
+              return (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  className={`project-filter-chip${aiPreviewBucket === bucket.key ? " is-active" : ""}`.trim()}
+                  onClick={() => setAiPreviewBucket(bucket.key)}
+                >
+                  {bucket.label} · {count}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <div className="projects-inline-actions" style={{ marginTop: 12 }}>
-        <Button type="button" data-testid="project-search-batch-add" onClick={() => void addCandidatesToProject(selectedCandidates)} disabled={!projectId || !selectedCandidates.length || busy !== ""}>{busy === "add" ? "加入中..." : `批量加入项目 (${selectedCandidates.length})`}</Button>
+        <Button type="button" data-testid="project-search-batch-add" onClick={() => void addCandidatesToProject(selectedCandidates)} disabled={!projectId || !selectedCandidates.length || busy !== ""}>{busy === "add" ? "加入中..." : isAiPreview ? `确认加入已勾选论文 (${selectedCandidates.length})` : `批量加入项目 (${selectedCandidates.length})`}</Button>
         <Button className="secondary" type="button" onClick={() => void batchTriage("shortlisted")} disabled={!projectId || !activeSavedSearch || !selectedCandidates.length || busy !== ""}>标为待重点阅读</Button>
         <Button className="secondary" type="button" onClick={() => void batchTriage("rejected")} disabled={!projectId || !activeSavedSearch || !selectedCandidates.length || busy !== ""}>标为排除</Button>
         <Button className="secondary" type="button" onClick={() => void batchTriage("new")} disabled={!projectId || !activeSavedSearch || !selectedCandidates.length || busy !== ""}>清除状态</Button>
-        <Button className="secondary" type="button" onClick={() => setSelectedPaperIds(items.map((item) => item.paper.id))}>全选结果</Button>
+        <Button className="secondary" type="button" onClick={() => setSelectedPaperIds(displayedItems.map((item) => item.paper.id))}>全选结果</Button>
       </div>
 
       <div className="project-search-layout">
         <div className="project-search-result-list">
-          {items.length === 0 ? <EmptyState title="还没有候选结果" hint="先运行一次搜索，或打开一条已保存搜索。" /> : items.map((candidate) => (
+          {displayedItems.length === 0 ? <EmptyState title="还没有候选结果" hint="先运行一次搜索，或打开一条已保存搜索。" /> : displayedItems.map((candidate) => (
             <button key={candidate.paper.id} type="button" className={`project-paper-search-item project-candidate-card${activeCandidate?.paper.id === candidate.paper.id ? " is-active" : ""}`.trim()} data-testid={`search-result-${candidate.paper.id}`} onClick={() => setActivePaperId(candidate.paper.id)}>
               <div className="project-candidate-head">
                 <label className="project-paper-check"><input type="checkbox" checked={selectedPaperIds.includes(candidate.paper.id)} onChange={(event) => setSelectedPaperIds((current) => event.target.checked ? [...new Set([...current, candidate.paper.id])] : current.filter((item) => item !== candidate.paper.id))} /><span>{candidate.is_in_project ? "已在项目中" : "加入本批次"}</span></label>
-                <span className="project-filter-chip is-static">{triageText(candidate.triage_status)}</span>
+                <div className="project-chip-row">
+                  {candidate.selected_by_ai && candidate.selection_bucket ? <span className="project-filter-chip is-static">{aiBucketLabel(candidate.selection_bucket)}</span> : null}
+                  {candidate.selection_rank ? <span className="project-filter-chip is-static">#{candidate.selection_rank}</span> : null}
+                  <span className="project-filter-chip is-static">{triageText(candidate.triage_status)}</span>
+                </div>
               </div>
               <strong>{candidate.paper.title_en}</strong>
               <div className="subtle">{candidate.paper.authors || "作者未知"} · {candidate.paper.year ?? "年份未知"} · 引用 {candidate.paper.citation_count ?? 0}</div>

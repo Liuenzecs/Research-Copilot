@@ -4,6 +4,7 @@ import { formatDateTime, reproductionStatusLabel } from '@/lib/presentation';
 import { WeeklyReportContext } from '@/lib/types';
 
 function activityTypeLabel(activityType: string) {
+  if (activityType === 'read') return '计入阅读';
   switch (activityType) {
     case 'added':
       return '新入库';
@@ -11,7 +12,7 @@ function activityTypeLabel(activityType: string) {
       return '生成摘要';
     case 'reflection':
       return '记录心得';
-    case 'state_update':
+    case 'read':
       return '更新阅读状态';
     case 'reproduction':
       return '推进复现';

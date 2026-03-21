@@ -84,6 +84,8 @@ class LibraryService:
                 self._update_last_activity(item, _as_utc(paper.created_at), '已加入文献库')
 
             if state is not None:
+                if state.read_at is not None:
+                    item['read_at'] = state.read_at
                 self._update_last_activity(item, _as_utc(state.last_opened_at), '最近阅读')
                 if state.updated_at and (
                     state.reading_status != 'unread'
@@ -98,6 +100,7 @@ class LibraryService:
                 or item['summary_count'] > 0
                 or item['reflection_count'] > 0
                 or item['reproduction_count'] > 0
+                or (state is not None and state.read_at is not None)
                 or (state is not None and state.last_opened_at is not None)
                 or (state is not None and state.reading_status != 'unread')
             )

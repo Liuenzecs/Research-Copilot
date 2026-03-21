@@ -357,6 +357,153 @@ class ReportingService:
             'project_activity': project_activity,
         }
 
+    def _paper_activity_items(self, db: Session, week_start: date, week_end: date, project_paper_ids: set[int] | None = None) -> list[dict]:
+        start_dt, end_dt = _week_bounds(week_start, week_end)
+        activity_candidates: list[dict] = []
+        allowed_paper_ids = project_paper_ids or set()
+
+        created_papers = (
+            db.execute(
+                select(PaperRecord)
+                .where(PaperRecord.created_at >= start_dt)
+                .where(PaperRecord.created_at <= end_dt)
+            )
+            .scalars()
+            .all()
+        )
+        for paper in created_papers:
+            if allowed_paper_ids and paper.id not in allowed_paper_ids:
+                continue
+            activity_candidates.append(
+                {
+                    'paper_id': paper.id,
+                    'last_activity_at': _as_utc(paper.created_at),
+                    'activity_type': 'added',
+                    'activity_summary': '本周新加入系统。',
+                }
+            )
+
+        summaries = (
+            db.execute(
+                select(SummaryRecord)
+                .where(SummaryRecord.created_at >= start_dt)
+                .where(SummaryRecord.created_at <= end_dt)
+                .order_by(SummaryRecord.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for summary in summaries:
+            if allowed_paper_ids and summary.paper_id not in allowed_paper_ids:
+                continue
+            activity_candidates.append(
+                {
+                    'paper_id': summary.paper_id,
+                    'last_activity_at': _as_utc(summary.created_at),
+                    'activity_type': 'summary',
+                    'activity_summary': f'本周生成了 {summary.summary_type} 摘要。',
+                }
+            )
+
+        reflections = (
+            db.execute(
+                select(ReflectionRecord)
+                .where(ReflectionRecord.event_date >= week_start)
+                .where(ReflectionRecord.event_date <= week_end)
+                .where(ReflectionRecord.related_paper_id.is_not(None))
+                .order_by(ReflectionRecord.event_date.desc(), ReflectionRecord.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for reflection in reflections:
+            if allowed_paper_ids and reflection.related_paper_id not in allowed_paper_ids:
+                continue
+            activity_candidates.append(
+                {
+                    'paper_id': reflection.related_paper_id,
+                    'last_activity_at': datetime.combine(reflection.event_date, time.max, tzinfo=timezone.utc),
+                    'activity_type': 'reflection',
+                    'activity_summary': reflection.report_summary or '本周新增了论文心得。',
+                }
+            )
+
+        read_states = (
+            db.execute(
+                select(PaperResearchStateRecord)
+                .where(PaperResearchStateRecord.read_at.is_not(None))
+                .order_by(PaperResearchStateRecord.read_at.desc(), PaperResearchStateRecord.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for state in read_states:
+            if state.read_at is None or state.read_at < week_start or state.read_at > week_end:
+                continue
+            if allowed_paper_ids and state.paper_id not in allowed_paper_ids:
+                continue
+            activity_candidates.append(
+                {
+                    'paper_id': state.paper_id,
+                    'last_activity_at': datetime.combine(state.read_at, time.max, tzinfo=timezone.utc),
+                    'activity_type': 'read',
+                    'activity_summary': f'计入阅读日期：{state.read_at.isoformat()}',
+                }
+            )
+
+        reproductions = (
+            db.execute(
+                select(ReproductionRecord)
+                .where(ReproductionRecord.updated_at >= start_dt)
+                .where(ReproductionRecord.updated_at <= end_dt)
+                .where(ReproductionRecord.paper_id.is_not(None))
+                .order_by(ReproductionRecord.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        for reproduction in reproductions:
+            if allowed_paper_ids and reproduction.paper_id not in allowed_paper_ids:
+                continue
+            activity_candidates.append(
+                {
+                    'paper_id': reproduction.paper_id,
+                    'last_activity_at': _as_utc(reproduction.updated_at),
+                    'activity_type': 'reproduction',
+                    'activity_summary': reproduction.progress_summary or f'本周推进了复现，状态为 {reproduction.status}。',
+                }
+            )
+
+        latest_by_paper: dict[int, dict] = {}
+        for item in activity_candidates:
+            paper_id = item['paper_id']
+            if paper_id is None:
+                continue
+            existing = latest_by_paper.get(paper_id)
+            if existing is None or item['last_activity_at'] > existing['last_activity_at']:
+                latest_by_paper[paper_id] = item
+
+        paper_map = self._load_paper_map(db, set(latest_by_paper.keys()))
+        result = []
+        for paper_id, item in latest_by_paper.items():
+            paper = paper_map.get(paper_id)
+            if paper is None:
+                continue
+            result.append(
+                {
+                    'paper_id': paper.id,
+                    'title_en': paper.title_en,
+                    'source': paper.source,
+                    'year': paper.year,
+                    'last_activity_at': _iso_datetime(item['last_activity_at']),
+                    'activity_type': item['activity_type'],
+                    'activity_summary': item['activity_summary'],
+                }
+            )
+
+        result.sort(key=lambda item: item['last_activity_at'], reverse=True)
+        return result[:20]
+
     def build_markdown(self, context: dict, title: str) -> str:
         lines = [
             f"# {title}",

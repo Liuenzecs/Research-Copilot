@@ -62,6 +62,7 @@ class ResearchProjectPaperOut(BaseModel):
     latest_reproduction_status: str = ''
     evidence_count: int = 0
     report_worthy_count: int = 0
+    read_at: date | None = None
     pdf_status: str = 'missing'
     pdf_status_message: str = ''
     pdf_last_checked_at: datetime | None = None
@@ -140,6 +141,14 @@ class ResearchProjectReviewInsertRequest(BaseModel):
 class ResearchProjectActionRequest(BaseModel):
     paper_ids: list[int] = Field(default_factory=list)
     instruction: str = ''
+
+
+class ResearchProjectCurateReadingListRequest(BaseModel):
+    user_need: str = ''
+    target_count: int = 100
+    selection_profile: str = 'balanced'
+    saved_search_id: int | None = None
+    sources: list[str] = Field(default_factory=lambda: ['arxiv', 'openalex', 'semantic_scholar'])
 
 
 class ResearchProjectTaskProgressStepOut(BaseModel):
@@ -257,11 +266,27 @@ class ResearchProjectPaperBatchStateRequest(BaseModel):
     paper_ids: list[int] = Field(default_factory=list)
     reading_status: str | None = None
     repro_interest: str | None = None
+    read_at: date | None = None
+    clear_read_at: bool | None = None
     is_core_paper: bool | None = None
 
 
 class ResearchProjectPaperBatchStateResponse(BaseModel):
     updated_paper_ids: list[int] = Field(default_factory=list)
+
+
+class ResearchProjectPaperBatchAddItem(BaseModel):
+    paper_id: int
+    selection_reason: str = ''
+    saved_search_candidate_id: int | None = None
+
+
+class ResearchProjectPaperBatchAddRequest(BaseModel):
+    items: list[ResearchProjectPaperBatchAddItem] = Field(default_factory=list)
+
+
+class ResearchProjectPaperBatchAddResponse(BaseModel):
+    items: list[ResearchProjectPaperOut] = Field(default_factory=list)
 
 
 class ResearchProjectWorkspaceResponse(BaseModel):
@@ -338,6 +363,10 @@ class ResearchProjectSavedSearchOut(BaseModel):
     title: str
     query: str
     filters: ProjectSearchFilters = Field(default_factory=ProjectSearchFilters)
+    search_mode: str = 'manual'
+    user_need: str = ''
+    selection_profile: str = 'balanced'
+    target_count: int = 0
     sort_mode: str
     last_run_id: int | None = None
     last_result_count: int = 0

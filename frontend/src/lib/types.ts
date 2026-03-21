@@ -63,6 +63,9 @@ export type SearchCandidate = {
   reproduction_count: number;
   reading_status: string;
   repro_interest: string;
+  selected_by_ai: boolean;
+  selection_bucket: string;
+  selection_rank?: number | null;
   matched_in_latest_run: boolean;
 };
 
@@ -129,6 +132,7 @@ export type PaperResearchState = {
   interest_level: number;
   repro_interest: string;
   user_rating?: number | null;
+  read_at?: string | null;
   last_opened_at?: string | null;
   topic_cluster?: string;
   is_core_paper: boolean;
@@ -178,6 +182,7 @@ export type ResearchProjectPaper = {
   latest_reproduction_status?: string;
   evidence_count: number;
   report_worthy_count: number;
+  read_at?: string | null;
   pdf_status: 'downloaded' | 'remote_pdf' | 'landing_page_only' | 'missing' | 'error' | string;
   pdf_status_message: string;
   pdf_last_checked_at?: string | null;
@@ -375,6 +380,10 @@ export type ProjectSavedSearch = {
   title: string;
   query: string;
   filters: PaperSearchFilters;
+  search_mode: 'manual' | 'ai_curated' | string;
+  user_need: string;
+  selection_profile: 'balanced' | 'repro_first' | 'frontier_first' | string;
+  target_count: number;
   sort_mode: PaperSearchSortMode | string;
   last_run_id?: number | null;
   last_result_count: number;
@@ -461,11 +470,14 @@ export type LibraryItem = {
   reproduction_count: number;
   memory_count: number;
   in_memory: boolean;
+  read_at?: string | null;
   last_opened_at?: string | null;
   last_activity_at: string;
   last_activity_label: string;
   is_my_library: boolean;
 };
+
+export type AiReflectionMode = 'quick' | 'critical' | 'advisor';
 
 export type ReproductionStep = {
   id: number;

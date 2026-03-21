@@ -146,6 +146,7 @@ export default function LibraryPage() {
                         最近动作：{item.last_activity_label}
                         {item.last_activity_at ? ` · ${formatDateTime(item.last_activity_at)}` : ''}
                       </div>
+                      {item.read_at ? <div className="subtle">计入阅读日期：{item.read_at}</div> : null}
                       <div className="subtle">
                         摘要 {item.summary_count} · 心得 {item.reflection_count ?? 0} · 复现 {item.reproduction_count} · 记忆{' '}
                         {item.memory_count}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ from app.models.db.research_project_record import (
     ResearchProjectPaperRecord,
     ResearchProjectRecord,
     ResearchProjectSavedSearchCandidateRecord,
+    ResearchProjectSavedSearchRecord,
 )
 from app.models.db.summary_record import SummaryRecord
 from app.models.db.task_artifact_record import TaskArtifactRecord
@@ -43,6 +44,7 @@ from app.models.schemas.project import (
     ResearchProjectLinkedArtifactsOut,
     ResearchProjectOut,
     ResearchProjectOutputOut,
+    ResearchProjectPaperBatchAddItem,
     ResearchProjectPaperBatchStateResponse,
     ResearchProjectPaperOut,
     ResearchProjectSmartViewOut,
@@ -59,6 +61,8 @@ from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
 from app.services.pdf.parser import pdf_parser
 from app.services.project.activity import project_activity_service
+from app.services.project.curation_service import project_curation_service
+from app.services.project.search_service import project_search_service
 from app.services.summarize.service import summarize_service
 from app.services.workflow.service import workflow_service
 
@@ -82,6 +86,7 @@ PROJECT_ACTION_TASK_TYPES = {
     'fetch_pdfs': 'project_fetch_pdfs',
     'refresh_metadata': 'project_refresh_metadata',
     'ensure_summaries': 'project_ensure_summaries',
+    'curate_reading_list': 'project_curate_reading_list',
 }
 
 PROJECT_TERMINAL_TASK_STATUSES = {'completed', 'failed', 'archived'}
@@ -107,6 +112,17 @@ STEP_LABELS = {
     'fetching_pdfs': '补全 PDF',
     'refreshing_metadata': '刷新元数据与可信度',
 }
+
+STEP_LABELS.update(
+    {
+        'planning_queries': '规划检索子查询',
+        'collecting_candidates': '收集候选论文',
+        'deduping_and_filtering': '去重与离题过滤',
+        'reranking_candidates': '重排候选论文',
+        'building_preview': '生成预览分层',
+        'saving_preview': '保存 AI 预览',
+    }
+)
 
 INTEGRITY_PRIORITY = {
     'normal': 0,
@@ -502,6 +518,41 @@ class ProjectService:
         )
         return row
 
+    def batch_add_papers(
+        self,
+        db: Session,
+        *,
+        project: ResearchProjectRecord,
+        items: list[ResearchProjectPaperBatchAddItem],
+    ) -> list[ResearchProjectPaperRecord]:
+        if not items:
+            raise ValueError('Select at least one paper before adding it to the project')
+
+        rows: list[ResearchProjectPaperRecord] = []
+        seen_paper_ids: set[int] = set()
+        for item in items:
+            canonical_paper_id = self._canonical_paper_id(db, item.paper_id) or item.paper_id
+            if canonical_paper_id in seen_paper_ids:
+                continue
+
+            selection_reason = (item.selection_reason or '').strip()
+            if item.saved_search_candidate_id is not None and not selection_reason:
+                candidate = project_search_service.candidate_for_project(db, project.id, item.saved_search_candidate_id)
+                candidate_paper_id = self._canonical_paper_id(db, candidate.paper_id) or candidate.paper_id
+                if candidate_paper_id != canonical_paper_id:
+                    raise ValueError('saved_search_candidate_id does not match paper_id')
+                selection_reason = project_search_service.default_selection_reason(candidate)
+
+            row = self.add_paper(
+                db,
+                project=project,
+                paper_id=canonical_paper_id,
+                selection_reason=selection_reason,
+            )
+            rows.append(row)
+            seen_paper_ids.add(canonical_paper_id)
+        return rows
+
     def remove_paper(self, db: Session, *, project: ResearchProjectRecord, project_paper_id: int) -> None:
         row = db.get(ResearchProjectPaperRecord, project_paper_id)
         if row is None or row.project_id != project.id:
@@ -732,6 +783,7 @@ class ProjectService:
         summary_ids = [item.id for item in summaries]
         reflections = self._get_reflection_rows(db, link.paper_id, summary_ids)
         reproductions = self._get_reproduction_rows(db, link.paper_id)
+        research_state = self._get_research_state(db, link.paper_id)
         latest_reproduction = reproductions[0] if reproductions else None
         evidence_count = db.execute(
             select(func.count(ResearchProjectEvidenceItemRecord.id))
@@ -757,6 +809,7 @@ class ProjectService:
             latest_reproduction_status=latest_reproduction.status if latest_reproduction else '',
             evidence_count=int(evidence_count or 0),
             report_worthy_count=report_worthy_count,
+            read_at=research_state.read_at if research_state is not None else None,
             pdf_status=paper.pdf_status or ('downloaded' if paper.pdf_local_path else 'missing'),
             pdf_status_message=paper.pdf_status_message or '',
             pdf_last_checked_at=paper.pdf_last_checked_at,
@@ -1526,6 +1579,8 @@ class ProjectService:
         paper_ids: list[int],
         reading_status: str | None,
         repro_interest: str | None,
+        read_at: date | None,
+        clear_read_at: bool | None,
         is_core_paper: bool | None,
     ) -> ResearchProjectPaperBatchStateResponse:
         links = self._select_project_links(db, project.id, paper_ids)
@@ -1538,9 +1593,14 @@ class ProjectService:
                 state.reading_status = reading_status
             if repro_interest is not None:
                 state.repro_interest = repro_interest
+            if clear_read_at:
+                state.read_at = None
+            elif read_at is not None:
+                state.read_at = read_at
             if is_core_paper is not None:
                 state.is_core_paper = is_core_paper
-            state.last_opened_at = datetime.now(timezone.utc)
+            if state.read_at is not None and state.reading_status == 'unread':
+                state.reading_status = 'skimmed'
             db.add(state)
             updated_ids.append(link.paper_id)
         db.commit()
@@ -1556,6 +1616,8 @@ class ProjectService:
                 'paper_ids': updated_ids,
                 'reading_status': reading_status,
                 'repro_interest': repro_interest,
+                'read_at': read_at.isoformat() if read_at else None,
+                'clear_read_at': bool(clear_read_at),
                 'is_core_paper': is_core_paper,
             },
         )
@@ -1614,6 +1676,10 @@ class ProjectService:
             canonical_state.repro_interest = merged_state.repro_interest
         canonical_state.interest_level = max(canonical_state.interest_level or 0, merged_state.interest_level or 0)
         canonical_state.is_core_paper = canonical_state.is_core_paper or merged_state.is_core_paper
+        if merged_state.read_at and (
+            canonical_state.read_at is None or merged_state.read_at < canonical_state.read_at
+        ):
+            canonical_state.read_at = merged_state.read_at
         if merged_state.last_opened_at and (
             canonical_state.last_opened_at is None or merged_state.last_opened_at > canonical_state.last_opened_at
         ):
@@ -1760,6 +1826,7 @@ class ProjectService:
         action: str,
         paper_ids: list[int],
         instruction: str,
+        extra_payload: dict[str, Any] | None = None,
     ) -> TaskRecord:
         if action not in PROJECT_ACTION_TASK_TYPES:
             raise ValueError('Unsupported project action')
@@ -2456,6 +2523,304 @@ class ProjectService:
             'project_output_id': output.id,
             'paper_ids': selected_ids,
             'citation_count': len(content_json.get('citations', [])),
+        }
+
+    def launch_action(
+        self,
+        db: Session,
+        *,
+        project: ResearchProjectRecord,
+        action: str,
+        paper_ids: list[int],
+        instruction: str,
+        extra_payload: dict[str, Any] | None = None,
+    ) -> TaskRecord:
+        if action not in PROJECT_ACTION_TASK_TYPES:
+            raise ValueError('Unsupported project action')
+
+        links = self._select_project_links(db, project.id, paper_ids)
+        selected_ids = [link.paper_id for link in links]
+        if action != 'curate_reading_list' and not selected_ids:
+            raise ValueError('请先在当前项目中至少选择一篇论文，再执行该动作')
+
+        task_input: dict[str, Any] = {
+            'action': action,
+            'project_id': project.id,
+            'paper_ids': selected_ids,
+            'instruction': instruction.strip(),
+        }
+        if extra_payload:
+            task_input.update(extra_payload)
+
+        task = workflow_service.create_task(
+            db,
+            task_type=PROJECT_ACTION_TASK_TYPES[action],
+            input_json=task_input,
+            status='running',
+        )
+        self._record_project_artifact(db, task.id, project.id, 'project_action', task_input)
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='project_action_launched',
+            title='启动项目动作',
+            message=f'已启动 {action}，关联 {len(selected_ids)} 篇项目论文。',
+            ref_type='tasks',
+            ref_id=task.id,
+            metadata=task_input,
+        )
+        if action == 'curate_reading_list':
+            self._record_progress(
+                db,
+                task_id=task.id,
+                project_id=project.id,
+                step_key='planning_queries',
+                status='running',
+                message='正在根据研究需求规划检索子查询。',
+                related_paper_ids=[],
+            )
+        else:
+            self._record_progress(
+                db,
+                task_id=task.id,
+                project_id=project.id,
+                step_key='screening_papers',
+                status='completed',
+                message=f'已使用该项目下关联的 {len(selected_ids)} 篇论文。',
+                related_paper_ids=selected_ids,
+            )
+        return task
+
+    async def execute_task(self, task_id: int) -> None:
+        try:
+            with SessionLocal() as db:
+                task = db.get(TaskRecord, task_id)
+                if task is None:
+                    return
+
+                payload = self._parse_task_json(task.input_json)
+                project_id = int(payload.get('project_id') or 0)
+                action = str(payload.get('action') or '')
+                paper_ids = [int(item) for item in payload.get('paper_ids', [])]
+                instruction = str(payload.get('instruction') or '')
+                project = self.get_or_404(db, project_id)
+
+                if action == 'curate_reading_list':
+                    output_json = await self._execute_curate_reading_list(
+                        db,
+                        task=task,
+                        project=project,
+                        payload=payload,
+                    )
+                else:
+                    links = self._select_project_links(db, project.id, paper_ids)
+                    if not links:
+                        raise ValueError('Selected project papers are no longer available')
+
+                    if action == 'extract_evidence':
+                        output_json = await self._execute_extract_evidence(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                            instruction=instruction,
+                        )
+                    elif action == 'generate_compare_table':
+                        output_json = await self._execute_generate_compare_table(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                            instruction=instruction,
+                        )
+                    elif action == 'draft_literature_review':
+                        output_json = await self._execute_draft_literature_review(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                            instruction=instruction,
+                        )
+                    elif action == 'fetch_pdfs':
+                        output_json = await self._execute_fetch_pdfs(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                        )
+                    elif action == 'refresh_metadata':
+                        output_json = await self._execute_refresh_metadata(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                        )
+                    elif action == 'ensure_summaries':
+                        output_json = await self._execute_ensure_summaries(
+                            db,
+                            task=task,
+                            project=project,
+                            links=links,
+                        )
+                    else:
+                        raise ValueError(f'Unsupported project action: {action}')
+
+                self.touch_project(db, project)
+                workflow_service.update_task(db, task, status='completed', output_json=output_json)
+        except Exception as exc:
+            with SessionLocal() as db:
+                task = db.get(TaskRecord, task_id)
+                if task is not None and task.status not in PROJECT_TERMINAL_TASK_STATUSES:
+                    workflow_service.update_task(db, task, status='failed', error_log=str(exc), output_json={'error': str(exc)})
+
+    async def _execute_curate_reading_list(
+        self,
+        db: Session,
+        *,
+        task: TaskRecord,
+        project: ResearchProjectRecord,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        user_need = str(payload.get('user_need') or '').strip() or project.research_question.strip() or project.seed_query.strip()
+        target_count = int(payload.get('target_count') or 100)
+        selection_profile = str(payload.get('selection_profile') or 'balanced').strip() or 'balanced'
+        sources = [str(item).strip() for item in payload.get('sources', []) if str(item).strip()]
+
+        saved_search: ResearchProjectSavedSearchRecord | None = None
+        saved_search_id = payload.get('saved_search_id')
+        if saved_search_id:
+            saved_search = db.get(ResearchProjectSavedSearchRecord, int(saved_search_id))
+            if saved_search is None or saved_search.project_id != project.id:
+                raise ValueError('Saved search not found')
+
+        planned_queries = await project_curation_service.plan_queries(user_need, selection_profile, target_count)
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='planning_queries',
+            status='completed',
+            message=f'已规划 {len(planned_queries)} 条子查询。',
+            related_paper_ids=[],
+        )
+        await self._maybe_pause_for_progress()
+
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='collecting_candidates',
+            status='running',
+            message='正在跨数据源收集候选论文。',
+            related_paper_ids=[],
+        )
+        await self._maybe_pause_for_progress()
+
+        saved_search, run, items, _, warnings = await project_curation_service.curate_project_saved_search(
+            db,
+            project=project,
+            user_need=user_need,
+            target_count=target_count,
+            selection_profile=selection_profile,
+            saved_search=saved_search,
+            sources=sources,
+            planned_queries=planned_queries,
+        )
+        selected_ids = [item.paper.id for item in items]
+
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='collecting_candidates',
+            status='completed',
+            message=f'已得到 {len(items)} 篇候选预览。',
+            related_paper_ids=selected_ids,
+        )
+        await self._maybe_pause_for_progress()
+
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='deduping_and_filtering',
+            status='completed',
+            message='已完成去重、离题过滤与候选清洗。',
+            related_paper_ids=selected_ids,
+        )
+        await self._maybe_pause_for_progress()
+
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='reranking_candidates',
+            status='completed',
+            message='已按相关性、多样性、时效性与复现友好度完成重排。',
+            related_paper_ids=selected_ids,
+        )
+        await self._maybe_pause_for_progress()
+
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='building_preview',
+            status='completed',
+            message='已生成 AI 选文分层预览。',
+            related_paper_ids=selected_ids,
+        )
+        await self._maybe_pause_for_progress()
+
+        workflow_service.add_artifact(
+            db,
+            task.id,
+            artifact_type='saved_search',
+            artifact_ref_type='research_project_saved_searches',
+            artifact_ref_id=saved_search.id,
+            role='output',
+            snapshot_json={'search_mode': saved_search.search_mode, 'last_run_id': saved_search.last_run_id},
+        )
+        workflow_service.add_artifact(
+            db,
+            task.id,
+            artifact_type='search_run',
+            artifact_ref_type='research_project_search_runs',
+            artifact_ref_id=run.id,
+            role='output',
+            snapshot_json={'result_count': run.result_count},
+        )
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='saving_preview',
+            status='completed',
+            message=f'已保存 AI 预览，可在搜索台确认后批量加入 {len(items)} 篇论文。',
+            related_paper_ids=selected_ids,
+        )
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='ai_reading_list_curated',
+            title='AI 选文预览已生成',
+            message=f'已根据研究需求生成 {len(items)} 篇 AI 选文预览。',
+            ref_type='research_project_saved_searches',
+            ref_id=saved_search.id,
+            metadata={
+                'saved_search_id': saved_search.id,
+                'search_run_id': run.id,
+                'target_count': target_count,
+                'selection_profile': selection_profile,
+            },
+        )
+        return {
+            'saved_search_id': saved_search.id,
+            'run_id': run.id,
+            'selected_count': len(items),
+            'planned_queries': planned_queries,
+            'warnings': warnings,
+            'paper_ids': selected_ids,
         }
 
 

@@ -15,6 +15,7 @@ import {
   downloadPaper,
   getPaperPdfUrl,
   getPaperReader,
+  markPaperOpened,
   resolveApiAssetUrl,
   translateSegmentStream,
 } from "@/lib/api";
@@ -182,6 +183,31 @@ export default function PaperReaderScreen({
   useEffect(() => {
     void loadReader();
   }, [loadReader]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void markPaperOpened(paperId)
+      .then((payload) => {
+        if (cancelled) return;
+        setReader((current) =>
+          current && current.paper.id === paperId
+            ? {
+                ...current,
+                research_state: {
+                  ...current.research_state,
+                  last_opened_at: payload.last_opened_at ?? current.research_state.last_opened_at ?? null,
+                },
+              }
+            : current,
+        );
+      })
+      .catch(() => {
+        // Ignore touch failures in the reader shell.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId]);
 
   const pageNumbers = useMemo(() => {
     const source = reader?.pages.length

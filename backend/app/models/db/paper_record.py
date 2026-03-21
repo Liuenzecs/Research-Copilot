@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.db.base import Base, TimestampMixin
@@ -58,6 +58,7 @@ class PaperResearchStateRecord(TimestampMixin, Base):
     interest_level: Mapped[int] = mapped_column(Integer, default=3)
     repro_interest: Mapped[str] = mapped_column(String(20), default='none')
     user_rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    read_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     last_opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     topic_cluster: Mapped[str] = mapped_column(String(255), default='')
     is_core_paper: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

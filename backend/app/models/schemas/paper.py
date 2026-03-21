@@ -71,6 +71,9 @@ class SearchCandidateOut(BaseModel):
     reproduction_count: int = 0
     reading_status: str = ''
     repro_interest: str = ''
+    selected_by_ai: bool = False
+    selection_bucket: str = ''
+    selection_rank: int | None = None
     matched_in_latest_run: bool = True
 
 
@@ -101,6 +104,8 @@ class PaperResearchStateUpdate(BaseModel):
     interest_level: int | None = None
     repro_interest: str | None = None
     user_rating: int | None = None
+    read_at: date | None = None
+    clear_read_at: bool | None = None
     topic_cluster: str | None = None
     is_core_paper: bool | None = None
 
@@ -193,6 +198,18 @@ class PaperAssistantReply(BaseModel):
     locator: dict[str, Any] = Field(default_factory=dict)
     suggested_evidence: dict[str, Any] = Field(default_factory=dict)
     suggested_review_snippet: str = ''
+
+
+class PaperOpenedResponse(BaseModel):
+    paper_id: int
+    last_opened_at: datetime | None = None
+
+
+class PaperAiReflectionCreateRequest(BaseModel):
+    mode: str = 'quick'
+    project_id: int | None = None
+    summary_id: int | None = None
+    event_date: date | None = None
 
 
 class PaperContextReflectionCreateRequest(BaseModel):

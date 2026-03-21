@@ -8,11 +8,13 @@ import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import {
+  createAiPaperReflection,
   createPaperReflection,
   deepSummaryStream,
   downloadPaper,
   getPaperPdfUrl,
   getPaperWorkspace,
+  markPaperOpened,
   pushPaperToMemory,
   quickSummaryStream,
   updatePaperResearchState,
@@ -25,7 +27,7 @@ import {
   REPRO_INTEREST_OPTIONS,
 } from '@/lib/researchState';
 import { reflectionsPath, reproductionPath } from '@/lib/routes';
-import { PaperWorkspace as PaperWorkspaceData } from '@/lib/types';
+import { AiReflectionMode, PaperWorkspace as PaperWorkspaceData, Reflection } from '@/lib/types';
 
 type WorthReproducing = 'yes' | 'maybe' | 'no';
 type SummarySelection = number | 'none' | 'auto';
@@ -95,6 +97,18 @@ function buildDraftFromContext(workspace: PaperWorkspaceData, summaryId: Exclude
   };
 }
 
+function buildDraftFromReflection(reflection: Reflection, fallbackWorth: WorthReproducing): ReflectionDraft {
+  const structured = reflection.content_structured_json || {};
+  const worth = structured.worth_reproducing;
+  return {
+    mostImportantContribution: structured.most_important_contribution || "",
+    whatILearned: structured.what_i_learned || "",
+    worthReproducing: worth === "yes" || worth === "maybe" || worth === "no" ? worth : fallbackWorth,
+    reportSummary: reflection.report_summary || structured.one_sentence_report_summary || "",
+    freeNotes: structured.free_notes || "",
+  };
+}
+
 type PaperWorkspaceViewProps = {
   paperId: number | null;
   requestedSummaryId?: number | null;
@@ -122,6 +136,7 @@ export default function PaperWorkspaceView({
   const [readingStatus, setReadingStatus] = useState('unread');
   const [interestLevel, setInterestLevel] = useState(3);
   const [reproInterest, setReproInterest] = useState('none');
+  const [readAt, setReadAt] = useState('');
   const [isCorePaper, setIsCorePaper] = useState(false);
   const [topicCluster, setTopicCluster] = useState('');
 
@@ -154,6 +169,7 @@ export default function PaperWorkspaceView({
     setReadingStatus(data.research_state.reading_status || 'unread');
     setInterestLevel(data.research_state.interest_level || 3);
     setReproInterest(data.research_state.repro_interest || 'none');
+    setReadAt(data.research_state.read_at || '');
     setIsCorePaper(Boolean(data.research_state.is_core_paper));
     setTopicCluster(data.research_state.topic_cluster || '');
     setSelectedSummaryId((previous) => {
@@ -201,6 +217,32 @@ export default function PaperWorkspaceView({
   }, [initialWorkspace, paperId]);
 
   useEffect(() => {
+    if (!paperId) return;
+    let cancelled = false;
+    void markPaperOpened(paperId)
+      .then((payload) => {
+        if (cancelled) return;
+        setWorkspace((current) =>
+          current && current.paper.id === paperId
+            ? {
+                ...current,
+                research_state: {
+                  ...current.research_state,
+                  last_opened_at: payload.last_opened_at ?? current.research_state.last_opened_at ?? null,
+                },
+              }
+            : current,
+        );
+      })
+      .catch(() => {
+        // Ignore transient touch failures; the workspace itself can still be used.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId]);
+
+  useEffect(() => {
     setLastCreatedReflectionId(null);
   }, [paperId]);
 
@@ -245,6 +287,16 @@ export default function PaperWorkspaceView({
 
   function updateReflectionDraft(patch: Partial<ReflectionDraft>) {
     setReflectionDraft((previous) => ({ ...previous, ...patch }));
+    setReflectionDirty(true);
+  }
+
+  function applyGeneratedReflection(reflection: Reflection) {
+    setReflectionDraft(buildDraftFromReflection(reflection, deriveWorthReproducing(reproInterest || 'none')));
+    setReportWorthy(Boolean(reflection.is_report_worthy));
+    if (reflection.related_summary_id) {
+      setSelectedSummaryId(reflection.related_summary_id);
+    }
+    setLastCreatedReflectionId(reflection.id);
     setReflectionDirty(true);
   }
 
@@ -300,6 +352,35 @@ export default function PaperWorkspaceView({
       setError((actionError as Error).message);
     } finally {
       setStreamingSummary(null);
+      setBusy('');
+    }
+  }
+
+  async function handleAiReflection(mode: AiReflectionMode) {
+    if (!currentPaper) return;
+    setBusy(`ai-reflection-${mode}`);
+    setError('');
+    setNotice('');
+    try {
+      const createdReflection = await createAiPaperReflection(currentPaper.id, {
+        mode,
+        project_id: projectId,
+        summary_id: typeof effectiveSummarySelection === 'number' ? effectiveSummarySelection : null,
+        event_date: readAt || null,
+      });
+      await reload();
+      applyGeneratedReflection(createdReflection);
+      await onWorkspaceChanged?.();
+      setNotice(
+        mode === 'quick'
+          ? 'AI 快速心得已生成并保存为草稿。'
+          : mode === 'critical'
+            ? 'AI 批判阅读已生成并保存为草稿。'
+            : 'AI 导师汇报版已生成并保存为草稿。',
+      );
+    } catch (actionError) {
+      setError((actionError as Error).message || 'AI 生成论文心得失败');
+    } finally {
       setBusy('');
     }
   }
@@ -411,6 +492,11 @@ export default function PaperWorkspaceView({
           <p className="subtle">
             {currentPaper.source} · {currentPaper.year ?? '年份未知'} · PDF：{currentPaper.pdf_local_path || '未下载'}
           </p>
+          <p className="subtle">
+            最近打开时间：{workspace.research_state.last_opened_at ? formatDateTime(workspace.research_state.last_opened_at) : '暂无'}
+            {' · '}
+            计入阅读日期：{workspace.research_state.read_at || '未设置'}
+          </p>
           {actionButtons}
         </div>
       ) : (
@@ -464,6 +550,22 @@ export default function PaperWorkspaceView({
           />
         </div>
 
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <input
+            className="input"
+            type="date"
+            value={readAt}
+            onChange={(event) => setReadAt(event.target.value)}
+          />
+          <div className="subtle" style={{ display: 'flex', alignItems: 'center' }}>
+            最近打开：{workspace.research_state.last_opened_at ? formatDateTime(workspace.research_state.last_opened_at) : '暂无'}
+          </div>
+        </div>
+
+        <p className="subtle" style={{ marginTop: 8 }}>
+          当前计入阅读日期：{workspace.research_state.read_at || '未设置'}
+        </p>
+
         <label className="subtle" style={{ display: 'block', marginTop: 8 }}>
           <input type="checkbox" checked={isCorePaper} onChange={(event) => setIsCorePaper(event.target.checked)} /> 核心论文
         </label>
@@ -478,6 +580,8 @@ export default function PaperWorkspaceView({
                   reading_status: readingStatus,
                   interest_level: interestLevel,
                   repro_interest: reproInterest,
+                  read_at: readAt || null,
+                  clear_read_at: !readAt,
                   topic_cluster: topicCluster,
                   is_core_paper: isCorePaper,
                 });
@@ -494,6 +598,18 @@ export default function PaperWorkspaceView({
         <h4 className="title" style={{ fontSize: 16 }}>
           当前摘要与论文心得
         </h4>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, marginBottom: 10 }}>
+          <Button className="secondary" type="button" disabled={busy !== ''} onClick={() => void handleAiReflection('quick')}>
+            {busy === 'ai-reflection-quick' ? '生成中...' : 'AI 快速心得'}
+          </Button>
+          <Button className="secondary" type="button" disabled={busy !== ''} onClick={() => void handleAiReflection('critical')}>
+            {busy === 'ai-reflection-critical' ? '生成中...' : 'AI 批判阅读'}
+          </Button>
+          <Button className="secondary" type="button" disabled={busy !== ''} onClick={() => void handleAiReflection('advisor')}>
+            {busy === 'ai-reflection-advisor' ? '生成中...' : 'AI 导师汇报版'}
+          </Button>
+        </div>
 
         {streamingSummary ? (
           <>
@@ -611,6 +727,7 @@ export default function PaperWorkspaceView({
                     summary_id: selectedSummaryValue,
                     stage: readingStatus,
                     lifecycle_status: 'draft',
+                    event_date: readAt || undefined,
                     content_structured_json: {
                       related_paper_title: currentPaper.title_en,
                       related_paper_source: currentPaper.source,

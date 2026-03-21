@@ -17,6 +17,7 @@ from app.models.schemas.project import (
     ProjectDuplicateListResponse,
     ProjectDuplicateMergeRequest,
     ProjectActionLaunchResponse,
+    ResearchProjectCurateReadingListRequest,
     ResearchProjectSavedSearchAiReasonResponse,
     ResearchProjectSavedSearchCandidateUpdateRequest,
     ResearchProjectSavedSearchCreateRequest,
@@ -35,6 +36,8 @@ from app.models.schemas.project import (
     ResearchProjectOutputOut,
     ResearchProjectOutputUpdateRequest,
     ResearchProjectPaperAddRequest,
+    ResearchProjectPaperBatchAddRequest,
+    ResearchProjectPaperBatchAddResponse,
     ResearchProjectPaperBatchStateRequest,
     ResearchProjectPaperBatchStateResponse,
     ResearchProjectPaperOut,
@@ -243,6 +246,20 @@ def add_project_paper(
     return project_service._to_project_paper_out(db, row)
 
 
+@router.post('/{project_id}/papers/batch-add', response_model=ResearchProjectPaperBatchAddResponse)
+def batch_add_project_papers(
+    project_id: int,
+    payload: ResearchProjectPaperBatchAddRequest,
+    db: Session = Depends(get_db),
+) -> ResearchProjectPaperBatchAddResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        rows = project_service.batch_add_papers(db, project=project, items=payload.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResearchProjectPaperBatchAddResponse(items=[project_service._to_project_paper_out(db, row) for row in rows])
+
+
 @router.delete('/{project_id}/papers/{project_paper_id}', status_code=204, response_class=Response)
 def delete_project_paper(project_id: int, project_paper_id: int, db: Session = Depends(get_db)) -> Response:
     project = _project_or_404(db, project_id)
@@ -267,6 +284,8 @@ def batch_update_project_paper_state(
             paper_ids=payload.paper_ids,
             reading_status=payload.reading_status,
             repro_interest=payload.repro_interest,
+            read_at=payload.read_at,
+            clear_read_at=payload.clear_read_at,
             is_core_paper=payload.is_core_paper,
         )
     except ValueError as exc:
@@ -626,6 +645,27 @@ async def ensure_project_summaries(
             action='ensure_summaries',
             paper_ids=payload.paper_ids,
             instruction=payload.instruction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _launch_project_action_response(db, project_id, task)
+
+
+@router.post('/{project_id}/actions/curate-reading-list', response_model=ProjectActionLaunchResponse, status_code=status.HTTP_202_ACCEPTED)
+async def curate_project_reading_list(
+    project_id: int,
+    payload: ResearchProjectCurateReadingListRequest,
+    db: Session = Depends(get_db),
+) -> ProjectActionLaunchResponse:
+    project = _project_or_404(db, project_id)
+    try:
+        task = project_service.launch_action(
+            db,
+            project=project,
+            action='curate_reading_list',
+            paper_ids=[],
+            instruction='',
+            extra_payload=payload.model_dump(mode='json'),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

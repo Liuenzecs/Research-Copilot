@@ -79,13 +79,14 @@ def _create_reflection(
     return reflection
 
 
-def _create_state(db, *, paper: PaperRecord, updated_at: datetime) -> PaperResearchStateRecord:
+def _create_state(db, *, paper: PaperRecord, updated_at: datetime, read_at: date | None = None) -> PaperResearchStateRecord:
     state = PaperResearchStateRecord(
         paper_id=paper.id,
         reading_status='deep_read',
         interest_level=4,
         repro_interest='high',
         is_core_paper=False,
+        read_at=read_at,
         created_at=updated_at,
         updated_at=updated_at,
     )
@@ -263,6 +264,7 @@ def test_weekly_report_recent_papers_aggregates_dedupes_and_orders_latest_activi
     summary_dt = _dt(week_start + timedelta(days=1), 10)
     reflection_dt = _dt(week_start + timedelta(days=2), 11)
     state_dt = _dt(week_start + timedelta(days=3), 12)
+    state_read_at = week_start + timedelta(days=3)
     reproduction_dt = _dt(week_start + timedelta(days=4), 13)
     multi_summary_dt = _dt(week_start + timedelta(days=1), 8)
     multi_reproduction_dt = _dt(week_start + timedelta(days=5), 14)
@@ -283,7 +285,7 @@ def test_weekly_report_recent_papers_aggregates_dedupes_and_orders_latest_activi
             created_at=reflection_dt,
             report_summary='本周记录论文心得',
         )
-        _create_state(db, paper=state_paper, updated_at=state_dt)
+        _create_state(db, paper=state_paper, updated_at=state_dt, read_at=state_read_at)
         _create_reproduction(
             db,
             paper=reproduction_paper,
@@ -324,7 +326,7 @@ def test_weekly_report_recent_papers_aggregates_dedupes_and_orders_latest_activi
     assert activity_by_paper[added_paper_id] == 'added'
     assert activity_by_paper[summary_paper_id] == 'summary'
     assert activity_by_paper[reflection_paper_id] == 'reflection'
-    assert activity_by_paper[state_paper_id] == 'state_update'
+    assert activity_by_paper[state_paper_id] == 'read'
     assert activity_by_paper[reproduction_paper_id] == 'reproduction'
     assert activity_by_paper[multi_paper_id] == 'reproduction'
 

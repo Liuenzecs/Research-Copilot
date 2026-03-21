@@ -69,6 +69,8 @@ export function reflectionStageLabel(stage?: string | null): string {
 }
 
 export function taskTypeLabel(taskType?: string | null): string {
+  if (taskType === 'paper_reflection_ai_create') return 'AI 论文心得生成';
+  if (taskType === 'project_curate_reading_list') return 'AI 选文预览';
   switch (taskType) {
     case 'paper_search':
       return '论文搜索';

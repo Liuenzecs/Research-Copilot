@@ -429,6 +429,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [taskConnectionNotice, setTaskConnectionNotice] = useState("");
   const [activeSmartView, setActiveSmartView] = useState("all_papers");
   const [paperBatchBusy, setPaperBatchBusy] = useState("");
+  const [paperBatchReadAt, setPaperBatchReadAt] = useState("");
 
   const [manualEvidencePaperId, setManualEvidencePaperId] = useState("");
   const [manualEvidenceKind, setManualEvidenceKind] = useState("claim");
@@ -900,6 +901,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   async function handleBatchPaperStateUpdate(payload: {
     reading_status?: string;
     repro_interest?: string;
+    read_at?: string | null;
+    clear_read_at?: boolean;
     is_core_paper?: boolean;
     notice: string;
     busyKey: string;
@@ -915,6 +918,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
         paper_ids: activePaperIds,
         reading_status: payload.reading_status,
         repro_interest: payload.repro_interest,
+        read_at: payload.read_at ?? null,
+        clear_read_at: payload.clear_read_at,
         is_core_paper: payload.is_core_paper,
       });
       await loadWorkspace({ quiet: true });
@@ -1475,6 +1480,41 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 >
                   {paperBatchBusy === "core-paper" ? "处理中..." : "标记核心论文"}
                 </Button>
+                <input
+                  className="input"
+                  type="date"
+                  value={paperBatchReadAt}
+                  onChange={(event) => setPaperBatchReadAt(event.target.value)}
+                  style={{ maxWidth: 180 }}
+                />
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() =>
+                    void handleBatchPaperStateUpdate({
+                      read_at: paperBatchReadAt || null,
+                      notice: `已为所选论文设置计入阅读日期${paperBatchReadAt ? `：${paperBatchReadAt}` : ""}。`,
+                      busyKey: "read-at",
+                    })
+                  }
+                  disabled={paperBatchBusy !== "" || !paperBatchReadAt}
+                >
+                  {paperBatchBusy === "read-at" ? "处理中..." : "设置计入阅读日期"}
+                </Button>
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() =>
+                    void handleBatchPaperStateUpdate({
+                      clear_read_at: true,
+                      notice: "已清空所选论文的计入阅读日期。",
+                      busyKey: "clear-read-at",
+                    })
+                  }
+                  disabled={paperBatchBusy !== ""}
+                >
+                  {paperBatchBusy === "clear-read-at" ? "处理中..." : "清空阅读日期"}
+                </Button>
               </div>
 
               <div className="project-paper-list" data-testid="project-paper-pool">
@@ -1505,6 +1545,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                         <div className="subtle">
                           {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
                         </div>
+                        {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
                         <div className="subtle">
                           PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
                         </div>

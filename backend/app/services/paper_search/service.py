@@ -384,6 +384,9 @@ class PaperSearchService:
         run_id: int | None = None,
         ai_reason_text: str = '',
         triage_status: str = 'new',
+        selected_by_ai: bool = False,
+        selection_bucket: str = '',
+        selection_rank: int | None = None,
         matched_in_latest_run: bool = True,
     ) -> SearchCandidateOut:
         summary_count = int(status_maps['summary_count'].get(row.id, 0))
@@ -431,6 +434,9 @@ class PaperSearchService:
             reproduction_count=reproduction_count,
             reading_status=reading_status,
             repro_interest=repro_interest,
+            selected_by_ai=selected_by_ai,
+            selection_bucket=selection_bucket,
+            selection_rank=selection_rank,
             matched_in_latest_run=matched_in_latest_run,
         )
 

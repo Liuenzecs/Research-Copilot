@@ -70,6 +70,17 @@ def test_project_crud_reorder_and_manual_evidence(client, monkeypatch):
     assert add_resp.status_code == 200
     project_paper_id = add_resp.json()['id']
 
+    batch_state_resp = client.patch(
+        f'/projects/{project_id}/papers/batch-state',
+        json={'paper_ids': [paper_id], 'read_at': '2026-03-01'},
+    )
+    assert batch_state_resp.status_code == 200
+
+    ws_after_read = client.get(f'/projects/{project_id}/workspace')
+    assert ws_after_read.status_code == 200
+    assert ws_after_read.json()['papers'][0]['read_at'] == '2026-03-01'
+    assert ws_after_read.json()['papers'][0]['paper']['id'] == paper_id
+
     first_evidence = client.post(
         f'/projects/{project_id}/evidence',
         json={
@@ -399,3 +410,68 @@ def test_project_list_sorting_and_counts_follow_last_opened(client):
     listed_after_touch = client.get('/projects')
     assert listed_after_touch.status_code == 200
     assert listed_after_touch.json()[0]['id'] == first_id
+
+
+def test_ai_curated_saved_search_and_batch_add(client, monkeypatch):
+    _search_payload(
+        monkeypatch,
+        [
+            SearchPaper(
+                source='arxiv',
+                source_id=f'ai-curated-{index}',
+                title_en=f'LLM Agent Paper {index}',
+                abstract_en=f'This paper studies LLM agents, planning, tools, and reproducibility benchmark {index}.',
+                authors='A',
+                year=2026 - (index % 4),
+                venue='arXiv',
+                pdf_url=f'https://arxiv.org/pdf/ai-curated-{index}.pdf',
+            )
+            for index in range(1, 28)
+        ],
+    )
+
+    project_resp = client.post('/projects', json={'research_question': 'How should I study LLM agents efficiently?'})
+    assert project_resp.status_code == 200
+    project_id = project_resp.json()['id']
+
+    launch_resp = client.post(
+        f'/projects/{project_id}/actions/curate-reading-list',
+        json={
+            'user_need': 'Select the best papers for learning LLM agents and reproduction',
+            'target_count': 20,
+            'selection_profile': 'balanced',
+            'sources': ['arxiv'],
+        },
+    )
+    assert launch_resp.status_code == 202
+    task_id = launch_resp.json()['task']['id']
+
+    task_payload = _wait_for_task(client, project_id, task_id, timeout=10.0)
+    assert task_payload['status'] == 'completed'
+    saved_search_id = task_payload['output_json']['saved_search_id']
+    assert saved_search_id
+
+    saved_search_detail = client.get(f'/projects/{project_id}/saved-searches/{saved_search_id}')
+    assert saved_search_detail.status_code == 200
+    detail_payload = saved_search_detail.json()
+    assert detail_payload['saved_search']['search_mode'] == 'ai_curated'
+    assert detail_payload['saved_search']['target_count'] == 20
+    assert len(detail_payload['items']) == 20
+    assert all(item['selected_by_ai'] for item in detail_payload['items'])
+
+    batch_add_resp = client.post(
+        f'/projects/{project_id}/papers/batch-add',
+        json={
+            'items': [
+                {
+                    'paper_id': item['paper']['id'],
+                    'saved_search_candidate_id': item['candidate_id'],
+                }
+                for item in detail_payload['items'][:3]
+            ]
+        },
+    )
+    assert batch_add_resp.status_code == 200
+    batch_items = batch_add_resp.json()['items']
+    assert len(batch_items) == 3
+    assert all(item['selection_reason'] for item in batch_items)
