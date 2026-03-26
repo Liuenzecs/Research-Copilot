@@ -88,7 +88,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 
 - [x] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
 - [x] 增加阅读器侧的批注汇总与待处理视图。
-- [ ] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
+- [x] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
 - [ ] 评估是否需要提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
 
 ## 建议的实施顺序
@@ -375,3 +375,37 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 优先把“先扫图、再回正文”的阅读习惯显性化，让图示密集论文更容易快速建立全局判断
 - 尽量复用当前阅读器已有的图像提取、页面预览和结构化导航能力，避免为 1I 引入重型新布局
 - 继续补围绕图像跳转与阅读回流的验证
+
+### 2026-03-27 · 阶段 1I：图表优先阅读流
+
+阶段目标：
+
+- 让“先扫图、再回正文”的阅读习惯在阅读器里变成一条显性的轻量流程，而不是只能靠用户自己来回切页。
+- 优先复用已有的图像提取、页面预览和正文锚点能力，不为这一阶段引入重型新布局。
+
+已完成：
+
+- 为 E2E 种子论文补充了真实可提取的图示页，确保图表优先流有稳定的验证样本。
+- 阅读器新增“图表优先阅读”卡片，集中展示全文图像数量、覆盖页面和建议先看的图像页。
+- 每条图示现在都支持“先看图”和“回到正文锚点”两步操作，能先打开图像预览，再回到锚点段落核对论证。
+- 辅助文本模式的页内提示会在当前页存在图像时，明确提示先扫图再回正文，减少图示密集页的犹豫。
+- 新增一条 E2E 回归测试，覆盖“从图表优先流打开图像预览，再回到正文锚点”的主路径。
+
+变更文件：
+
+- `backend/app/tests/e2e_seed.py`
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow"`：通过
+
+下一阶段：
+
+- 阶段 1J：轻量阅读主题与密度偏好
+- 先评估并补最小可用的字体大小、阅读宽度或密度偏好，而不是一次做完整主题系统
+- 让个性化配置保持在阅读器局部，不扩散到全局界面基线
+- 继续补验证，避免偏好设置和阅读会话、模式切换互相打架

@@ -88,6 +88,13 @@ type AnnotationWorkbenchItem = {
   followUpHint: string;
 };
 
+type FigureFlowItem = {
+  figure: PaperReaderFigure;
+  anchorParagraph: PaperReaderParagraph | null;
+  currentPage: boolean;
+  scanHint: string;
+};
+
 const ZOOM_OPTIONS = [100, 115, 130, 150];
 
 function normalizeZoomPercent(value: number | null | undefined) {
@@ -565,6 +572,25 @@ export default function PaperReaderScreen({
   const evidenceLinkedAnnotationCount = useMemo(
     () => annotationWorkbenchItems.filter((item) => item.evidenceLinked).length,
     [annotationWorkbenchItems],
+  );
+  const figurePages = useMemo(
+    () => Array.from(new Set((reader?.figures ?? []).map((figure) => figure.page_no))),
+    [reader?.figures],
+  );
+  const figureFlowItems = useMemo<FigureFlowItem[]>(
+    () =>
+      (reader?.figures ?? []).slice(0, 6).map((figure) => {
+        const anchorParagraph = figure.anchor_paragraph_id ? paragraphMap.get(figure.anchor_paragraph_id) ?? null : null;
+        return {
+          figure,
+          anchorParagraph,
+          currentPage: figure.page_no === effectivePageNo,
+          scanHint: anchorParagraph
+            ? "建议先扫图，再回到锚点正文核对论证。"
+            : "当前图像缺少稳定锚点，建议先看图再回原版页面。 ",
+        };
+      }),
+    [effectivePageNo, paragraphMap, reader?.figures],
   );
 
   const selectionQuoteForActiveParagraph =
@@ -1109,6 +1135,33 @@ export default function PaperReaderScreen({
     });
   }
 
+  function openFigureForScan(figure: PaperReaderFigure) {
+    goToPage(figure.page_no);
+    openFigurePreview(figure);
+    setNotice(`已打开第 ${figure.page_no} 页图像，可先扫图再回正文。`);
+    setRecentAction({
+      kind: "locate",
+      message: `已跳到第 ${figure.page_no} 页图像，适合先扫图再回正文。`,
+      paragraphId: figure.anchor_paragraph_id ?? null,
+    });
+  }
+
+  function openFigureAnchor(item: FigureFlowItem) {
+    if (item.anchorParagraph) {
+      focusParagraph(item.anchorParagraph.paragraph_id, { behavior: "auto" });
+      setNotice("已回到图像附近正文锚点，可继续核对论证。");
+      setRecentAction({
+        kind: "locate",
+        message: "已回到图像附近正文锚点。",
+        paragraphId: item.anchorParagraph.paragraph_id,
+      });
+      return;
+    }
+    goToPage(item.figure.page_no);
+    activateReaderMode("page");
+    setNotice(`已切到第 ${item.figure.page_no} 页原版页面，可结合版式继续核对图像。`);
+  }
+
   function openOriginalPdf() {
     window.open(getPaperPdfUrl(paperId, false), "_blank", "noopener,noreferrer");
   }
@@ -1153,6 +1206,8 @@ export default function PaperReaderScreen({
     ? `当前焦点：${compactTextPreview(activeParagraph.text, 110)}`
     : activePageAnnotationCount > 0
       ? `本页已有 ${activePageAnnotationCount} 条批注，可直接在下方继续整理。`
+      : currentPageFigures.length > 0
+        ? `这一页有 ${currentPageFigures.length} 张图像，建议先扫图再回正文核对。`
       : currentPageSupportCount > currentPageBodyCount
         ? "这一页图示、图注或公式较多，建议和原版页面对照阅读。"
         : "这一页已按段拆开，可点击任一段直接翻译、批注或加入证据。";
@@ -1565,6 +1620,70 @@ export default function PaperReaderScreen({
                 </div>
               )}
             </div>
+          </div>
+        </Card>
+      ) : null}
+
+      {reader.pdf_downloaded && figureFlowItems.length > 0 ? (
+        <Card className="paper-reader-figure-flow" data-testid="reader-figure-first-flow">
+          <div className="paper-reader-header" style={{ alignItems: "center" }}>
+            <div>
+              <h3 className="title" style={{ fontSize: 18 }}>
+                图表优先阅读
+              </h3>
+              <p className="subtle" style={{ margin: "4px 0 0" }}>
+                适合先扫图、再回正文锚点。先看关键图，再核对段落里的论证和术语。
+              </p>
+            </div>
+            <div className="reader-status-row">
+              <span className="reader-status-badge tone-focus">全文图像 {reader.figures.length} 张</span>
+              <span className="reader-status-badge tone-info">覆盖页面 {figurePages.length} 页</span>
+              {figurePages[0] ? <span className="reader-status-badge tone-success">建议先看第 {figurePages[0]} 页</span> : null}
+            </div>
+          </div>
+
+          <div className="reader-figure-flow-grid" data-testid="reader-figure-flow-list">
+            {figureFlowItems.map((item) => (
+              <div
+                key={item.figure.figure_id}
+                className={`reader-figure-flow-card${item.currentPage ? " active" : ""}`}
+                data-testid={`reader-figure-flow-item-${item.figure.figure_id}`}
+              >
+                <div className="reader-figure-flow-top">
+                  <strong>图 {item.figure.figure_id} · 第 {item.figure.page_no} 页</strong>
+                  <span className="subtle">{item.figure.match_mode === "caption" ? "caption 锚定" : "近似定位"}</span>
+                </div>
+                <div className="subtle">
+                  {item.figure.caption_text
+                    ? compactTextPreview(item.figure.caption_text, 110)
+                    : "当前图像暂无 caption，建议先看图，再回原版页面确认上下文。"}
+                </div>
+                <div className="subtle">
+                  {item.anchorParagraph
+                    ? `正文锚点：${compactTextPreview(item.anchorParagraph.text, 96)}`
+                    : `当前还没有稳定正文锚点，可先切到第 ${item.figure.page_no} 页原版页面。`}
+                </div>
+                <div className="subtle">{item.scanHint.trim()}</div>
+                <div className="reader-inline-action-row">
+                  <Button
+                    className="secondary"
+                    type="button"
+                    data-testid={`reader-figure-flow-open-${item.figure.figure_id}`}
+                    onClick={() => openFigureForScan(item.figure)}
+                  >
+                    先看图
+                  </Button>
+                  <Button
+                    className="secondary"
+                    type="button"
+                    data-testid={`reader-figure-flow-anchor-${item.figure.figure_id}`}
+                    onClick={() => openFigureAnchor(item)}
+                  >
+                    {item.anchorParagraph ? "回到正文锚点" : "切到该页"}
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         </Card>
       ) : null}

@@ -295,6 +295,25 @@ test("supports keyboard-first reader navigation and actions", async ({ page }) =
   await page.waitForURL(/\/projects\/\d+$/);
 });
 
+test("supports a figure-first reading flow", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+
+  await expect(page.getByText("图表优先阅读")).toBeVisible();
+  await expect(page.getByTestId("reader-figure-flow-list")).toBeVisible();
+  await expect(page.getByText("全文图像 1 张")).toBeVisible();
+
+  await page.getByTestId("reader-figure-flow-open-1").click();
+  await expect(page.getByRole("heading", { name: "图像 · 第 2 页" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭" }).click();
+
+  await page.getByTestId("reader-figure-flow-anchor-1").click();
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("第 2 页");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

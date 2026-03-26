@@ -54,12 +54,23 @@ def _paper_copy(source_id: str) -> list[str]:
 
 
 def _write_pdf(path: Path, title: str, paragraphs: list[str]) -> None:
+    _write_pdf_document(path, title, paragraphs, include_figure=False)
+
+
+def _make_png_bytes(width: int = 220, height: int = 140, color: int = 0xCC8844) -> bytes:
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, width, height), False)
+    pix.clear_with(color)
+    return pix.tobytes('png')
+
+
+def _write_pdf_document(path: Path, title: str, paragraphs: list[str], *, include_figure: bool) -> None:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
     y = 72
     page.insert_text((72, y), title, fontsize=18)
     y += 36
-    for paragraph in paragraphs:
+    first_page_paragraphs = paragraphs if not include_figure else paragraphs[:4]
+    for paragraph in first_page_paragraphs:
         page.insert_textbox(
             fitz.Rect(72, y, 523, y + 64),
             paragraph,
@@ -67,6 +78,27 @@ def _write_pdf(path: Path, title: str, paragraphs: list[str]) -> None:
             lineheight=1.35,
         )
         y += 78
+
+    if include_figure:
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 72), f'{title} · Figure-first page', fontsize=16)
+        page.insert_image(fitz.Rect(72, 120, 300, 280), stream=_make_png_bytes())
+        page.insert_textbox(
+            fitz.Rect(72, 300, 360, 352),
+            'Figure 1. E2E evidence board overview for figure-first reading.',
+            fontsize=12,
+            lineheight=1.25,
+        )
+        y = 390
+        for paragraph in paragraphs[4:]:
+            page.insert_textbox(
+                fitz.Rect(72, y, 523, y + 64),
+                paragraph,
+                fontsize=12,
+                lineheight=1.35,
+            )
+            y += 78
+
     doc.save(path)
     doc.close()
 
@@ -83,7 +115,12 @@ def seed() -> None:
         for item in _fixture_items():
             source_id = str(item['source_id'])
             pdf_path = pdf_dir / f'{source_id}.pdf'
-            _write_pdf(pdf_path, str(item['title_en']), _paper_copy(source_id))
+            _write_pdf_document(
+                pdf_path,
+                str(item['title_en']),
+                _paper_copy(source_id),
+                include_figure=source_id == 'e2e-retrieval-study',
+            )
 
             paper = PaperRecord(
                 source=str(item['source']),
