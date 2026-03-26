@@ -89,7 +89,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
 - [x] 增加阅读器侧的批注汇总与待处理视图。
 - [x] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
-- [ ] 评估是否需要提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
+- [x] 评估并提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
 
 ## 建议的实施顺序
 
@@ -409,3 +409,37 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 先评估并补最小可用的字体大小、阅读宽度或密度偏好，而不是一次做完整主题系统
 - 让个性化配置保持在阅读器局部，不扩散到全局界面基线
 - 继续补验证，避免偏好设置和阅读会话、模式切换互相打架
+
+### 2026-03-27 · 阶段 1J：轻量阅读主题与密度偏好
+
+阶段目标：
+
+- 给阅读器补上最小可用的个性化阅读偏好，让长文阅读能按个人习惯微调，而不是被迫接受单一默认排版。
+- 把偏好控制限定在阅读器局部和本机持久化范围内，不把这轮优化扩散成新的全局主题系统。
+
+已完成：
+
+- 新增本机级阅读偏好持久化，当前会保存阅读宽度和阅读密度两类配置。
+- 阅读器当前页概览区新增“阅读宽度”“阅读密度”两个下拉项，可在专注 / 标准 / 舒展、舒展 / 标准 / 紧凑之间切换。
+- 辅助文本模式现在会按偏好动态调整正文最大宽度、段落间距、卡片内边距和正文字号 / 行高。
+- 偏好设置会在刷新后继续保留，不依赖单篇论文会话，也不会影响阅读器之外的全局界面。
+- 新增一条 E2E 回归测试，覆盖“修改阅读宽度与密度后刷新，偏好仍然保留”的主路径。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/lib/paperReaderPreferences.ts`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences"`：通过
+
+下一阶段：
+
+- 阶段 2A：阅读稳定性与性能观察
+- 开始转向长文档、大 PDF、Windows 文本选择和滚动等稳定性问题的专项观察
+- 在继续加功能之前，先确认本轮阅读体验增强项在真实桌面使用中没有引入新的负担
+- 后续优先补性能观测、更多回归样本和必要的交互收口，而不是继续堆新入口

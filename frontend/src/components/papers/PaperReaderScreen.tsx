@@ -22,6 +22,13 @@ import {
   resolveApiAssetUrl,
   translateSegmentStream,
 } from "@/lib/api";
+import {
+  getDefaultPaperReaderPreferences,
+  loadPaperReaderPreferences,
+  savePaperReaderPreferences,
+  type PaperReaderTextDensity,
+  type PaperReaderTextWidth,
+} from "@/lib/paperReaderPreferences";
 import { formatDateTime } from "@/lib/presentation";
 import { loadPaperReaderSession, savePaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { queryKeys } from "@/lib/queryKeys";
@@ -247,6 +254,10 @@ export default function PaperReaderScreen({
   const queryClient = useQueryClient();
   usePageTitle("论文阅读器");
   const bootSession = useMemo(() => loadPaperReaderSession(paperId), [paperId]);
+  const bootPreferences = useMemo(
+    () => loadPaperReaderPreferences() ?? getDefaultPaperReaderPreferences(),
+    [],
+  );
 
   const articleRef = useRef<HTMLDivElement | null>(null);
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -283,6 +294,8 @@ export default function PaperReaderScreen({
   const [translationDrawerOpen, setTranslationDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
   const [zoomPercent, setZoomPercent] = useState(normalizeZoomPercent(bootSession?.zoomPercent));
+  const [textWidthPreference, setTextWidthPreference] = useState<PaperReaderTextWidth>(bootPreferences.textWidth);
+  const [textDensityPreference, setTextDensityPreference] = useState<PaperReaderTextDensity>(bootPreferences.textDensity);
   const [restoredSession, setRestoredSession] = useState<PaperReaderSession | null>(null);
   const [recentAction, setRecentAction] = useState<ReaderRecentAction | null>(null);
   const [translatedParagraphIds, setTranslatedParagraphIds] = useState<number[]>([]);
@@ -659,6 +672,13 @@ export default function PaperReaderScreen({
       savedAt: new Date().toISOString(),
     });
   }, [activeParagraphId, currentPageNo, paperId, reader, revisitParagraphIds, sessionReady, viewMode, zoomPercent]);
+
+  useEffect(() => {
+    savePaperReaderPreferences({
+      textWidth: textWidthPreference,
+      textDensity: textDensityPreference,
+    });
+  }, [textDensityPreference, textWidthPreference]);
 
   useEffect(() => {
     if (!reader?.pdf_downloaded || keyboardFocusReadyRef.current) return;
@@ -1702,6 +1722,26 @@ export default function PaperReaderScreen({
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <select
                 className="select"
+                value={textWidthPreference}
+                data-testid="reader-preference-width"
+                onChange={(event) => setTextWidthPreference(event.target.value as PaperReaderTextWidth)}
+              >
+                <option value="focused">阅读宽度 · 专注</option>
+                <option value="standard">阅读宽度 · 标准</option>
+                <option value="wide">阅读宽度 · 舒展</option>
+              </select>
+              <select
+                className="select"
+                value={textDensityPreference}
+                data-testid="reader-preference-density"
+                onChange={(event) => setTextDensityPreference(event.target.value as PaperReaderTextDensity)}
+              >
+                <option value="comfortable">阅读密度 · 舒展</option>
+                <option value="standard">阅读密度 · 标准</option>
+                <option value="compact">阅读密度 · 紧凑</option>
+              </select>
+              <select
+                className="select"
                 value={String(zoomPercent)}
                 onChange={(event) => setZoomPercent(Number(event.target.value))}
                 disabled={viewMode !== "page"}
@@ -1722,6 +1762,10 @@ export default function PaperReaderScreen({
                 {downloading ? "正在重建..." : "重建阅读缓存"}
               </Button>
             </div>
+          </div>
+
+          <div className="subtle" style={{ marginTop: 8 }}>
+            阅读宽度与密度偏好会保存在本机，后续打开论文时继续生效。
           </div>
 
           {reader.pages.length > 0 ? (
@@ -1783,8 +1827,20 @@ export default function PaperReaderScreen({
       {viewMode === "text" ? (
         <Card>
           {currentPageParagraphs.length > 0 ? (
-            <div className="paper-reader-text-shell">
-              <div ref={articleRef} className="paper-reader-text-article" data-testid="reader-text-article" onMouseUp={captureSelection} onKeyUp={captureSelection}>
+            <div
+              className="paper-reader-text-shell"
+              data-reader-width={textWidthPreference}
+              data-reader-density={textDensityPreference}
+            >
+              <div
+                ref={articleRef}
+                className="paper-reader-text-article"
+                data-testid="reader-text-article"
+                data-reader-width={textWidthPreference}
+                data-reader-density={textDensityPreference}
+                onMouseUp={captureSelection}
+                onKeyUp={captureSelection}
+              >
                 <div className="paper-reader-text-meta">
                   第 {effectivePageNo} 页 · 当前为辅助文本模式，可选词翻译、搜索定位与记录批注
                 </div>

@@ -278,6 +278,52 @@
   margin: 0 auto;
 }
 
+.paper-reader-text-shell[data-reader-width="focused"] .paper-reader-text-meta,
+.paper-reader-text-shell[data-reader-width="focused"] .paper-reader-text-overview,
+.paper-reader-text-shell[data-reader-width="focused"] .paper-reader-text-flow {
+  max-width: 700px;
+}
+
+.paper-reader-text-shell[data-reader-width="focused"] .paper-reader-text-tools {
+  max-width: 780px;
+}
+
+.paper-reader-text-shell[data-reader-width="wide"] .paper-reader-text-meta,
+.paper-reader-text-shell[data-reader-width="wide"] .paper-reader-text-overview,
+.paper-reader-text-shell[data-reader-width="wide"] .paper-reader-text-flow {
+  max-width: 880px;
+}
+
+.paper-reader-text-shell[data-reader-width="wide"] .paper-reader-text-tools {
+  max-width: 980px;
+}
+
+.paper-reader-text-shell[data-reader-density="comfortable"] .paper-reader-text-flow {
+  gap: 20px;
+}
+
+.paper-reader-text-shell[data-reader-density="comfortable"] .reader-text-block {
+  padding: 18px 22px;
+}
+
+.paper-reader-text-shell[data-reader-density="comfortable"] .reader-text-body {
+  font-size: 19px;
+  line-height: 2.12;
+}
+
+.paper-reader-text-shell[data-reader-density="compact"] .paper-reader-text-flow {
+  gap: 14px;
+}
+
+.paper-reader-text-shell[data-reader-density="compact"] .reader-text-block {
+  padding: 14px 18px;
+}
+
+.paper-reader-text-shell[data-reader-density="compact"] .reader-text-body {
+  font-size: 17px;
+  line-height: 1.88;
+}
+
 .paper-reader-annotation-panel {
   gap: 14px;
   border-radius: 18px;

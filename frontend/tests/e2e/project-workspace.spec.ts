@@ -314,6 +314,28 @@ test("supports a figure-first reading flow", async ({ page }) => {
   await expect(page.getByTestId("reader-focus-summary")).toContainText("第 2 页");
 });
 
+test("persists local reader layout preferences", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  await page.getByTestId("reader-preference-width").selectOption("focused");
+  await page.getByTestId("reader-preference-density").selectOption("compact");
+
+  await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-width", "focused");
+  await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-density", "compact");
+
+  await page.reload();
+  await page.getByTestId("reader-mode-text").click();
+
+  await expect(page.getByTestId("reader-preference-width")).toHaveValue("focused");
+  await expect(page.getByTestId("reader-preference-density")).toHaveValue("compact");
+  await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-width", "focused");
+  await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-density", "compact");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();
