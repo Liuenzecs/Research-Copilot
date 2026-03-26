@@ -79,10 +79,10 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 ### 第二批：紧接着做
 
 - [x] 增加结构化导航面板：章节、图表、批注、搜索命中快速跳转。
-- [ ] 优化辅助文本阅读排版，提升长段落可读性。
+- [x] 优化辅助文本阅读排版，提升长段落可读性。
 - [x] 增加更清晰的阅读模式切换逻辑，降低 page/text/workspace 三种模式之间的切换成本。
 - [x] 让项目工作台中的论文池与阅读器之间共享更明确的阅读状态。
-- [ ] 补一轮围绕阅读器主路径的 E2E 与回归测试。
+- [x] 补一轮围绕阅读器主路径的 E2E 与回归测试。
 
 ### 第三批：可选增强
 
@@ -274,3 +274,36 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 收窄长段落阅读宽度，提升正文、标题、图注、公式之间的视觉节奏
 - 在辅助文本模式里补更清晰的页内阅读提示，减少“翻到这一页后先看哪里”的犹豫
 - 继续补一轮和阅读主链路强相关的验证
+
+### 2026-03-27 · 阶段 1F：辅助文本排版与阅读密度优化
+
+阶段目标：
+
+- 让辅助文本模式不只是“可操作”，还要更适合连续精读长段正文。
+- 通过收窄正文阅读列、强化页内概览和阅读提示，降低用户翻到新一页后的重新定向成本。
+
+已完成：
+
+- 辅助文本模式新增“本页阅读概览”，会直接显示正文段落数、章节锚点、图示 / 公式数量和待回看段落数。
+- 阅读概览会根据当前页状态给出更具体的阅读提示，例如当前焦点预览、已有批注提示或“这一页建议对照原版页面”的提醒。
+- 辅助文本正文区现在会把实际阅读列收窄到更适合长段落连续阅读的宽度，并重新整理段落间距、卡片边界和标题节奏。
+- 标题、图注、公式和正文块的视觉层级进一步拉开，减少所有段落“长得都一样”带来的阅读疲劳。
+- 新增一条 E2E 回归测试，覆盖“辅助文本模式会显示页内概览，且待回看数量会跟着交互更新”。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode"`：通过
+
+下一阶段：
+
+- 阶段 1G：阅读器侧批注汇总与待处理视图
+- 继续把“当前页批注”提升为更清晰的待处理工作面，而不只是列表展示
+- 让用户更快分辨哪些批注已消化、哪些还需要回写到证据或心得
+- 在不打断阅读主链路的前提下，继续压缩记录整理成本

@@ -221,6 +221,26 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-reader-overview")).toContainText("待回看 1 篇 / 1 段");
 });
 
+test("shows a page-level reading overview in text mode", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const textOverview = page.getByTestId("reader-text-overview");
+  await expect(textOverview).toBeVisible();
+  await expect(textOverview).toContainText("正文段落");
+  await expect(textOverview).toContainText("待回看");
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await firstParagraph.click();
+  await page.getByTestId("reader-toggle-revisit").click();
+
+  await expect(textOverview).toContainText("待回看");
+  await expect(textOverview).toContainText("1 段");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

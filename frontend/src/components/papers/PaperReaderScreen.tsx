@@ -108,6 +108,12 @@ function describeReaderSession(session: Pick<PaperReaderSession, "viewMode" | "p
   return parts.join(" · ");
 }
 
+function compactTextPreview(value: string, maxLength = 96) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}...`;
+}
+
 function FigureCard({
   figure,
   onOpen,
@@ -941,6 +947,19 @@ export default function PaperReaderScreen({
   const recentAnnotationShortcuts = [...reader.annotations]
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
     .slice(0, 8);
+  const currentPageBodyCount = currentPageParagraphs.filter((paragraph) => paragraph.kind === "body").length;
+  const currentPageHeadingCount = currentPageParagraphs.filter((paragraph) => paragraph.kind === "heading").length;
+  const currentPageSupportCount =
+    currentPageParagraphs.filter((paragraph) => paragraph.kind === "caption" || paragraph.kind === "formula").length +
+    currentPageFigures.length;
+  const currentPageRevisitCount = currentPageParagraphs.filter((paragraph) => revisitParagraphIdSet.has(paragraph.paragraph_id)).length;
+  const textModePageHint = activeParagraph
+    ? `当前焦点：${compactTextPreview(activeParagraph.text, 110)}`
+    : activePageAnnotationCount > 0
+      ? `本页已有 ${activePageAnnotationCount} 条批注，可直接在下方继续整理。`
+      : currentPageSupportCount > currentPageBodyCount
+        ? "这一页图示、图注或公式较多，建议和原版页面对照阅读。"
+        : "这一页已按段拆开，可点击任一段直接翻译、批注或加入证据。";
 
   return (
     <div className="paper-reader-shell">
@@ -1379,33 +1398,56 @@ export default function PaperReaderScreen({
                 <div className="paper-reader-text-meta">
                   第 {effectivePageNo} 页 · 当前为辅助文本模式，可选词翻译、搜索定位与记录批注
                 </div>
-                {currentPageParagraphs.map((paragraph) => {
-                  const isActive = activeParagraphId === paragraph.paragraph_id;
-                  const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
-                  const hasAnnotation = currentPageAnnotations.some((item) => item.paragraph_id === paragraph.paragraph_id);
-                  const className = [
-                    "reader-text-block",
-                    `reader-text-block-${paragraph.kind}`,
-                    isActive ? "reader-text-block-active" : "",
-                    isMatched ? "reader-text-block-match" : "",
-                    hasAnnotation ? "reader-text-block-annotated" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
+                <div className="paper-reader-text-overview" data-testid="reader-text-overview">
+                  <div className="paper-reader-text-overview-grid">
+                    <div className="paper-reader-text-overview-stat">
+                      <span className="paper-reader-text-overview-label">正文段落</span>
+                      <strong className="paper-reader-text-overview-value">{currentPageBodyCount} 段</strong>
+                    </div>
+                    <div className="paper-reader-text-overview-stat">
+                      <span className="paper-reader-text-overview-label">章节锚点</span>
+                      <strong className="paper-reader-text-overview-value">{currentPageHeadingCount} 处</strong>
+                    </div>
+                    <div className="paper-reader-text-overview-stat">
+                      <span className="paper-reader-text-overview-label">图示 / 公式</span>
+                      <strong className="paper-reader-text-overview-value">{currentPageSupportCount} 处</strong>
+                    </div>
+                    <div className="paper-reader-text-overview-stat">
+                      <span className="paper-reader-text-overview-label">待回看</span>
+                      <strong className="paper-reader-text-overview-value">{currentPageRevisitCount} 段</strong>
+                    </div>
+                  </div>
+                  <div className="paper-reader-text-overview-note">{textModePageHint}</div>
+                </div>
+                <div className="paper-reader-text-flow">
+                  {currentPageParagraphs.map((paragraph) => {
+                    const isActive = activeParagraphId === paragraph.paragraph_id;
+                    const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
+                    const hasAnnotation = currentPageAnnotations.some((item) => item.paragraph_id === paragraph.paragraph_id);
+                    const className = [
+                      "reader-text-block",
+                      `reader-text-block-${paragraph.kind}`,
+                      isActive ? "reader-text-block-active" : "",
+                      isMatched ? "reader-text-block-match" : "",
+                      hasAnnotation ? "reader-text-block-annotated" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ");
 
-                  return renderParagraph(
-                    paragraph,
-                    className,
-                    buildParagraphStatusBadges(paragraph),
-                    (element) => {
-                      paragraphRefs.current[paragraph.paragraph_id] = element;
-                    },
-                    () => {
-                      flushSync(() => setActiveParagraphId(paragraph.paragraph_id));
-                      updateReaderUrl(paragraph.paragraph_id);
-                    },
-                  );
-                })}
+                    return renderParagraph(
+                      paragraph,
+                      className,
+                      buildParagraphStatusBadges(paragraph),
+                      (element) => {
+                        paragraphRefs.current[paragraph.paragraph_id] = element;
+                      },
+                      () => {
+                        flushSync(() => setActiveParagraphId(paragraph.paragraph_id));
+                        updateReaderUrl(paragraph.paragraph_id);
+                      },
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="paper-reader-text-tools">
