@@ -87,7 +87,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 ### 第三批：可选增强
 
 - [ ] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
-- [ ] 增加阅读器侧的批注汇总与待处理视图。
+- [x] 增加阅读器侧的批注汇总与待处理视图。
 - [ ] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
 - [ ] 评估是否需要提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
 
@@ -307,3 +307,38 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 继续把“当前页批注”提升为更清晰的待处理工作面，而不只是列表展示
 - 让用户更快分辨哪些批注已消化、哪些还需要回写到证据或心得
 - 在不打断阅读主链路的前提下，继续压缩记录整理成本
+
+### 2026-03-27 · 阶段 1G：阅读器侧批注汇总与待处理视图
+
+阶段目标：
+
+- 把阅读器里的“当前页批注”升级成更明确的批注工作台，而不只是静态列表。
+- 让用户能快速判断哪些批注还需要处理，哪些已经沉淀进当前项目证据或阅读结论。
+
+已完成：
+
+- 阅读器新增“批注工作台”，按“待处理批注 / 当前页批注 / 最近已沉淀”三个区块组织全文批注。
+- 批注工作台会把当前项目下尚未进入证据板的批注识别为待处理项，并保留“待回看”作为优先处理信号。
+- 工作台顶部新增摘要卡，集中显示待处理数量、当前页数量、已进证据数量与当前焦点关联情况。
+- 点击任意批注卡片后，会自动回到对应段落，恢复引用原文，并提示下一步可继续补证据或复核沉淀结果。
+- 保存批注后会立刻把新批注回填到当前阅读器状态与 Query 缓存里，避免刚保存就看不到记录的割裂感。
+- 新增一条 E2E 回归测试，覆盖“批注会进入待处理区，并在加入项目证据后转入已沉淀区”。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/lib/apiPapers.ts`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections"`：通过
+
+下一阶段：
+
+- 阶段 1H：键盘优先导航与阅读快捷操作
+- 先补页切换、模式切换、回到项目、聚焦搜索等高频快捷操作，减少鼠标来回移动
+- 让阅读器在 Windows 桌面环境里更接近“可连续操作”的研究工具，而不是只能点按的页面
+- 继续围绕阅读主链路补回归测试，避免快捷键引入焦点或输入冲突

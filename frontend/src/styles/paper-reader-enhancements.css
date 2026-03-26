@@ -199,6 +199,108 @@
   gap: 18px;
 }
 
+.paper-reader-text-tools {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.paper-reader-annotation-panel {
+  gap: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(191, 208, 215, 0.78);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+}
+
+.reader-annotation-quote {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+  border: 1px solid rgba(191, 208, 215, 0.7);
+}
+
+.reader-annotation-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.reader-annotation-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reader-annotation-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(191, 208, 215, 0.72);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.reader-annotation-summary-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #60707d;
+}
+
+.reader-annotation-summary-value {
+  font-size: 20px;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.reader-annotation-section {
+  display: grid;
+  gap: 10px;
+}
+
+.reader-annotation-section-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.paper-reader-annotation-list {
+  gap: 12px;
+}
+
+.paper-reader-annotation-item {
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(191, 208, 215, 0.74);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.paper-reader-annotation-item:hover,
+.paper-reader-annotation-item.active {
+  border-color: rgba(20, 184, 166, 0.28);
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+  box-shadow: 0 14px 28px rgba(20, 184, 166, 0.08);
+}
+
+.reader-annotation-task-top,
+.reader-annotation-task-footer {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.reader-annotation-task-link {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
 .reader-text-block {
   padding: 16px 20px;
   border: 1px solid rgba(191, 208, 215, 0.74);
@@ -341,6 +443,10 @@
 
   .paper-reader-text-overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reader-annotation-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

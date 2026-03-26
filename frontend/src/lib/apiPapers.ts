@@ -1,6 +1,7 @@
 import {
   AiReflectionMode,
   Paper,
+  PaperAnnotation,
   PaperAssistantReply,
   PaperCitationTrail,
   PaperReader,
@@ -151,7 +152,7 @@ export async function createPaperAnnotation(
     note_text: string;
   },
 ) {
-  return request(`/papers/${paperId}/annotations`, {
+  return request<PaperAnnotation>(`/papers/${paperId}/annotations`, {
     method: 'POST',
     body: JSON.stringify({
       paragraph_id: payload.paragraph_id,

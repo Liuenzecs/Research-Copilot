@@ -15,6 +15,7 @@ import {
   createProjectEvidence,
   createPaperAnnotation,
   downloadPaper,
+  getProjectWorkspace,
   getPaperPdfUrl,
   getPaperReader,
   markPaperOpened,
@@ -74,6 +75,17 @@ type ReaderRecentAction = {
   kind: "resume" | "translate" | "annotate" | "evidence" | "locate";
   message: string;
   paragraphId?: number | null;
+};
+
+type AnnotationWorkbenchItem = {
+  annotation: PaperAnnotation;
+  paragraph: PaperReaderParagraph | null;
+  evidenceLinked: boolean;
+  revisitMarked: boolean;
+  currentPage: boolean;
+  currentFocus: boolean;
+  status: "pending" | "resolved";
+  followUpHint: string;
 };
 
 const ZOOM_OPTIONS = [100, 115, 130, 150];
@@ -262,6 +274,12 @@ export default function PaperReaderScreen({
   const readerQuery = useQuery({
     queryKey: queryKeys.papers.reader(paperId),
     queryFn: ({ signal }) => getPaperReader(paperId, { signal }),
+  });
+  const projectWorkspaceQuery = useQuery({
+    queryKey: queryKeys.projects.workspace(projectId ?? -1),
+    queryFn: ({ signal }) => getProjectWorkspace(projectId as number, { signal }),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
   });
 
   const loadReader = useCallback(async () => {
@@ -453,10 +471,13 @@ export default function PaperReaderScreen({
   const effectivePageNo = currentPageNo ?? pageNumbers[0] ?? 1;
   const currentPagePreview = (reader?.pages ?? []).find((page) => page.page_no === effectivePageNo) ?? null;
   const currentPageParagraphs = paragraphsByPage.get(effectivePageNo) ?? [];
-  const currentPageParagraphIds = new Set(currentPageParagraphs.map((paragraph) => paragraph.paragraph_id));
+  const currentPageParagraphIdSet = useMemo(
+    () => new Set(currentPageParagraphs.map((paragraph) => paragraph.paragraph_id)),
+    [currentPageParagraphs],
+  );
   const currentPageFigures = (reader?.figures ?? []).filter((figure) => figure.page_no === effectivePageNo);
   const currentPageAnnotations = (reader?.annotations ?? []).filter((annotation) =>
-    currentPageParagraphIds.has(annotation.paragraph_id),
+    currentPageParagraphIdSet.has(annotation.paragraph_id),
   );
   const activeParagraph = activeParagraphId ? paragraphMap.get(activeParagraphId) ?? null : null;
   const currentPageIndex = pageIndexMap.get(effectivePageNo) ?? 0;
@@ -473,11 +494,66 @@ export default function PaperReaderScreen({
     [currentPageAnnotations],
   );
   const translatedParagraphIdSet = useMemo(() => new Set(translatedParagraphIds), [translatedParagraphIds]);
-  const projectEvidenceParagraphIdSet = useMemo(
-    () => new Set(projectEvidenceParagraphIds),
-    [projectEvidenceParagraphIds],
-  );
+  const projectEvidenceParagraphIdSet = useMemo(() => {
+    const resolved = new Set<number>(projectEvidenceParagraphIds);
+    for (const item of projectWorkspaceQuery.data?.evidence_items ?? []) {
+      if (item.paper_id === paperId && item.paragraph_id) {
+        resolved.add(item.paragraph_id);
+      }
+    }
+    return resolved;
+  }, [paperId, projectEvidenceParagraphIds, projectWorkspaceQuery.data?.evidence_items]);
   const revisitParagraphIdSet = useMemo(() => new Set(revisitParagraphIds), [revisitParagraphIds]);
+  const readerAnnotations = reader?.annotations ?? [];
+  const allAnnotationsSorted = useMemo(
+    () => [...readerAnnotations].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at)),
+    [readerAnnotations],
+  );
+  const annotationWorkbenchItems = useMemo<AnnotationWorkbenchItem[]>(
+    () =>
+      allAnnotationsSorted.map((annotation) => {
+        const paragraph = paragraphMap.get(annotation.paragraph_id) ?? null;
+        const evidenceLinked = projectEvidenceParagraphIdSet.has(annotation.paragraph_id);
+        const revisitMarked = revisitParagraphIdSet.has(annotation.paragraph_id);
+        const currentPage = currentPageParagraphIdSet.has(annotation.paragraph_id);
+        const currentFocus = annotation.paragraph_id === activeParagraphId;
+        const pendingForProject = Boolean(projectId) && !evidenceLinked;
+        const status = revisitMarked || pendingForProject ? "pending" : "resolved";
+        let followUpHint = "这条批注已经有了当前阶段的落点，可回到原文复核细节。";
+        if (revisitMarked) {
+          followUpHint = "这条批注对应段落仍在待回看列表里，适合优先处理。";
+        } else if (pendingForProject) {
+          followUpHint = "这条批注还没进入当前项目证据，可回写到证据板或心得。";
+        }
+        return {
+          annotation,
+          paragraph,
+          evidenceLinked,
+          revisitMarked,
+          currentPage,
+          currentFocus,
+          status,
+          followUpHint,
+        };
+      }),
+    [activeParagraphId, allAnnotationsSorted, currentPageParagraphIdSet, paragraphMap, projectEvidenceParagraphIdSet, projectId, revisitParagraphIdSet],
+  );
+  const pendingAnnotationItems = useMemo(
+    () => annotationWorkbenchItems.filter((item) => item.status === "pending"),
+    [annotationWorkbenchItems],
+  );
+  const resolvedAnnotationItems = useMemo(
+    () => annotationWorkbenchItems.filter((item) => item.status === "resolved"),
+    [annotationWorkbenchItems],
+  );
+  const activeParagraphAnnotations = useMemo(
+    () => annotationWorkbenchItems.filter((item) => item.annotation.paragraph_id === activeParagraphId),
+    [activeParagraphId, annotationWorkbenchItems],
+  );
+  const evidenceLinkedAnnotationCount = useMemo(
+    () => annotationWorkbenchItems.filter((item) => item.evidenceLinked).length,
+    [annotationWorkbenchItems],
+  );
 
   const selectionQuoteForActiveParagraph =
     selection && activeParagraphId && selection.paragraphId === activeParagraphId ? selection.text : "";
@@ -512,9 +588,9 @@ export default function PaperReaderScreen({
 
   useEffect(() => {
     if (!currentPageParagraphs.length) return;
-    if (activeParagraphId && currentPageParagraphIds.has(activeParagraphId)) return;
+    if (activeParagraphId && currentPageParagraphIdSet.has(activeParagraphId)) return;
     setActiveParagraphId(currentPageParagraphs[0]?.paragraph_id ?? null);
-  }, [activeParagraphId, currentPageParagraphIds, currentPageParagraphs]);
+  }, [activeParagraphId, currentPageParagraphIdSet, currentPageParagraphs]);
 
   useEffect(() => {
     if (!pinnedQuote || !activeParagraphId) return;
@@ -773,11 +849,24 @@ export default function PaperReaderScreen({
     setAnnotationSaving(true);
     setLocatorError("");
     try {
-      await createPaperAnnotation(paperId, {
+      const createdAnnotation = await createPaperAnnotation(paperId, {
         paragraph_id: activeParagraphId,
         selected_text: selectedQuoteForAnnotation,
         note_text: annotationDraft.trim(),
       });
+      const mergeAnnotationIntoReader = (current: PaperReader | null) => {
+        if (!current || current.paper.id !== paperId) {
+          return current;
+        }
+        return {
+          ...current,
+          annotations: [createdAnnotation, ...current.annotations.filter((item) => item.id !== createdAnnotation.id)].sort(
+            (left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at),
+          ),
+        };
+      };
+      queryClient.setQueryData<PaperReader | null>(queryKeys.papers.reader(paperId), mergeAnnotationIntoReader);
+      setReader((current) => mergeAnnotationIntoReader(current));
       setAnnotationDraft("");
       clearSelectionState();
       setNotice("当前段落批注已保存。");
@@ -786,7 +875,7 @@ export default function PaperReaderScreen({
         message: "已保存当前段落批注。",
         paragraphId: activeParagraphId,
       });
-      await loadReader();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.papers.reader(paperId) });
       if (activeParagraphId) {
         focusParagraph(activeParagraphId, { behavior: "auto", updateUrl: false });
       }
@@ -896,6 +985,27 @@ export default function PaperReaderScreen({
     });
   }
 
+  function openAnnotationForFollowUp(item: AnnotationWorkbenchItem) {
+    if (item.annotation.selected_text.trim()) {
+      setPinnedQuote({
+        text: item.annotation.selected_text,
+        paragraphId: item.annotation.paragraph_id,
+      });
+    }
+    focusParagraph(item.annotation.paragraph_id, { behavior: "auto", switchToText: true });
+    annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setRecentAction({
+      kind: "annotate",
+      message: item.status === "pending" ? "已回到待处理批注对应段落。" : "已回到已沉淀批注对应段落。",
+      paragraphId: item.annotation.paragraph_id,
+    });
+    setNotice(
+      item.status === "pending"
+        ? "已回到待处理批注对应段落，可继续补证据或整理心得。"
+        : "已回到批注对应段落，可复核这条已沉淀记录。",
+    );
+  }
+
   function openCurrentPagePreview(page: PaperReaderPagePreview) {
     setLightbox({
       src: resolveApiAssetUrl(page.image_url),
@@ -944,9 +1054,7 @@ export default function PaperReaderScreen({
     .map((paragraphId) => paragraphMap.get(paragraphId))
     .filter((paragraph): paragraph is PaperReaderParagraph => Boolean(paragraph))
     .slice(0, 8);
-  const recentAnnotationShortcuts = [...reader.annotations]
-    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
-    .slice(0, 8);
+  const recentAnnotationShortcuts = allAnnotationsSorted.slice(0, 8);
   const currentPageBodyCount = currentPageParagraphs.filter((paragraph) => paragraph.kind === "body").length;
   const currentPageHeadingCount = currentPageParagraphs.filter((paragraph) => paragraph.kind === "heading").length;
   const currentPageSupportCount =
@@ -960,6 +1068,45 @@ export default function PaperReaderScreen({
       : currentPageSupportCount > currentPageBodyCount
         ? "这一页图示、图注或公式较多，建议和原版页面对照阅读。"
         : "这一页已按段拆开，可点击任一段直接翻译、批注或加入证据。";
+  const pendingRevisitAnnotationCount = pendingAnnotationItems.filter((item) => item.revisitMarked).length;
+  const pendingProjectAnnotationCount = pendingAnnotationItems.filter((item) => Boolean(projectId) && !item.evidenceLinked).length;
+
+  function renderAnnotationWorkbenchButton(item: AnnotationWorkbenchItem) {
+    return (
+      <button
+        key={item.annotation.id}
+        type="button"
+        className={`paper-reader-annotation-item${item.currentFocus ? " active" : ""}`}
+        data-testid={`reader-annotation-workbench-item-${item.annotation.id}`}
+        onClick={() => openAnnotationForFollowUp(item)}
+      >
+        <div className="reader-annotation-task-top">
+          <strong>{item.status === "pending" ? "待处理批注" : "已沉淀批注"}</strong>
+          <span className="subtle">{formatDateTime(item.annotation.updated_at)}</span>
+        </div>
+        <div className="reader-status-row">
+          <span className={`reader-status-badge ${item.status === "pending" ? "tone-info" : "tone-success"}`}>
+            {item.status === "pending" ? "待处理" : "已沉淀"}
+          </span>
+          {item.revisitMarked ? <span className="reader-status-badge tone-info">待回看</span> : null}
+          {item.evidenceLinked ? <span className="reader-status-badge tone-success">已进证据</span> : null}
+          {item.currentPage ? <span className="reader-status-badge tone-focus">当前页</span> : null}
+          {item.currentFocus ? <span className="reader-status-badge tone-focus">当前焦点</span> : null}
+        </div>
+        {item.annotation.selected_text ? (
+          <div className="subtle">引用：{compactTextPreview(item.annotation.selected_text, 84)}</div>
+        ) : null}
+        <div>{item.annotation.note_text}</div>
+        <div className="subtle">
+          {item.paragraph ? `p.${item.paragraph.page_no} · ${compactTextPreview(item.paragraph.text, 96)}` : `段落 #${item.annotation.paragraph_id}`}
+        </div>
+        <div className="reader-annotation-task-footer">
+          <span className="subtle">{item.followUpHint}</span>
+          <span className="reader-annotation-task-link">回到段落继续处理</span>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <div className="paper-reader-shell">
@@ -1455,13 +1602,13 @@ export default function PaperReaderScreen({
                   <div className="paper-reader-header" style={{ alignItems: "center" }}>
                     <div>
                       <h4 className="title" style={{ fontSize: 17, margin: 0 }}>
-                        当前页批注
+                        批注工作台
                       </h4>
                       <p className="subtle" style={{ margin: "6px 0 0" }}>
-                        批注仅跟当前段落绑定；点击已有批注可回到对应段落。
+                        把批注按待处理与已沉淀分开整理；点击任一条都能回到对应段落继续处理。
                       </p>
                     </div>
-                    <span className="reader-chip">当前页 {activePageAnnotationCount} 条</span>
+                    <span className="reader-chip">全文 {totalAnnotationCount} 条</span>
                   </div>
 
                   {activeParagraph ? (
@@ -1553,25 +1700,82 @@ export default function PaperReaderScreen({
                     </div>
                   ) : null}
 
-                  {currentPageAnnotations.length > 0 ? (
-                    <div className="paper-reader-annotation-list">
-                      {currentPageAnnotations.map((item: PaperAnnotation) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className={`paper-reader-annotation-item${item.paragraph_id === activeParagraphId ? " active" : ""}`}
-                          onClick={() => focusParagraph(item.paragraph_id, { behavior: "auto" })}
-                        >
-                          <strong>{item.selected_text ? "含引用原文" : "纯批注"}</strong>
-                          <span className="subtle">{formatDateTime(item.updated_at)}</span>
-                          {item.selected_text ? <div className="subtle">{item.selected_text}</div> : null}
-                          <div>{item.note_text}</div>
-                        </button>
-                      ))}
+                  <div className="reader-annotation-workbench" data-testid="reader-annotation-workbench">
+                    <div className="reader-annotation-summary-grid">
+                      <div className="reader-annotation-summary-card" data-testid="reader-annotation-summary-pending">
+                        <span className="reader-annotation-summary-label">待处理</span>
+                        <strong className="reader-annotation-summary-value">{pendingAnnotationItems.length} 条</strong>
+                        <div className="subtle">
+                          待回看 {pendingRevisitAnnotationCount} 条
+                          {projectId ? ` · 待进证据 ${pendingProjectAnnotationCount} 条` : ""}
+                        </div>
+                      </div>
+                      <div className="reader-annotation-summary-card">
+                        <span className="reader-annotation-summary-label">当前页</span>
+                        <strong className="reader-annotation-summary-value">{activePageAnnotationCount} 条</strong>
+                        <div className="subtle">当前焦点 {activeParagraphAnnotations.length} 条</div>
+                      </div>
+                      <div className="reader-annotation-summary-card" data-testid="reader-annotation-summary-evidence">
+                        <span className="reader-annotation-summary-label">{projectId ? "已进证据" : "已沉淀"}</span>
+                        <strong className="reader-annotation-summary-value">
+                          {projectId ? `${evidenceLinkedAnnotationCount} 条` : `${resolvedAnnotationItems.length} 条`}
+                        </strong>
+                        <div className="subtle">
+                          {projectId ? "按当前项目证据联动判断" : "当前按待回看状态判断"}
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <EmptyState title="当前页还没有批注" hint="选中正文并写下你的想法后，这里会显示当前页的批注记录。" />
-                  )}
+
+                    <div className="reader-annotation-section">
+                      <div className="reader-annotation-section-head">
+                        <strong>待处理批注</strong>
+                        <span className="reader-chip">{pendingAnnotationItems.length} 条</span>
+                      </div>
+                      {pendingAnnotationItems.length > 0 ? (
+                        <div className="paper-reader-annotation-list" data-testid="reader-pending-annotations">
+                          {pendingAnnotationItems.slice(0, 8).map((item) => renderAnnotationWorkbenchButton(item))}
+                        </div>
+                      ) : (
+                        <EmptyState
+                          title="当前没有待处理批注"
+                          hint={projectId ? "已保存的批注要么已经沉淀进证据，要么没有被标成待回看。" : "把段落标成待回看后，这里会优先显示需要继续处理的批注。"}
+                        />
+                      )}
+                    </div>
+
+                    <div className="reader-annotation-section">
+                      <div className="reader-annotation-section-head">
+                        <strong>当前页批注</strong>
+                        <span className="reader-chip">第 {effectivePageNo} 页 · {activePageAnnotationCount} 条</span>
+                      </div>
+                      {currentPageAnnotations.length > 0 ? (
+                        <div className="paper-reader-annotation-list" data-testid="reader-current-page-annotations">
+                          {annotationWorkbenchItems
+                            .filter((item) => item.currentPage)
+                            .map((item) => renderAnnotationWorkbenchButton(item))}
+                        </div>
+                      ) : (
+                        <EmptyState title="当前页还没有批注" hint="选中正文并写下你的想法后，这里会显示当前页的批注记录。" />
+                      )}
+                    </div>
+
+                    <div className="reader-annotation-section">
+                      <div className="reader-annotation-section-head">
+                        <strong>最近已沉淀</strong>
+                        <span className="reader-chip">{resolvedAnnotationItems.length} 条</span>
+                      </div>
+                      {resolvedAnnotationItems.length > 0 ? (
+                        <div className="paper-reader-annotation-list" data-testid="reader-resolved-annotations">
+                          {resolvedAnnotationItems.slice(0, 6).map((item) => renderAnnotationWorkbenchButton(item))}
+                        </div>
+                      ) : (
+                        <EmptyState
+                          title="还没有已沉淀批注"
+                          hint={projectId ? "把批注对应段落加入当前项目证据后，这里会开始累积已沉淀记录。" : "当前阅读器会先用待回看状态区分需要继续处理的批注。"}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

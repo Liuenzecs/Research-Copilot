@@ -241,6 +241,26 @@ test("shows a page-level reading overview in text mode", async ({ page }) => {
   await expect(textOverview).toContainText("1 段");
 });
 
+test("groups annotations into pending and resolved workbench sections", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const note = `E2E annotation workbench ${Date.now()}`;
+  await page.locator('[data-testid^="reader-paragraph-"]').first().click();
+  await page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。").fill(note);
+  await page.getByRole("button", { name: "保存当前段落批注" }).click();
+
+  await expect(page.getByTestId("reader-annotation-workbench")).toBeVisible();
+  await expect(page.getByTestId("reader-pending-annotations")).toContainText(note);
+
+  await page.getByTestId("reader-add-project-evidence").click();
+
+  await expect(page.getByTestId("reader-resolved-annotations")).toContainText(note);
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();
