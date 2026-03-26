@@ -178,6 +178,23 @@ test("keeps the selected quote when continuing into annotation flow", async ({ p
   await expect(page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。")).toBeFocused();
 });
 
+test("persists revisit markers with the reader session", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await firstParagraph.click();
+  await page.getByTestId("reader-toggle-revisit").click();
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("待回看 1 段");
+
+  await page.reload();
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("待回看 1 段");
+  await expect(page.getByTestId("reader-toggle-revisit")).toContainText("取消待回看");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

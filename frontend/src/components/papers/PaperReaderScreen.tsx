@@ -251,6 +251,7 @@ export default function PaperReaderScreen({
   const [recentAction, setRecentAction] = useState<ReaderRecentAction | null>(null);
   const [translatedParagraphIds, setTranslatedParagraphIds] = useState<number[]>([]);
   const [projectEvidenceParagraphIds, setProjectEvidenceParagraphIds] = useState<number[]>([]);
+  const [revisitParagraphIds, setRevisitParagraphIds] = useState<number[]>(bootSession?.revisitParagraphIds ?? []);
   const [sessionReady, setSessionReady] = useState(false);
   const readerQuery = useQuery({
     queryKey: queryKeys.papers.reader(paperId),
@@ -297,6 +298,7 @@ export default function PaperReaderScreen({
     setRecentAction(null);
     setTranslatedParagraphIds([]);
     setProjectEvidenceParagraphIds([]);
+    setRevisitParagraphIds(bootSession?.revisitParagraphIds ?? []);
     setSessionReady(false);
   }, [bootSession, paperId]);
 
@@ -469,6 +471,7 @@ export default function PaperReaderScreen({
     () => new Set(projectEvidenceParagraphIds),
     [projectEvidenceParagraphIds],
   );
+  const revisitParagraphIdSet = useMemo(() => new Set(revisitParagraphIds), [revisitParagraphIds]);
 
   const selectionQuoteForActiveParagraph =
     selection && activeParagraphId && selection.paragraphId === activeParagraphId ? selection.text : "";
@@ -492,6 +495,9 @@ export default function PaperReaderScreen({
     }
     if (projectEvidenceParagraphIdSet.has(paragraph.paragraph_id)) {
       badges.push({ key: `evidence-${paragraph.paragraph_id}`, label: "已加入证据", tone: "success" });
+    }
+    if (revisitParagraphIdSet.has(paragraph.paragraph_id)) {
+      badges.push({ key: `revisit-${paragraph.paragraph_id}`, label: "待回看", tone: "info" });
     }
     return badges;
   }
@@ -527,11 +533,12 @@ export default function PaperReaderScreen({
       paperId,
       pageNo: currentPageNo,
       paragraphId: activeParagraphId,
+      revisitParagraphIds,
       viewMode,
       zoomPercent,
       savedAt: new Date().toISOString(),
     });
-  }, [activeParagraphId, currentPageNo, paperId, reader, sessionReady, viewMode, zoomPercent]);
+  }, [activeParagraphId, currentPageNo, paperId, reader, revisitParagraphIds, sessionReady, viewMode, zoomPercent]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -576,6 +583,14 @@ export default function PaperReaderScreen({
     paragraphId: number,
   ) {
     setter((current) => (current.includes(paragraphId) ? current : [...current, paragraphId]));
+  }
+
+  function toggleRevisitParagraph(paragraphId: number) {
+    setRevisitParagraphIds((current) =>
+      current.includes(paragraphId)
+        ? current.filter((item) => item !== paragraphId)
+        : [...current, paragraphId],
+    );
   }
 
   function pinSelectionForFollowUp(context: SelectionContext | null) {
@@ -910,6 +925,8 @@ export default function PaperReaderScreen({
   const reflectionCount = reader.reflections.length;
   const taskCount = reader.recent_tasks.length;
   const activePageAnnotationCount = currentPageAnnotations.length;
+  const totalAnnotationCount = reader.annotations.length;
+  const readingProgressPercent = pageNumbers.length > 0 ? Math.round(((currentPageIndex + 1) / pageNumbers.length) * 100) : 0;
   const headingParagraphs = reader.paragraphs.filter((paragraph) => paragraph.kind === "heading").slice(0, 10);
   const quickSearchMatches = locatorQuery.trim()
     ? reader.paragraphs
@@ -917,6 +934,10 @@ export default function PaperReaderScreen({
         .slice(0, 8)
     : [];
   const quickFigureShortcuts = reader.figures.slice(0, 8);
+  const quickRevisitShortcuts = revisitParagraphIds
+    .map((paragraphId) => paragraphMap.get(paragraphId))
+    .filter((paragraph): paragraph is PaperReaderParagraph => Boolean(paragraph))
+    .slice(0, 8);
   const recentAnnotationShortcuts = [...reader.annotations]
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
     .slice(0, 8);
@@ -1059,6 +1080,16 @@ export default function PaperReaderScreen({
                     ? `刚刚完成：${recentAction.message}`
                     : "阅读器会记住你的上次阅读位置、视图模式和缩放设置。"}
                 </div>
+                <div className="reader-status-row" style={{ marginTop: 8 }}>
+                  <span className="reader-status-badge tone-focus">阅读进度 {readingProgressPercent}%</span>
+                  <span className="reader-status-badge tone-info">待回看 {revisitParagraphIds.length} 段</span>
+                  <span className="reader-status-badge tone-success">累计批注 {totalAnnotationCount} 条</span>
+                  {reader.research_state.last_opened_at ? (
+                    <span className="reader-status-badge tone-info">
+                      最近打开 {formatDateTime(reader.research_state.last_opened_at)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               <div className="reader-status-row">
@@ -1196,6 +1227,27 @@ export default function PaperReaderScreen({
                 </div>
               ) : (
                 <div className="subtle">当前论文还没有批注记录。</div>
+              )}
+            </div>
+
+            <div className="reader-quick-nav-section">
+              <strong>待回看</strong>
+              {quickRevisitShortcuts.length > 0 ? (
+                <div className="reader-quick-nav-buttons">
+                  {quickRevisitShortcuts.map((paragraph) => (
+                    <button
+                      key={paragraph.paragraph_id}
+                      type="button"
+                      className="reader-quick-nav-button"
+                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                    >
+                      <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
+                      <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="subtle">还没有标记待回看的段落。</div>
               )}
             </div>
 
@@ -1420,7 +1472,26 @@ export default function PaperReaderScreen({
                     value={annotationDraft}
                     onChange={(event) => setAnnotationDraft(event.target.value)}
                   />
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div className="reader-inline-action-row" style={{ justifyContent: "space-between" }}>
+                    {activeParagraph ? (
+                      <Button
+                        className="secondary"
+                        type="button"
+                        data-testid="reader-toggle-revisit"
+                        onClick={() => {
+                          toggleRevisitParagraph(activeParagraph.paragraph_id);
+                          setRecentAction({
+                            kind: "locate",
+                            message: revisitParagraphIdSet.has(activeParagraph.paragraph_id)
+                              ? "已从待回看列表移除当前段落。"
+                              : "已把当前段落加入待回看列表。",
+                            paragraphId: activeParagraph.paragraph_id,
+                          });
+                        }}
+                      >
+                        {revisitParagraphIdSet.has(activeParagraph.paragraph_id) ? "取消待回看" : "标记待回看"}
+                      </Button>
+                    ) : <span />}
                     <Button type="button" onClick={() => void handleCreateAnnotation()} disabled={annotationSaving}>
                       {annotationSaving ? "正在保存..." : "保存当前段落批注"}
                     </Button>

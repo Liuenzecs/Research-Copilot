@@ -74,7 +74,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 强化当前段落的视觉锚点，并同步显示“已批注 / 已加入证据 / 命中搜索”等状态。
 - [x] 优化阅读器顶层信息条，让项目上下文、当前页、当前段落状态更稳定可见。
 - [x] 收敛选区翻译、批注、加入证据的交互链路，减少重复操作和视线跳转。
-- [ ] 明确阅读完成度表达，例如最近打开、阅读进度、待回看段落、未处理批注。
+- [x] 明确阅读完成度表达，例如最近打开、阅读进度、待回看段落、未处理批注。
 
 ### 第二批：紧接着做
 
@@ -209,3 +209,36 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 明确最近阅读、待回看段落、未处理批注、阅读进度等状态表达
 - 继续把阅读器状态同步回项目工作台与论文池
 - 扩展阅读器主链路的回归测试覆盖面
+
+### 2026-03-27 · 阶段 1D：阅读完成度与状态回流
+
+阶段目标：
+
+- 把“读到哪了、哪些段落还要回看、最近什么时候打开过”这些状态显性化。
+- 先用低风险的本地会话方案把阅读状态表达做起来，再评估是否需要后端同步。
+
+已完成：
+
+- 阅读器焦点摘要区现在会显示阅读进度百分比、待回看段落数、累计批注数和最近打开时间。
+- 新增“待回看”段落标记能力，可对当前段落标记或取消标记。
+- 待回看段落会进入结构化导航卡，便于后续快速回跳。
+- 待回看状态已并入本地阅读会话，刷新或重新进入论文后仍会保留。
+- 新增一条 E2E 回归测试，覆盖“待回看标记会随阅读会话保留”。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/lib/paperReaderSession.ts`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session"`：通过
+
+下一阶段：
+
+- 阶段 1E：阅读状态回流到项目工作台
+- 让论文池里能更明确看到最近阅读、待回看、批注密度等状态
+- 继续扩展阅读器与项目工作台之间的状态联动
+- 逐步补齐阅读器主链路回归测试

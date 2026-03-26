@@ -4,6 +4,7 @@ export type PaperReaderSession = {
   paperId: number;
   pageNo: number | null;
   paragraphId: number | null;
+  revisitParagraphIds: number[];
   viewMode: PaperReaderSessionMode;
   zoomPercent: number;
   savedAt: string;
@@ -23,6 +24,17 @@ function parsePositiveInteger(value: unknown): number | null {
   return value;
 }
 
+function parsePositiveIntegerList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => parsePositiveInteger(item))
+        .filter((item): item is number => item !== null),
+    ),
+  );
+}
+
 export function loadPaperReaderSession(paperId: number): PaperReaderSession | null {
   if (typeof window === "undefined") return null;
 
@@ -39,6 +51,7 @@ export function loadPaperReaderSession(paperId: number): PaperReaderSession | nu
       paperId,
       pageNo: parsePositiveInteger(parsed.pageNo),
       paragraphId: parsePositiveInteger(parsed.paragraphId),
+      revisitParagraphIds: parsePositiveIntegerList(parsed.revisitParagraphIds),
       viewMode: parsed.viewMode as PaperReaderSessionMode,
       zoomPercent: typeof parsed.zoomPercent === "number" ? parsed.zoomPercent : 100,
       savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : "",
