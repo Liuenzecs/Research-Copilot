@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -22,6 +22,7 @@ import {
   translateSegmentStream,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/presentation";
+import { loadPaperReaderSession, savePaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { queryKeys } from "@/lib/queryKeys";
 import { paperReaderPath, projectPath } from "@/lib/routes";
 import { readingStatusLabel, reproInterestLabel } from "@/lib/researchState";
@@ -46,6 +47,11 @@ type SelectionContext = {
   left: number;
 };
 
+type QuoteContext = {
+  text: string;
+  paragraphId: number;
+};
+
 type FocusParagraphOptions = {
   behavior?: ScrollBehavior;
   updateUrl?: boolean;
@@ -58,7 +64,49 @@ type LightboxState = {
   caption?: string;
 };
 
+type ParagraphStatusBadge = {
+  key: string;
+  label: string;
+  tone: "focus" | "info" | "success";
+};
+
+type ReaderRecentAction = {
+  kind: "resume" | "translate" | "annotate" | "evidence" | "locate";
+  message: string;
+  paragraphId?: number | null;
+};
+
 const ZOOM_OPTIONS = [100, 115, 130, 150];
+
+function normalizeZoomPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !ZOOM_OPTIONS.includes(value)) {
+    return ZOOM_OPTIONS[0];
+  }
+  return value;
+}
+
+function readerModeLabel(mode: ReaderMode) {
+  if (mode === "page") return "原版页面";
+  if (mode === "text") return "辅助文本";
+  return "论文工作区";
+}
+
+function readerModeDescription(mode: ReaderMode) {
+  if (mode === "page") return "适合看原始版式、公式、图表和整页排版关系。";
+  if (mode === "text") return "适合选词翻译、写批注、搜索定位和提取证据。";
+  return "适合沉淀摘要、心得、任务和论文工作记录。";
+}
+
+function describeReaderSession(session: Pick<PaperReaderSession, "viewMode" | "pageNo" | "paragraphId">) {
+  const parts = [readerModeLabel(session.viewMode)];
+  if (session.pageNo) {
+    parts.push(`第 ${session.pageNo} 页`);
+  }
+  if (session.paragraphId) {
+    parts.push(`段落 #${session.paragraphId}`);
+  }
+  return parts.join(" · ");
+}
 
 function FigureCard({
   figure,
@@ -94,12 +142,30 @@ function FigureCard({
 function renderParagraph(
   paragraph: PaperReaderParagraph,
   className: string,
+  statusBadges: ParagraphStatusBadge[],
   refCallback: (element: HTMLDivElement | null) => void,
   onClick: () => void,
 ) {
+  const meta =
+    statusBadges.length > 0 ? (
+      <div className="reader-text-block-meta">
+        <span className="reader-text-block-anchor">
+          p.{paragraph.page_no} · 段落 #{paragraph.paragraph_id}
+        </span>
+        <div className="reader-status-row">
+          {statusBadges.map((badge) => (
+            <span key={badge.key} className={`reader-status-badge tone-${badge.tone}`}>
+              {badge.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
   if (paragraph.kind === "heading") {
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+        {meta}
         <h3 className="reader-text-heading">{paragraph.text}</h3>
       </div>
     );
@@ -108,6 +174,7 @@ function renderParagraph(
   if (paragraph.kind === "formula") {
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+        {meta}
         <div className="reader-text-formula-label">公式区</div>
         <pre className="reader-text-formula">{paragraph.text}</pre>
         <div className="subtle">公式与复杂排版请以原版页面为准。</div>
@@ -118,6 +185,7 @@ function renderParagraph(
   if (paragraph.kind === "caption") {
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+        {meta}
         <p className="reader-text-caption">{paragraph.text}</p>
       </div>
     );
@@ -125,6 +193,7 @@ function renderParagraph(
 
   return (
     <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+      {meta}
       <p className="reader-text-body">{paragraph.text}</p>
     </div>
   );
@@ -144,26 +213,32 @@ export default function PaperReaderScreen({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   usePageTitle("论文阅读器");
+  const bootSession = useMemo(() => loadPaperReaderSession(paperId), [paperId]);
 
   const articleRef = useRef<HTMLDivElement | null>(null);
+  const annotationPanelRef = useRef<HTMLDivElement | null>(null);
+  const annotationTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const paragraphRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const initialTargetAppliedRef = useRef(false);
+  const restoredSessionRef = useRef<PaperReaderSession | null>(bootSession);
   const pendingFocusRef = useRef<{ paragraphId: number; behavior: ScrollBehavior } | null>(null);
+  const sessionAppliedRef = useRef(false);
 
   const [reader, setReader] = useState<PaperReader | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [viewMode, setViewMode] = useState<ReaderMode>("page");
+  const [viewMode, setViewMode] = useState<ReaderMode>(requestedParagraphId ? "text" : bootSession?.viewMode ?? "page");
   const [selection, setSelection] = useState<SelectionContext | null>(null);
+  const [pinnedQuote, setPinnedQuote] = useState<QuoteContext | null>(null);
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
   const [streamingTranslationText, setStreamingTranslationText] = useState("");
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [figurePanelOpen, setFigurePanelOpen] = useState(false);
-  const [currentPageNo, setCurrentPageNo] = useState<number | null>(null);
-  const [activeParagraphId, setActiveParagraphId] = useState<number | null>(requestedParagraphId);
+  const [currentPageNo, setCurrentPageNo] = useState<number | null>(bootSession?.pageNo ?? null);
+  const [activeParagraphId, setActiveParagraphId] = useState<number | null>(requestedParagraphId ?? bootSession?.paragraphId ?? null);
   const [locatorQuery, setLocatorQuery] = useState("");
   const [locatorError, setLocatorError] = useState("");
   const [annotationDraft, setAnnotationDraft] = useState("");
@@ -171,7 +246,12 @@ export default function PaperReaderScreen({
   const [projectEvidenceSaving, setProjectEvidenceSaving] = useState(false);
   const [translationDrawerOpen, setTranslationDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
-  const [zoomPercent, setZoomPercent] = useState(100);
+  const [zoomPercent, setZoomPercent] = useState(normalizeZoomPercent(bootSession?.zoomPercent));
+  const [restoredSession, setRestoredSession] = useState<PaperReaderSession | null>(null);
+  const [recentAction, setRecentAction] = useState<ReaderRecentAction | null>(null);
+  const [translatedParagraphIds, setTranslatedParagraphIds] = useState<number[]>([]);
+  const [projectEvidenceParagraphIds, setProjectEvidenceParagraphIds] = useState<number[]>([]);
+  const [sessionReady, setSessionReady] = useState(false);
   const readerQuery = useQuery({
     queryKey: queryKeys.papers.reader(paperId),
     queryFn: ({ signal }) => getPaperReader(paperId, { signal }),
@@ -192,6 +272,33 @@ export default function PaperReaderScreen({
       setLoading(false);
     }
   }, [paperId, queryClient]);
+
+  useEffect(() => {
+    restoredSessionRef.current = bootSession;
+    initialTargetAppliedRef.current = false;
+    sessionAppliedRef.current = false;
+    setCurrentPageNo(bootSession?.pageNo ?? null);
+    setActiveParagraphId(requestedParagraphId ?? bootSession?.paragraphId ?? null);
+    setViewMode(requestedParagraphId ? "text" : bootSession?.viewMode ?? "page");
+    setZoomPercent(normalizeZoomPercent(bootSession?.zoomPercent));
+    setNotice("");
+    setSelection(null);
+    setPinnedQuote(null);
+    setTranslation(null);
+    setStreamingTranslationText("");
+    setTranslationError("");
+    setFigurePanelOpen(false);
+    setLocatorQuery("");
+    setLocatorError("");
+    setAnnotationDraft("");
+    setTranslationDrawerOpen(false);
+    setLightbox(null);
+    setRestoredSession(null);
+    setRecentAction(null);
+    setTranslatedParagraphIds([]);
+    setProjectEvidenceParagraphIds([]);
+    setSessionReady(false);
+  }, [bootSession, paperId]);
 
   useEffect(() => {
     if (readerQuery.data) {
@@ -268,19 +375,72 @@ export default function PaperReaderScreen({
     if (!initialTargetAppliedRef.current && requestedParagraphId) {
       const target = paragraphMap.get(requestedParagraphId);
       initialTargetAppliedRef.current = true;
+      sessionAppliedRef.current = true;
       if (target) {
         setViewMode("text");
         setCurrentPageNo(target.page_no);
         setActiveParagraphId(target.paragraph_id);
         pendingFocusRef.current = { paragraphId: target.paragraph_id, behavior: "auto" };
         setNotice("已定位到指定段落，当前已切到辅助文本模式。");
+        setRecentAction({
+          kind: "locate",
+          message: `已定位到第 ${target.page_no} 页的指定段落。`,
+          paragraphId: target.paragraph_id,
+        });
+        setSessionReady(true);
         return;
+      }
+    }
+
+    if (!sessionAppliedRef.current) {
+      sessionAppliedRef.current = true;
+      const session = restoredSessionRef.current;
+      if (session) {
+        setViewMode(session.viewMode);
+        setZoomPercent(normalizeZoomPercent(session.zoomPercent));
+
+        const restoredParagraph = session.paragraphId ? paragraphMap.get(session.paragraphId) ?? null : null;
+        if (restoredParagraph) {
+          setCurrentPageNo(restoredParagraph.page_no);
+          setActiveParagraphId(restoredParagraph.paragraph_id);
+          if (session.viewMode === "text") {
+            pendingFocusRef.current = { paragraphId: restoredParagraph.paragraph_id, behavior: "auto" };
+          }
+          setRestoredSession(session);
+          setNotice(`已恢复上次阅读：${describeReaderSession(session)}。`);
+          setRecentAction({
+            kind: "resume",
+            message: `已恢复上次阅读：${describeReaderSession(session)}`,
+            paragraphId: restoredParagraph.paragraph_id,
+          });
+          setSessionReady(true);
+          return;
+        }
+
+        if (session.pageNo && pageIndexMap.has(session.pageNo)) {
+          const fallbackParagraph = (paragraphsByPage.get(session.pageNo) ?? [])[0] ?? null;
+          setCurrentPageNo(session.pageNo);
+          setActiveParagraphId(fallbackParagraph?.paragraph_id ?? null);
+          if (session.viewMode === "text" && fallbackParagraph) {
+            pendingFocusRef.current = { paragraphId: fallbackParagraph.paragraph_id, behavior: "auto" };
+          }
+          setRestoredSession(session);
+          setNotice(`已恢复上次阅读：${describeReaderSession(session)}。`);
+          setRecentAction({
+            kind: "resume",
+            message: `已恢复上次阅读：${describeReaderSession(session)}`,
+            paragraphId: fallbackParagraph?.paragraph_id ?? null,
+          });
+          setSessionReady(true);
+          return;
+        }
       }
     }
 
     const firstPage = pageNumbers[0] ?? 1;
     setCurrentPageNo((previous) => (previous && pageIndexMap.has(previous) ? previous : firstPage));
-  }, [pageIndexMap, pageNumbers, paragraphMap, reader, requestedParagraphId]);
+    setSessionReady(true);
+  }, [pageIndexMap, pageNumbers, paragraphMap, paragraphsByPage, reader, requestedParagraphId]);
 
   const effectivePageNo = currentPageNo ?? pageNumbers[0] ?? 1;
   const currentPagePreview = (reader?.pages ?? []).find((page) => page.page_no === effectivePageNo) ?? null;
@@ -299,15 +459,56 @@ export default function PaperReaderScreen({
       .filter((paragraph) => paragraph.text.toLowerCase().includes(normalizedQuery))
       .map((paragraph) => paragraph.paragraph_id);
   }, [currentPageParagraphs, locatorQuery]);
+  const matchedParagraphIdSet = useMemo(() => new Set(matchedParagraphIds), [matchedParagraphIds]);
+  const currentPageAnnotationParagraphIdSet = useMemo(
+    () => new Set(currentPageAnnotations.map((annotation) => annotation.paragraph_id)),
+    [currentPageAnnotations],
+  );
+  const translatedParagraphIdSet = useMemo(() => new Set(translatedParagraphIds), [translatedParagraphIds]);
+  const projectEvidenceParagraphIdSet = useMemo(
+    () => new Set(projectEvidenceParagraphIds),
+    [projectEvidenceParagraphIds],
+  );
 
-  const selectedQuoteForAnnotation =
+  const selectionQuoteForActiveParagraph =
     selection && activeParagraphId && selection.paragraphId === activeParagraphId ? selection.text : "";
+  const pinnedQuoteForActiveParagraph =
+    pinnedQuote && activeParagraphId && pinnedQuote.paragraphId === activeParagraphId ? pinnedQuote.text : "";
+  const selectedQuoteForAnnotation = selectionQuoteForActiveParagraph || pinnedQuoteForActiveParagraph;
+
+  function buildParagraphStatusBadges(paragraph: PaperReaderParagraph): ParagraphStatusBadge[] {
+    const badges: ParagraphStatusBadge[] = [];
+    if (paragraph.paragraph_id === activeParagraphId) {
+      badges.push({ key: `focus-${paragraph.paragraph_id}`, label: "当前焦点", tone: "focus" });
+    }
+    if (matchedParagraphIdSet.has(paragraph.paragraph_id)) {
+      badges.push({ key: `match-${paragraph.paragraph_id}`, label: "搜索命中", tone: "info" });
+    }
+    if (currentPageAnnotationParagraphIdSet.has(paragraph.paragraph_id)) {
+      badges.push({ key: `annotation-${paragraph.paragraph_id}`, label: "已批注", tone: "success" });
+    }
+    if (translatedParagraphIdSet.has(paragraph.paragraph_id)) {
+      badges.push({ key: `translation-${paragraph.paragraph_id}`, label: "刚翻译", tone: "info" });
+    }
+    if (projectEvidenceParagraphIdSet.has(paragraph.paragraph_id)) {
+      badges.push({ key: `evidence-${paragraph.paragraph_id}`, label: "已加入证据", tone: "success" });
+    }
+    return badges;
+  }
+
+  const activeParagraphStatusBadges = activeParagraph ? buildParagraphStatusBadges(activeParagraph) : [];
 
   useEffect(() => {
     if (!currentPageParagraphs.length) return;
     if (activeParagraphId && currentPageParagraphIds.has(activeParagraphId)) return;
     setActiveParagraphId(currentPageParagraphs[0]?.paragraph_id ?? null);
   }, [activeParagraphId, currentPageParagraphIds, currentPageParagraphs]);
+
+  useEffect(() => {
+    if (!pinnedQuote || !activeParagraphId) return;
+    if (pinnedQuote.paragraphId === activeParagraphId) return;
+    setPinnedQuote(null);
+  }, [activeParagraphId, pinnedQuote]);
 
   useEffect(() => {
     if (viewMode !== "text") return;
@@ -318,6 +519,19 @@ export default function PaperReaderScreen({
     element.scrollIntoView({ behavior: pending.behavior, block: "center" });
     pendingFocusRef.current = null;
   }, [currentPageNo, viewMode, currentPageParagraphs]);
+
+  useEffect(() => {
+    if (!reader || !sessionReady || !currentPageNo) return;
+
+    savePaperReaderSession({
+      paperId,
+      pageNo: currentPageNo,
+      paragraphId: activeParagraphId,
+      viewMode,
+      zoomPercent,
+      savedAt: new Date().toISOString(),
+    });
+  }, [activeParagraphId, currentPageNo, paperId, reader, sessionReady, viewMode, zoomPercent]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -349,10 +563,44 @@ export default function PaperReaderScreen({
     });
   }
 
+  function clearSelectionState(options?: { keepPinnedQuote?: boolean }) {
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+    if (!options?.keepPinnedQuote) {
+      setPinnedQuote(null);
+    }
+  }
+
+  function rememberTouchedParagraph(
+    setter: Dispatch<SetStateAction<number[]>>,
+    paragraphId: number,
+  ) {
+    setter((current) => (current.includes(paragraphId) ? current : [...current, paragraphId]));
+  }
+
+  function pinSelectionForFollowUp(context: SelectionContext | null) {
+    if (!context) return;
+    setPinnedQuote({
+      text: context.text,
+      paragraphId: context.paragraphId,
+    });
+  }
+
+  function focusAnnotationComposer(message?: string) {
+    setViewMode("text");
+    window.requestAnimationFrame(() => {
+      annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      annotationTextareaRef.current?.focus();
+    });
+    if (message) {
+      setNotice(message);
+    }
+  }
+
   function goToPage(pageNo: number) {
     if (!pageIndexMap.has(pageNo)) return;
     setCurrentPageNo(pageNo);
-    setSelection(null);
+    clearSelectionState();
     setLocatorError("");
     const firstParagraph = (paragraphsByPage.get(pageNo) ?? [])[0] ?? null;
     setActiveParagraphId(firstParagraph?.paragraph_id ?? null);
@@ -421,10 +669,12 @@ export default function PaperReaderScreen({
     }
 
     const rect = range.getBoundingClientRect();
+    const toolbarHeight = projectId ? 112 : 64;
+    const preferredTop = rect.bottom + 8;
     setSelection({
       text,
       paragraphId,
-      top: Math.max(rect.bottom + 8, 80),
+      top: Math.max(Math.min(preferredTop, window.innerHeight - toolbarHeight), 16),
       left: Math.max(Math.min(rect.left, window.innerWidth - 220), 16),
     });
     setTranslationError("");
@@ -449,6 +699,7 @@ export default function PaperReaderScreen({
   async function handleTranslateSelection() {
     if (!selection) return;
 
+    pinSelectionForFollowUp(selection);
     setTranslationLoading(true);
     setTranslationError("");
     setStreamingTranslationText("");
@@ -473,7 +724,14 @@ export default function PaperReaderScreen({
       setTranslation(result);
       setStreamingTranslationText(result.content_zh);
       focusParagraph(selection.paragraphId, { behavior: "auto" });
+      rememberTouchedParagraph(setTranslatedParagraphIds, selection.paragraphId);
+      clearSelectionState({ keepPinnedQuote: true });
       setNotice("已完成英译中辅助翻译，并回到当前段落。");
+      setRecentAction({
+        kind: "translate",
+        message: "已完成当前选区翻译，可继续写批注或加入证据。",
+        paragraphId: selection.paragraphId,
+      });
     } catch (translateError) {
       setTranslationError((translateError as Error).message || "选词翻译失败，请稍后重试。");
     } finally {
@@ -500,7 +758,13 @@ export default function PaperReaderScreen({
         note_text: annotationDraft.trim(),
       });
       setAnnotationDraft("");
+      clearSelectionState();
       setNotice("当前段落批注已保存。");
+      setRecentAction({
+        kind: "annotate",
+        message: "已保存当前段落批注。",
+        paragraphId: activeParagraphId,
+      });
       await loadReader();
       if (activeParagraphId) {
         focusParagraph(activeParagraphId, { behavior: "auto", updateUrl: false });
@@ -520,9 +784,9 @@ export default function PaperReaderScreen({
     const fallbackActiveParagraphId = Number(
       articleRef.current?.querySelector<HTMLElement>(".reader-text-block-active")?.dataset.paragraphId ?? 0,
     ) || null;
-    const paragraphId = activeParagraphId ?? selection?.paragraphId ?? fallbackActiveParagraphId;
+    const paragraphId = activeParagraphId ?? selection?.paragraphId ?? pinnedQuote?.paragraphId ?? fallbackActiveParagraphId;
     const resolvedParagraph = paragraphId ? paragraphMap.get(paragraphId) ?? activeParagraph : activeParagraph;
-    const excerpt = (selectedQuoteForAnnotation || selection?.text || resolvedParagraph?.text || "").trim();
+    const excerpt = (selectedQuoteForAnnotation || selection?.text || pinnedQuote?.text || resolvedParagraph?.text || "").trim();
 
     if (!paragraphId || !excerpt) {
       setLocatorError("请先选中文本，或先激活一个段落。");
@@ -574,6 +838,13 @@ export default function PaperReaderScreen({
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
       ]);
       setAnnotationDraft("");
+      rememberTouchedParagraph(setProjectEvidenceParagraphIds, paragraphId);
+      clearSelectionState({ keepPinnedQuote: true });
+      setRecentAction({
+        kind: "evidence",
+        message: "已加入当前项目证据板，可继续补批注。",
+        paragraphId,
+      });
     } catch (projectError) {
       setLocatorError((projectError as Error).message || "加入项目证据板失败，请稍后重试。");
     } finally {
@@ -597,6 +868,11 @@ export default function PaperReaderScreen({
     setLocatorError("");
     focusParagraph(target.paragraph_id);
     setNotice(`已定位到第 ${target.page_no} 页相关段落。`);
+    setRecentAction({
+      kind: "locate",
+      message: `已按关键词定位到第 ${target.page_no} 页相关段落。`,
+      paragraphId: target.paragraph_id,
+    });
   }
 
   function openCurrentPagePreview(page: PaperReaderPagePreview) {
@@ -634,6 +910,16 @@ export default function PaperReaderScreen({
   const reflectionCount = reader.reflections.length;
   const taskCount = reader.recent_tasks.length;
   const activePageAnnotationCount = currentPageAnnotations.length;
+  const headingParagraphs = reader.paragraphs.filter((paragraph) => paragraph.kind === "heading").slice(0, 10);
+  const quickSearchMatches = locatorQuery.trim()
+    ? reader.paragraphs
+        .filter((paragraph) => paragraph.text.toLowerCase().includes(locatorQuery.trim().toLowerCase()))
+        .slice(0, 8)
+    : [];
+  const quickFigureShortcuts = reader.figures.slice(0, 8);
+  const recentAnnotationShortcuts = [...reader.annotations]
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
+    .slice(0, 8);
 
   return (
     <div className="paper-reader-shell">
@@ -678,6 +964,32 @@ export default function PaperReaderScreen({
             >
               论文工作区
             </Button>
+          </div>
+        </div>
+
+        <div className="reader-mode-guide" data-testid="reader-mode-guide">
+          <div>
+            <strong>{readerModeLabel(viewMode)}</strong>
+            <div className="subtle" style={{ marginTop: 6 }}>
+              {readerModeDescription(viewMode)}
+            </div>
+          </div>
+          <div className="reader-mode-guide-actions">
+            {viewMode !== "page" ? (
+              <Button className="secondary" type="button" onClick={() => setViewMode("page")}>
+                回到原版页面
+              </Button>
+            ) : null}
+            {viewMode !== "text" ? (
+              <Button className="secondary" type="button" onClick={() => setViewMode("text")}>
+                需要翻译或批注时切到辅助文本
+              </Button>
+            ) : null}
+            {viewMode !== "workspace" ? (
+              <Button className="secondary" type="button" onClick={() => setViewMode("workspace")}>
+                需要沉淀记录时切到论文工作区
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -728,13 +1040,41 @@ export default function PaperReaderScreen({
       {reader.pdf_downloaded ? (
         <Card className="paper-reader-locator">
           <div className="paper-reader-locator-row">
-            <strong>
-              当前模式：
-              {viewMode === "page" ? "原版页面" : viewMode === "text" ? "辅助文本" : "论文工作区"}
-            </strong>
+            <strong>当前模式：{readerModeLabel(viewMode)}</strong>
             <span className="subtle">当前页 {effectivePageNo} / 共 {pageNumbers.length || 0} 页</span>
             <span className="subtle">本页图像 {currentPageFigures.length} 张</span>
             <span className="subtle">本页批注 {activePageAnnotationCount} 条</span>
+          </div>
+
+          <div className="reader-focus-summary" data-testid="reader-focus-summary">
+            <div className="reader-focus-summary-top">
+              <div>
+                <strong>
+                  {activeParagraph
+                    ? `当前焦点：第 ${activeParagraph.page_no} 页 · 段落 #${activeParagraph.paragraph_id}`
+                    : `当前阅读位置：第 ${effectivePageNo} 页`}
+                </strong>
+                <div className="subtle" style={{ marginTop: 6 }}>
+                  {recentAction
+                    ? `刚刚完成：${recentAction.message}`
+                    : "阅读器会记住你的上次阅读位置、视图模式和缩放设置。"}
+                </div>
+              </div>
+
+              <div className="reader-status-row">
+                {activeParagraphStatusBadges.map((badge) => (
+                  <span key={badge.key} className={`reader-status-badge tone-${badge.tone}`}>
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {restoredSession ? (
+              <div className="subtle" data-testid="reader-session-badge">
+                已恢复上次阅读：{describeReaderSession(restoredSession)}
+              </div>
+            ) : null}
           </div>
 
           <div className="paper-reader-locator-row">
@@ -775,6 +1115,114 @@ export default function PaperReaderScreen({
             <Button type="button" onClick={handleLocateParagraph}>
               定位关键词
             </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {reader.pdf_downloaded ? (
+        <Card className="paper-reader-quick-nav" data-testid="reader-quick-nav">
+          <div className="paper-reader-header" style={{ alignItems: "center" }}>
+            <div>
+              <h3 className="title" style={{ fontSize: 18 }}>
+                结构化导航
+              </h3>
+              <p className="subtle" style={{ margin: "4px 0 0" }}>
+                从章节、图像、批注和搜索命中快速跳转，尽量减少在长论文里来回翻找。
+              </p>
+            </div>
+          </div>
+
+          <div className="reader-quick-nav-grid">
+            <div className="reader-quick-nav-section">
+              <strong>章节导航</strong>
+              {headingParagraphs.length > 0 ? (
+                <div className="reader-quick-nav-buttons">
+                  {headingParagraphs.map((paragraph) => (
+                    <button
+                      key={paragraph.paragraph_id}
+                      type="button"
+                      className="reader-quick-nav-button"
+                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                    >
+                      <span className="reader-status-badge tone-focus">p.{paragraph.page_no}</span>
+                      <span>{paragraph.text.slice(0, 72)}{paragraph.text.length > 72 ? "..." : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="subtle">当前论文还没有可用的章节标题提取结果。</div>
+              )}
+            </div>
+
+            <div className="reader-quick-nav-section">
+              <strong>图像跳转</strong>
+              {quickFigureShortcuts.length > 0 ? (
+                <div className="reader-quick-nav-buttons">
+                  {quickFigureShortcuts.map((figure) => (
+                    <button
+                      key={figure.figure_id}
+                      type="button"
+                      className="reader-quick-nav-button"
+                      onClick={() => {
+                        goToPage(figure.page_no);
+                        setFigurePanelOpen(true);
+                      }}
+                    >
+                      <span className="reader-status-badge tone-info">第 {figure.page_no} 页</span>
+                      <span>{figure.caption_text?.slice(0, 72) || `图像 #${figure.figure_id}`}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="subtle">当前论文还没有提取到图像导航项。</div>
+              )}
+            </div>
+
+            <div className="reader-quick-nav-section">
+              <strong>批注回跳</strong>
+              {recentAnnotationShortcuts.length > 0 ? (
+                <div className="reader-quick-nav-buttons">
+                  {recentAnnotationShortcuts.map((annotation) => (
+                    <button
+                      key={annotation.id}
+                      type="button"
+                      className="reader-quick-nav-button"
+                      onClick={() => focusParagraph(annotation.paragraph_id, { behavior: "auto" })}
+                    >
+                      <span className="reader-status-badge tone-success">{formatDateTime(annotation.updated_at)}</span>
+                      <span>{annotation.note_text.slice(0, 80)}{annotation.note_text.length > 80 ? "..." : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="subtle">当前论文还没有批注记录。</div>
+              )}
+            </div>
+
+            <div className="reader-quick-nav-section">
+              <strong>{locatorQuery.trim() ? `搜索命中 (${quickSearchMatches.length})` : "搜索命中"}</strong>
+              {quickSearchMatches.length > 0 ? (
+                <div className="reader-quick-nav-buttons">
+                  {quickSearchMatches.map((paragraph) => (
+                    <button
+                      key={paragraph.paragraph_id}
+                      type="button"
+                      className="reader-quick-nav-button"
+                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                    >
+                      <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
+                      <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="subtle">
+                  {locatorQuery.trim()
+                    ? "当前关键词还没有命中可跳转的段落。"
+                    : "先输入关键词并定位一次，这里会出现可快速跳转的命中列表。"}
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       ) : null}
@@ -896,6 +1344,7 @@ export default function PaperReaderScreen({
                   return renderParagraph(
                     paragraph,
                     className,
+                    buildParagraphStatusBadges(paragraph),
                     (element) => {
                       paragraphRefs.current[paragraph.paragraph_id] = element;
                     },
@@ -908,7 +1357,7 @@ export default function PaperReaderScreen({
               </div>
 
               <div className="paper-reader-text-tools">
-                <div className="paper-reader-annotation-panel">
+                <div ref={annotationPanelRef} className="paper-reader-annotation-panel">
                   <div className="paper-reader-header" style={{ alignItems: "center" }}>
                     <div>
                       <h4 className="title" style={{ fontSize: 17, margin: 0 }}>
@@ -932,17 +1381,40 @@ export default function PaperReaderScreen({
                   ) : null}
 
                   {selectedQuoteForAnnotation ? (
-                    <div className="reader-annotation-quote">
-                      <div className="subtle">将随批注保存的选中原文</div>
-                      <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{selectedQuoteForAnnotation}</p>
+                    <div className="reader-annotation-quote" data-testid="reader-annotation-quote">
+                      <div className="subtle">将随批注保存的引用原文</div>
+                      <p data-testid="reader-annotation-quote-text" style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                        {selectedQuoteForAnnotation}
+                      </p>
+                      <div className="reader-inline-action-row">
+                        {selection ? (
+                          <Button className="secondary" type="button" onClick={() => void handleTranslateSelection()} disabled={translationLoading}>
+                            {translationLoading ? "翻译中..." : "翻译这段原文"}
+                          </Button>
+                        ) : null}
+                        {projectId ? (
+                          <Button
+                            className="secondary"
+                            type="button"
+                            onClick={() => void handleAddEvidenceToProject()}
+                            disabled={projectEvidenceSaving}
+                          >
+                            {projectEvidenceSaving ? "加入中..." : "把这段加入证据板"}
+                          </Button>
+                        ) : null}
+                        <Button className="secondary" type="button" onClick={() => clearSelectionState()}>
+                          清空引用原文
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="subtle">
-                      你可以先在正文中选中英文句子，再进行英译中或保存批注，系统会保留引用原文。
+                      你可以先在正文中选中英文句子，再进行翻译、写批注或加入证据；系统会尽量保留引用原文，避免重复选区。
                     </div>
                   )}
 
                   <textarea
+                    ref={annotationTextareaRef}
                     className="textarea"
                     placeholder="记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。"
                     value={annotationDraft}
@@ -1011,27 +1483,38 @@ export default function PaperReaderScreen({
       ) : null}
 
       {selection && viewMode === "text" ? (
-        <button
-          type="button"
-          className="reader-selection-toolbar"
-          style={{ top: selection.top, left: selection.left }}
-          onClick={() => void handleTranslateSelection()}
-        >
-          {translationLoading ? "翻译中..." : "英译中"}
-        </button>
-      ) : null}
-
-      {selection && viewMode === "text" && projectId ? (
-        <button
-          type="button"
-          className="reader-selection-toolbar reader-selection-toolbar-secondary"
-          data-testid="reader-add-project-evidence-selection"
-          style={{ top: selection.top + 44, left: selection.left }}
-          onClick={() => void handleAddEvidenceToProject()}
-          disabled={projectEvidenceSaving}
-        >
-          {projectEvidenceSaving ? "加入中..." : "加入当前项目证据板"}
-        </button>
+        <div className="reader-selection-toolbar" style={{ top: selection.top, left: selection.left }}>
+          <button type="button" className="reader-selection-action" onClick={() => void handleTranslateSelection()}>
+            {translationLoading ? "翻译中..." : "英译中"}
+          </button>
+          <button
+            type="button"
+            className="reader-selection-action secondary"
+            onClick={() => {
+              pinSelectionForFollowUp(selection);
+              clearSelectionState({ keepPinnedQuote: true });
+              focusAnnotationComposer("已保留当前选区，可继续写批注。");
+              setRecentAction({
+                kind: "annotate",
+                message: "已保留当前选区，可继续写批注。",
+                paragraphId: selection.paragraphId,
+              });
+            }}
+          >
+            写批注
+          </button>
+          {projectId ? (
+            <button
+              type="button"
+              className="reader-selection-action secondary"
+              data-testid="reader-add-project-evidence-selection"
+              onClick={() => void handleAddEvidenceToProject()}
+              disabled={projectEvidenceSaving}
+            >
+              {projectEvidenceSaving ? "加入中..." : "加入证据板"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {translationDrawerOpen ? (
@@ -1042,6 +1525,26 @@ export default function PaperReaderScreen({
               <div className="subtle">翻译结果会保留英文原文，并尽量不打断当前阅读位置。</div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button
+                className="secondary"
+                type="button"
+                onClick={() => {
+                  setTranslationDrawerOpen(false);
+                  focusAnnotationComposer("翻译结果已保留，可继续写批注。");
+                }}
+              >
+                继续写批注
+              </Button>
+              {projectId ? (
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() => void handleAddEvidenceToProject()}
+                  disabled={projectEvidenceSaving}
+                >
+                  {projectEvidenceSaving ? "加入中..." : "加入当前项目证据板"}
+                </Button>
+              ) : null}
               <Button
                 className="secondary"
                 type="button"
@@ -1061,7 +1564,7 @@ export default function PaperReaderScreen({
               <div>
                 <div className="subtle">选中原文</div>
                 <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
-                  {translation?.content_en_snapshot || selection?.text || "正在准备翻译内容..."}
+                  {translation?.content_en_snapshot || pinnedQuote?.text || selection?.text || "正在准备翻译内容..."}
                 </p>
               </div>
               <div>
@@ -1128,3 +1631,4 @@ export default function PaperReaderScreen({
     </div>
   );
 }
+

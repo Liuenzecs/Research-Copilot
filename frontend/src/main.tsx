@@ -6,6 +6,7 @@ import DesktopApp from '@/desktop/DesktopApp';
 import { queryClient } from '@/lib/queryClient';
 
 import '@/styles/globals.css';
+import '@/styles/paper-reader-enhancements.css';
 
 const root = document.getElementById('root');
 if (!root) {

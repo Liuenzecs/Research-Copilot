@@ -128,6 +128,56 @@ test("adds evidence from the reader back into the current project", async ({ pag
   await expect.poll(async () => page.locator('[data-testid^="evidence-card-"]').count()).toBeGreaterThan(0);
 });
 
+test("restores the last reader session after reload", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+
+  await page.getByTestId("reader-mode-workspace").click();
+  await page.reload();
+
+  await expect(page.getByTestId("reader-session-badge")).toContainText("已恢复上次阅读");
+  await expect(page.getByTestId("reader-mode-workspace")).not.toHaveClass(/secondary/);
+});
+
+test("keeps the selected quote when continuing into annotation flow", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+  await expect(page.getByTestId("reader-text-article")).toBeVisible();
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await expect(firstParagraph).toBeVisible();
+
+  const selectedText = await firstParagraph.evaluate((element) => {
+    const target = element.querySelector("p, h3, pre") ?? element;
+    const textNode = target.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE || !textNode.textContent) {
+      return "";
+    }
+
+    const text = textNode.textContent.trim().slice(0, 24);
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, text.length);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    return text;
+  });
+
+  await expect(page.getByRole("button", { name: "写批注" })).toBeVisible();
+  await page.getByRole("button", { name: "写批注" }).click();
+
+  await expect(page.getByText("将随批注保存的引用原文")).toBeVisible();
+  await expect(page.getByTestId("reader-annotation-quote-text")).toContainText(selectedText);
+  await expect(page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。")).toBeFocused();
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

@@ -18,6 +18,7 @@ The current mainline is:
 
 - The product is `desktop-first`, not `web-first`.
 - Do not reintroduce `Next.js` runtime assumptions into the current mainline unless that is an explicit product decision.
+- Reading experience is a current product priority. In near-term tradeoffs, prefer changes that reduce reading friction, context switching, and evidence-extraction friction over unrelated surface expansion.
 - Keep the existing route semantics stable:
   - `/projects`
   - `/projects/:projectId`
@@ -130,6 +131,12 @@ From the repo root:
 
 - Keep `README.md` user-facing and repo-facing.
 - Put long design discussions, audits, and planning notes in `docs/`.
+- Keep `PROJECT_STATUS.md` and `DECISIONS.md` in the repo root as shared living documents.
+- `PROJECT_STATUS.md` and `DECISIONS.md` should be written in Chinese.
+- Update `PROJECT_STATUS.md` when priorities, next steps, or phase status materially change.
+- Update `DECISIONS.md` when a meaningful product, architecture, or workflow decision is made, changed, or reversed.
+- After each meaningful implementation batch, create a git commit for the completed agent changes and push it to the current remote branch.
+- When the worktree already contains unrelated user changes, stage and push only the agent's intended file set or hunks; do not sweep unrelated local work into the push.
 - Keep this file focused on contributor and agent guardrails, not product marketing.
 
 ## Avoid These Regressions
