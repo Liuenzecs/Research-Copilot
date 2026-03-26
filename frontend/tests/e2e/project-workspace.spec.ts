@@ -261,6 +261,40 @@ test("groups annotations into pending and resolved workbench sections", async ({
   await expect(page.getByTestId("reader-resolved-annotations")).toContainText(note);
 });
 
+test("supports keyboard-first reader navigation and actions", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+
+  await page.getByTestId("reader-shell").click();
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+  await expect(page.getByTestId("reader-text-article")).toBeVisible();
+
+  await page.keyboard.press("/");
+  await expect(page.getByTestId("reader-locator-input")).toBeFocused();
+  await expect(page.getByTestId("reader-shortcuts")).toContainText("保存批注");
+
+  await page.locator('[data-testid^="reader-paragraph-"]').first().click();
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("段落 #1");
+
+  await page.keyboard.press("j");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("段落 #2");
+
+  await page.keyboard.press("k");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("段落 #1");
+
+  const note = `E2E keyboard shortcut note ${Date.now()}`;
+  await page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。").fill(note);
+  await page.keyboard.press("Control+Enter");
+  await expect(page.getByTestId("reader-current-page-annotations")).toContainText(note);
+
+  await page.getByTestId("reader-focus-summary").click();
+  await page.keyboard.press("b");
+  await page.waitForURL(/\/projects\/\d+$/);
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

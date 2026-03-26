@@ -120,6 +120,14 @@ function describeReaderSession(session: Pick<PaperReaderSession, "viewMode" | "p
   return parts.join(" · ");
 }
 
+function isEditableShortcutTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) {
+    return false;
+  }
+  return ["INPUT", "TEXTAREA"].includes(element.tagName) || element.isContentEditable;
+}
+
 function compactTextPreview(value: string, maxLength = 96) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
@@ -236,11 +244,14 @@ export default function PaperReaderScreen({
   const articleRef = useRef<HTMLDivElement | null>(null);
   const annotationPanelRef = useRef<HTMLDivElement | null>(null);
   const annotationTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const locatorInputRef = useRef<HTMLInputElement | null>(null);
+  const readerShellRef = useRef<HTMLDivElement | null>(null);
   const paragraphRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const initialTargetAppliedRef = useRef(false);
   const restoredSessionRef = useRef<PaperReaderSession | null>(bootSession);
   const pendingFocusRef = useRef<{ paragraphId: number; behavior: ScrollBehavior } | null>(null);
   const sessionAppliedRef = useRef(false);
+  const keyboardFocusReadyRef = useRef(false);
 
   const [reader, setReader] = useState<PaperReader | null>(null);
   const [loading, setLoading] = useState(true);
@@ -324,6 +335,7 @@ export default function PaperReaderScreen({
     setProjectEvidenceParagraphIds([]);
     setRevisitParagraphIds(bootSession?.revisitParagraphIds ?? []);
     setSessionReady(false);
+    keyboardFocusReadyRef.current = false;
   }, [bootSession, paperId]);
 
   useEffect(() => {
@@ -623,27 +635,10 @@ export default function PaperReaderScreen({
   }, [activeParagraphId, currentPageNo, paperId, reader, revisitParagraphIds, sessionReady, viewMode, zoomPercent]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (viewMode === "workspace") return;
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
-        return;
-      }
-      if (target?.isContentEditable) {
-        return;
-      }
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        stepPage(-1);
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        stepPage(1);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [viewMode, currentPageIndex, pageNumbers]);
+    if (!reader?.pdf_downloaded || keyboardFocusReadyRef.current) return;
+    readerShellRef.current?.focus();
+    keyboardFocusReadyRef.current = true;
+  }, [reader?.pdf_downloaded]);
 
   function updateReaderUrl(paragraphId?: number | null) {
     navigate(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined, projectId ?? undefined), {
@@ -684,13 +679,20 @@ export default function PaperReaderScreen({
   }
 
   function focusAnnotationComposer(message?: string) {
-    setViewMode("text");
+    activateReaderMode("text");
     window.requestAnimationFrame(() => {
       annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       annotationTextareaRef.current?.focus();
     });
     if (message) {
       setNotice(message);
+    }
+  }
+
+  function activateReaderMode(nextMode: ReaderMode) {
+    setViewMode(nextMode);
+    if (nextMode === "text" && activeParagraphId) {
+      pendingFocusRef.current = { paragraphId: activeParagraphId, behavior: "auto" };
     }
   }
 
@@ -730,6 +732,92 @@ export default function PaperReaderScreen({
       updateReaderUrl(paragraphId);
     }
   }
+
+  function stepParagraph(direction: -1 | 1) {
+    if (!currentPageParagraphs.length) return;
+
+    const currentIndex = activeParagraphId
+      ? currentPageParagraphs.findIndex((paragraph) => paragraph.paragraph_id === activeParagraphId)
+      : -1;
+    const nextIndex = currentIndex >= 0 ? currentIndex + direction : direction > 0 ? 0 : currentPageParagraphs.length - 1;
+    if (nextIndex < 0 || nextIndex >= currentPageParagraphs.length) {
+      return;
+    }
+    focusParagraph(currentPageParagraphs[nextIndex].paragraph_id, { behavior: "smooth" });
+  }
+
+  function focusLocatorInput() {
+    activateReaderMode("text");
+    window.requestAnimationFrame(() => {
+      locatorInputRef.current?.focus();
+      locatorInputRef.current?.select();
+    });
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const normalizedKey = event.key.toLowerCase();
+
+      if ((event.ctrlKey || event.metaKey) && normalizedKey === "enter" && target === annotationTextareaRef.current) {
+        event.preventDefault();
+        void handleCreateAnnotation();
+        return;
+      }
+
+      if (isEditableShortcutTarget(target)) {
+        return;
+      }
+
+      if (normalizedKey === "arrowleft") {
+        event.preventDefault();
+        stepPage(-1);
+        return;
+      }
+      if (normalizedKey === "arrowright") {
+        event.preventDefault();
+        stepPage(1);
+        return;
+      }
+      if (normalizedKey === "/") {
+        event.preventDefault();
+        focusLocatorInput();
+        return;
+      }
+      if (normalizedKey === "j") {
+        event.preventDefault();
+        stepParagraph(1);
+        return;
+      }
+      if (normalizedKey === "k") {
+        event.preventDefault();
+        stepParagraph(-1);
+        return;
+      }
+      if (normalizedKey === "p") {
+        event.preventDefault();
+        activateReaderMode("page");
+        return;
+      }
+      if (normalizedKey === "t") {
+        event.preventDefault();
+        activateReaderMode("text");
+        return;
+      }
+      if (normalizedKey === "w") {
+        event.preventDefault();
+        activateReaderMode("workspace");
+        return;
+      }
+      if (normalizedKey === "b" && projectId) {
+        event.preventDefault();
+        navigate(projectPath(projectId));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeParagraphId, currentPageParagraphs, navigate, projectId, stepPage, viewMode]);
 
   function captureSelection() {
     const currentSelection = window.getSelection();
@@ -1109,7 +1197,7 @@ export default function PaperReaderScreen({
   }
 
   return (
-    <div className="paper-reader-shell">
+    <div ref={readerShellRef} className="paper-reader-shell" data-testid="reader-shell" tabIndex={-1}>
       <Card>
         <div className="paper-reader-header">
           <div>
@@ -1137,17 +1225,17 @@ export default function PaperReaderScreen({
                 返回项目工作台
               </Button>
             ) : null}
-            <Button className={viewMode === "page" ? "" : "secondary"} type="button" data-testid="reader-mode-page" onClick={() => setViewMode("page")}>
+            <Button className={viewMode === "page" ? "" : "secondary"} type="button" data-testid="reader-mode-page" onClick={() => activateReaderMode("page")}>
               原版页面
             </Button>
-            <Button className={viewMode === "text" ? "" : "secondary"} type="button" data-testid="reader-mode-text" onClick={() => setViewMode("text")}>
+            <Button className={viewMode === "text" ? "" : "secondary"} type="button" data-testid="reader-mode-text" onClick={() => activateReaderMode("text")}>
               辅助文本
             </Button>
             <Button
               className={viewMode === "workspace" ? "" : "secondary"}
               type="button"
               data-testid="reader-mode-workspace"
-              onClick={() => setViewMode("workspace")}
+              onClick={() => activateReaderMode("workspace")}
             >
               论文工作区
             </Button>
@@ -1163,17 +1251,17 @@ export default function PaperReaderScreen({
           </div>
           <div className="reader-mode-guide-actions">
             {viewMode !== "page" ? (
-              <Button className="secondary" type="button" onClick={() => setViewMode("page")}>
+              <Button className="secondary" type="button" onClick={() => activateReaderMode("page")}>
                 回到原版页面
               </Button>
             ) : null}
             {viewMode !== "text" ? (
-              <Button className="secondary" type="button" onClick={() => setViewMode("text")}>
+              <Button className="secondary" type="button" onClick={() => activateReaderMode("text")}>
                 需要翻译或批注时切到辅助文本
               </Button>
             ) : null}
             {viewMode !== "workspace" ? (
-              <Button className="secondary" type="button" onClick={() => setViewMode("workspace")}>
+              <Button className="secondary" type="button" onClick={() => activateReaderMode("workspace")}>
                 需要沉淀记录时切到论文工作区
               </Button>
             ) : null}
@@ -1294,8 +1382,10 @@ export default function PaperReaderScreen({
               下一页
             </Button>
             <input
+              ref={locatorInputRef}
               className="input"
               style={{ minWidth: 280, flex: 1 }}
+              data-testid="reader-locator-input"
               placeholder="按关键词定位辅助文本，例如 baseline、dataset、ablation"
               value={locatorQuery}
               onChange={(event) => {
@@ -1312,6 +1402,40 @@ export default function PaperReaderScreen({
             <Button type="button" onClick={handleLocateParagraph}>
               定位关键词
             </Button>
+          </div>
+
+          <div className="reader-shortcut-strip" data-testid="reader-shortcuts">
+            <span className="reader-shortcut-chip">
+              <kbd>/</kbd>
+              聚焦定位
+            </span>
+            <span className="reader-shortcut-chip">
+              <kbd>j</kbd>
+              <kbd>k</kbd>
+              段落跳转
+            </span>
+            <span className="reader-shortcut-chip">
+              <kbd>←</kbd>
+              <kbd>→</kbd>
+              页切换
+            </span>
+            <span className="reader-shortcut-chip">
+              <kbd>p</kbd>
+              <kbd>t</kbd>
+              <kbd>w</kbd>
+              模式切换
+            </span>
+            <span className="reader-shortcut-chip">
+              <kbd>Ctrl</kbd>
+              <kbd>Enter</kbd>
+              保存批注
+            </span>
+            {projectId ? (
+              <span className="reader-shortcut-chip">
+                <kbd>b</kbd>
+                返回项目
+              </span>
+            ) : null}
           </div>
         </Card>
       ) : null}

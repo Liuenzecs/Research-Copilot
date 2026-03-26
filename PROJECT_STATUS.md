@@ -86,7 +86,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 
 ### 第三批：可选增强
 
-- [ ] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
+- [x] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
 - [x] 增加阅读器侧的批注汇总与待处理视图。
 - [ ] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
 - [ ] 评估是否需要提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
@@ -342,3 +342,36 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 先补页切换、模式切换、回到项目、聚焦搜索等高频快捷操作，减少鼠标来回移动
 - 让阅读器在 Windows 桌面环境里更接近“可连续操作”的研究工具，而不是只能点按的页面
 - 继续围绕阅读主链路补回归测试，避免快捷键引入焦点或输入冲突
+
+### 2026-03-27 · 阶段 1H：键盘优先导航与阅读快捷操作
+
+阶段目标：
+
+- 让阅读器在 Windows 桌面环境里具备一条更顺手的键盘优先操作链，而不必频繁来回点按钮。
+- 把快捷操作做成“可发现”的能力，避免功能存在但只有作者自己知道。
+
+已完成：
+
+- 阅读器新增一组可发现的快捷键提示条，直接展示 `/` 聚焦定位、`j / k` 跳段、`← / →` 翻页、`p / t / w` 切模式、`Ctrl + Enter` 保存批注、`b` 返回项目。
+- 新增键盘快捷操作支持：聚焦定位输入框、在当前页内前后跳段、切换三种阅读模式、从阅读器快速返回项目工作台。
+- 批注输入框支持 `Ctrl + Enter` 快速保存，减少从键盘回到鼠标再点保存的中断。
+- 阅读器壳层补充可聚焦状态，进入阅读后更容易承接后续键盘操作。
+- 新增一条 E2E 回归测试，覆盖“通过键盘切模式、聚焦定位、跳段、快捷保存批注并返回项目”的主路径。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions"`：通过
+
+下一阶段：
+
+- 阶段 1I：图表优先阅读流
+- 优先把“先扫图、再回正文”的阅读习惯显性化，让图示密集论文更容易快速建立全局判断
+- 尽量复用当前阅读器已有的图像提取、页面预览和结构化导航能力，避免为 1I 引入重型新布局
+- 继续补围绕图像跳转与阅读回流的验证
