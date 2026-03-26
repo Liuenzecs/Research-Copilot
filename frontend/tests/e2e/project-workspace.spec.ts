@@ -364,6 +364,55 @@ test("keeps the page preview strip compact for long documents", async ({ page })
   await expect(page.getByTestId(`reader-page-preview-${middlePage}`)).toHaveClass(/active/);
 });
 
+test("supports desktop-style page navigation and zoom shortcuts", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
+
+  const pageJump = page.getByTestId("reader-page-jump");
+  const zoomSelect = page.getByTestId("reader-zoom-select");
+  await expect.poll(async () => pageJump.locator("option").count()).toBeGreaterThan(10);
+  const totalPages = await pageJump.locator("option").count();
+
+  await page.getByTestId("reader-shell").click();
+  await expect(page.getByTestId("reader-shortcuts")).toContainText("桌面翻页");
+  await expect(page.getByTestId("reader-shortcuts")).toContainText("页面缩放");
+
+  await page.keyboard.press("PageDown");
+  await expect(pageJump).toHaveValue("2");
+
+  await page.keyboard.press("End");
+  await expect(pageJump).toHaveValue(String(totalPages));
+
+  await page.keyboard.press("Home");
+  await expect(pageJump).toHaveValue("1");
+
+  await expect(zoomSelect).toHaveValue("100");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true }));
+  });
+  await expect(zoomSelect).toHaveValue("115");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "-", ctrlKey: true, bubbles: true }));
+  });
+  await expect(zoomSelect).toHaveValue("100");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true }));
+  });
+  await expect(zoomSelect).toHaveValue("115");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true }));
+  });
+  await expect(zoomSelect).toHaveValue("130");
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", ctrlKey: true, bubbles: true }));
+  });
+  await expect(zoomSelect).toHaveValue("100");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

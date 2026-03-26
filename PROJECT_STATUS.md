@@ -95,7 +95,8 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 
 - [x] 长文档页面预览条改为关键页窗口化，避免大 PDF 一次性渲染全部缩略图。
 - [x] 为页面缩略图、图像卡片和大图预览补充更友好的图片加载策略。
-- [ ] 继续观察 Windows 下文本选择、滚动、缩放与键盘焦点的稳定性。
+- [x] 补桌面风格的翻页 / 缩放快捷操作，以及 `Esc` 关闭浮层的退回路径。
+- [ ] 继续观察 Windows 下文本选择、滚动与键盘焦点的稳定性。
 - [ ] 补更极端的长文档 / 多图论文样本，扩展阅读器回归覆盖。
 
 ## 建议的实施顺序
@@ -485,3 +486,35 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 聚焦文本选择、滚动、缩放和键盘焦点在 Windows 桌面下的稳定性与冲突点
 - 优先做低风险交互收口和回归补样，而不是继续扩展新的阅读入口
 - 如果长文档热点仍明显，再继续补更极端样本和进一步的渲染降压手段
+
+### 2026-03-27 · 阶段 2B：Windows 阅读交互收口
+
+阶段目标：
+
+- 把 Windows 桌面环境里更自然的一组阅读按键直接补进阅读器，减少频繁回到鼠标和下拉框。
+- 先收口翻页、缩放和浮层退回动作，不引入更重的命令面板或新的全局快捷键系统。
+
+已完成：
+
+- 阅读器新增 `PageUp / PageDown / Home / End` 桌面翻页快捷操作，可快速前后翻页或跳到首页 / 末页。
+- 原版页面模式新增 `Ctrl +` / `Ctrl -` / `Ctrl 0` 页面缩放快捷操作，和现有缩放下拉框保持一致。
+- `Esc` 现在可直接关闭图像预览、图集面板和翻译抽屉，降低桌面阅读中浮层叠加后的退回成本。
+- 快捷键提示条同步补充“桌面翻页”和“页面缩放”提示，避免新增能力再次变成隐藏功能。
+- 新增一条 E2E 回归测试，覆盖桌面风格翻页与页面缩放快捷路径。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts"`：通过
+
+下一阶段：
+
+- 阶段 2C：文本选择与浮层交互收口
+- 聚焦选区工具条、滚动和焦点恢复在长文阅读里的连续性，减少选区后“刚读顺又被打断”的感觉
+- 优先补低风险交互整理和回归样本，不急着扩展新的阅读功能面
+- 如果 Windows 桌面上仍有明显热点，再继续补更细的专项验证

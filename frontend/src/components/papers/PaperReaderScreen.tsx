@@ -816,6 +816,23 @@ export default function PaperReaderScreen({
     goToPage(pageNumbers[nextIndex]);
   }
 
+  function jumpToBoundaryPage(edge: "start" | "end") {
+    const targetPage = edge === "start" ? pageNumbers[0] : pageNumbers[pageNumbers.length - 1];
+    if (!targetPage) return;
+    goToPage(targetPage);
+  }
+
+  function stepZoom(direction: -1 | 1) {
+    const currentIndex = ZOOM_OPTIONS.indexOf(normalizeZoomPercent(zoomPercent));
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = Math.min(ZOOM_OPTIONS.length - 1, Math.max(0, safeIndex + direction));
+    setZoomPercent(ZOOM_OPTIONS[nextIndex]);
+  }
+
+  function resetZoom() {
+    setZoomPercent(ZOOM_OPTIONS[0]);
+  }
+
   function focusParagraph(paragraphId: number, options?: FocusParagraphOptions) {
     const paragraph = paragraphMap.get(paragraphId);
     if (!paragraph) return;
@@ -870,6 +887,24 @@ export default function PaperReaderScreen({
         return;
       }
 
+      if (normalizedKey === "escape") {
+        if (lightbox) {
+          event.preventDefault();
+          setLightbox(null);
+          return;
+        }
+        if (figurePanelOpen) {
+          event.preventDefault();
+          setFigurePanelOpen(false);
+          return;
+        }
+        if (translationDrawerOpen) {
+          event.preventDefault();
+          setTranslationDrawerOpen(false);
+          return;
+        }
+      }
+
       if (normalizedKey === "arrowleft") {
         event.preventDefault();
         stepPage(-1);
@@ -878,6 +913,26 @@ export default function PaperReaderScreen({
       if (normalizedKey === "arrowright") {
         event.preventDefault();
         stepPage(1);
+        return;
+      }
+      if (normalizedKey === "pageup") {
+        event.preventDefault();
+        stepPage(-1);
+        return;
+      }
+      if (normalizedKey === "pagedown") {
+        event.preventDefault();
+        stepPage(1);
+        return;
+      }
+      if (normalizedKey === "home") {
+        event.preventDefault();
+        jumpToBoundaryPage("start");
+        return;
+      }
+      if (normalizedKey === "end") {
+        event.preventDefault();
+        jumpToBoundaryPage("end");
         return;
       }
       if (normalizedKey === "/") {
@@ -910,6 +965,23 @@ export default function PaperReaderScreen({
         activateReaderMode("workspace");
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && viewMode === "page") {
+        if (normalizedKey === "=" || normalizedKey === "+") {
+          event.preventDefault();
+          stepZoom(1);
+          return;
+        }
+        if (normalizedKey === "-") {
+          event.preventDefault();
+          stepZoom(-1);
+          return;
+        }
+        if (normalizedKey === "0") {
+          event.preventDefault();
+          resetZoom();
+          return;
+        }
+      }
       if (normalizedKey === "b" && projectId) {
         event.preventDefault();
         navigate(projectPath(projectId));
@@ -918,7 +990,7 @@ export default function PaperReaderScreen({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeParagraphId, currentPageParagraphs, navigate, projectId, stepPage, viewMode]);
+  }, [figurePanelOpen, lightbox, navigate, projectId, stepPage, translationDrawerOpen, viewMode, zoomPercent]);
 
   function captureSelection() {
     const currentSelection = window.getSelection();
@@ -1555,10 +1627,24 @@ export default function PaperReaderScreen({
               页切换
             </span>
             <span className="reader-shortcut-chip">
+              <kbd>PgUp</kbd>
+              <kbd>PgDn</kbd>
+              <kbd>Home</kbd>
+              <kbd>End</kbd>
+              桌面翻页
+            </span>
+            <span className="reader-shortcut-chip">
               <kbd>p</kbd>
               <kbd>t</kbd>
               <kbd>w</kbd>
               模式切换
+            </span>
+            <span className="reader-shortcut-chip">
+              <kbd>Ctrl</kbd>
+              <kbd>+</kbd>
+              <kbd>-</kbd>
+              <kbd>0</kbd>
+              页面缩放
             </span>
             <span className="reader-shortcut-chip">
               <kbd>Ctrl</kbd>
@@ -1802,6 +1888,7 @@ export default function PaperReaderScreen({
               </select>
               <select
                 className="select"
+                data-testid="reader-zoom-select"
                 value={String(zoomPercent)}
                 onChange={(event) => setZoomPercent(Number(event.target.value))}
                 disabled={viewMode !== "page"}
