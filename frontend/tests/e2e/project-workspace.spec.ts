@@ -14,6 +14,14 @@ async function openSeededProject(page: Page) {
   await page.waitForURL(/\/projects\/\d+$/);
 }
 
+async function openSeededPaperReader(page: Page, title: string) {
+  await openSeededProject(page);
+  const paperCard = page.locator(".project-paper-card", { hasText: title });
+  await expect(paperCard).toBeVisible();
+  await paperCard.getByRole("link", { name: /打开高级阅读器|继续阅读/ }).click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+}
+
 async function firstSearchResults(page: Page) {
   const results = page.locator('[data-testid^="search-result-"]');
   await expect.poll(async () => results.count()).toBeGreaterThan(1);
@@ -334,6 +342,26 @@ test("persists local reader layout preferences", async ({ page }) => {
   await expect(page.getByTestId("reader-preference-density")).toHaveValue("compact");
   await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-width", "focused");
   await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-density", "compact");
+});
+
+test("keeps the page preview strip compact for long documents", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
+
+  const pageJump = page.getByTestId("reader-page-jump");
+  const pageOptions = pageJump.locator("option");
+  await expect.poll(async () => pageOptions.count()).toBeGreaterThan(10);
+
+  const totalPages = await pageOptions.count();
+  const previewButtons = page.getByTestId("reader-page-preview-strip").locator('button[data-testid^="reader-page-preview-"]');
+  const initialPreviewCount = await previewButtons.count();
+
+  expect(initialPreviewCount).toBeLessThan(totalPages);
+  await expect(page.getByTestId("reader-page-preview-windowed-hint")).toContainText(`${initialPreviewCount} / ${totalPages} 页`);
+
+  const middlePage = String(Math.ceil(totalPages / 2));
+  await pageJump.selectOption(middlePage);
+  await expect(page.getByTestId(`reader-page-preview-${middlePage}`)).toBeVisible();
+  await expect(page.getByTestId(`reader-page-preview-${middlePage}`)).toHaveClass(/active/);
 });
 
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {

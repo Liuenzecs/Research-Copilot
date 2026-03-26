@@ -91,11 +91,19 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
 - [x] 评估并提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
 
+### 第四批：稳定性与性能收口
+
+- [x] 长文档页面预览条改为关键页窗口化，避免大 PDF 一次性渲染全部缩略图。
+- [x] 为页面缩略图、图像卡片和大图预览补充更友好的图片加载策略。
+- [ ] 继续观察 Windows 下文本选择、滚动、缩放与键盘焦点的稳定性。
+- [ ] 补更极端的长文档 / 多图论文样本，扩展阅读器回归覆盖。
+
 ## 建议的实施顺序
 
 1. 先做“阅读会话恢复 + 当前焦点强化 + 操作反馈回显”。
 2. 再做“结构化导航 + 排版优化 + 模式切换收敛”。
 3. 最后补“键盘效率、主题偏好、批注汇总”等增强项。
+4. 然后进入“稳定性与性能收口”，优先压低长文档与桌面交互风险。
 
 ## 维护规则
 
@@ -443,3 +451,37 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 开始转向长文档、大 PDF、Windows 文本选择和滚动等稳定性问题的专项观察
 - 在继续加功能之前，先确认本轮阅读体验增强项在真实桌面使用中没有引入新的负担
 - 后续优先补性能观测、更多回归样本和必要的交互收口，而不是继续堆新入口
+
+### 2026-03-27 · 阶段 2A：阅读稳定性与性能观察
+
+阶段目标：
+
+- 先处理长文档和大 PDF 最容易拖慢阅读体验的一类问题：页面预览条全量渲染所有缩略图。
+- 在不引入重型新布局的前提下，为阅读器补一轮低风险性能收口，并把长文档样本加入回归验证。
+
+已完成：
+
+- 阅读器页面预览条现在会在页数超过 10 页时进入“长文档性能模式”，仅保留首页、尾页和当前页附近的关键页缩略图。
+- 预览条会显式提示当前是窗口化渲染，同时保留完整页码下拉框，避免为了降压而牺牲任意页跳转能力。
+- 页面缩略图、图表卡片和大图预览补充了更友好的图片加载策略，减少无关图片抢占切页和首屏资源。
+- E2E 长文档种子扩展为稳定的多页样本，新增“长文档预览条保持紧凑”的阅读器回归测试。
+- 既有的阅读会话、待回看、项目回流、页内概览、批注工作台、键盘快捷键、图表优先流和阅读偏好主路径回归在这一轮保持通过。
+
+变更文件：
+
+- `backend/app/tests/e2e_seed.py`
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents"`：通过
+
+下一阶段：
+
+- 阶段 2B：Windows 阅读交互收口
+- 聚焦文本选择、滚动、缩放和键盘焦点在 Windows 桌面下的稳定性与冲突点
+- 优先做低风险交互收口和回归补样，而不是继续扩展新的阅读入口
+- 如果长文档热点仍明显，再继续补更极端样本和进一步的渲染降压手段

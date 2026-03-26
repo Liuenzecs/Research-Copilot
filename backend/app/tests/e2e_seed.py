@@ -21,6 +21,25 @@ from app.services.project.service import project_service
 FIXTURE_DATE = date(2026, 3, 18)
 
 
+def _long_context_paragraphs() -> list[str]:
+    paragraphs = [
+        'Introduction',
+        'This benchmark evaluates long context literature agents across evidence extraction and review drafting.',
+        'It reports dataset settings, metrics, and limitations for notebook-style research workflows.',
+        'Navigation Friction',
+    ]
+    for section in range(1, 13):
+        paragraphs.append(f'Section {section}')
+        for paragraph in range(1, 8):
+            paragraphs.append(
+                f'Section {section} paragraph {paragraph}. The benchmark tracks evidence windowing, page-level navigation, '
+                'citation recovery, and revision handoff for notebook-first literature agents. '
+                'Each slice records how quickly a reader can resume context, inspect figures, and return extracted evidence '
+                'to the active project workspace.'
+            )
+    return paragraphs
+
+
 def _fixture_items() -> list[dict]:
     fixture_path = Path(__file__).with_name('e2e') / 'search_fixtures.json'
     return json.loads(fixture_path.read_text(encoding='utf-8'))
@@ -38,13 +57,7 @@ def _paper_copy(source_id: str) -> list[str]:
             'Retrieval improves evidence coverage and makes downstream comparison tables easier to audit.',
         ]
     if source_id == 'e2e-long-context-benchmark':
-        return [
-            'Introduction',
-            'This benchmark evaluates long context literature agents across evidence extraction and review drafting.',
-            'It reports dataset settings, metrics, and limitations for notebook-style research workflows.',
-            'Results',
-            'Long context methods reduce manual context switching but still need strong evidence traceability.',
-        ]
+        return _long_context_paragraphs()
     return [
         'Introduction',
         'This control paper covers unrelated vision tasks and should remain outside project-scoped filters.',
@@ -65,39 +78,45 @@ def _make_png_bytes(width: int = 220, height: int = 140, color: int = 0xCC8844) 
 
 def _write_pdf_document(path: Path, title: str, paragraphs: list[str], *, include_figure: bool) -> None:
     doc = fitz.open()
-    page = doc.new_page(width=595, height=842)
+
+    def new_page() -> fitz.Page:
+        return doc.new_page(width=595, height=842)
+
+    def write_paragraphs(page: fitz.Page, y: float, items: list[str]) -> None:
+        current_page = page
+        current_y = y
+        for paragraph in items:
+            if current_y + 64 > 770:
+                current_page = new_page()
+                current_y = 72
+            current_page.insert_textbox(
+                fitz.Rect(72, current_y, 523, current_y + 64),
+                paragraph,
+                fontsize=12,
+                lineheight=1.35,
+            )
+            current_y += 78
+
+    page = new_page()
     y = 72
     page.insert_text((72, y), title, fontsize=18)
     y += 36
-    first_page_paragraphs = paragraphs if not include_figure else paragraphs[:4]
-    for paragraph in first_page_paragraphs:
-        page.insert_textbox(
-            fitz.Rect(72, y, 523, y + 64),
-            paragraph,
-            fontsize=12,
-            lineheight=1.35,
-        )
-        y += 78
 
     if include_figure:
-        page = doc.new_page(width=595, height=842)
-        page.insert_text((72, 72), f'{title} · Figure-first page', fontsize=16)
-        page.insert_image(fitz.Rect(72, 120, 300, 280), stream=_make_png_bytes())
-        page.insert_textbox(
+        write_paragraphs(page, y, paragraphs[:4])
+
+        figure_page = new_page()
+        figure_page.insert_text((72, 72), f'{title} · Figure-first page', fontsize=16)
+        figure_page.insert_image(fitz.Rect(72, 120, 300, 280), stream=_make_png_bytes())
+        figure_page.insert_textbox(
             fitz.Rect(72, 300, 360, 352),
             'Figure 1. E2E evidence board overview for figure-first reading.',
             fontsize=12,
             lineheight=1.25,
         )
-        y = 390
-        for paragraph in paragraphs[4:]:
-            page.insert_textbox(
-                fitz.Rect(72, y, 523, y + 64),
-                paragraph,
-                fontsize=12,
-                lineheight=1.35,
-            )
-            y += 78
+        write_paragraphs(figure_page, 390, paragraphs[4:])
+    else:
+        write_paragraphs(page, y, paragraphs)
 
     doc.save(path)
     doc.close()

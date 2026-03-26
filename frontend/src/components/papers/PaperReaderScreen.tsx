@@ -102,7 +102,20 @@ type FigureFlowItem = {
   scanHint: string;
 };
 
+type PagePreviewStripItem =
+  | {
+      kind: "page";
+      page: PaperReaderPagePreview;
+    }
+  | {
+      kind: "gap";
+      key: string;
+      skippedCount: number;
+    };
+
 const ZOOM_OPTIONS = [100, 115, 130, 150];
+const PAGE_PREVIEW_WINDOW_THRESHOLD = 10;
+const PAGE_PREVIEW_WINDOW_RADIUS = 2;
 
 function normalizeZoomPercent(value: number | null | undefined) {
   if (typeof value !== "number" || !ZOOM_OPTIONS.includes(value)) {
@@ -148,6 +161,40 @@ function compactTextPreview(value: string, maxLength = 96) {
   return `${normalized.slice(0, maxLength)}...`;
 }
 
+function buildPagePreviewStripItems(pages: PaperReaderPagePreview[], currentPageNo: number): PagePreviewStripItem[] {
+  const orderedPages = [...pages].sort((left, right) => left.page_no - right.page_no);
+  if (orderedPages.length <= PAGE_PREVIEW_WINDOW_THRESHOLD) {
+    return orderedPages.map((page) => ({ kind: "page", page }));
+  }
+
+  const currentIndex = Math.max(0, orderedPages.findIndex((page) => page.page_no === currentPageNo));
+  const visibleIndices = new Set<number>([0, orderedPages.length - 1]);
+  for (let offset = -PAGE_PREVIEW_WINDOW_RADIUS; offset <= PAGE_PREVIEW_WINDOW_RADIUS; offset += 1) {
+    const nextIndex = currentIndex + offset;
+    if (nextIndex >= 0 && nextIndex < orderedPages.length) {
+      visibleIndices.add(nextIndex);
+    }
+  }
+
+  const sortedVisibleIndices = Array.from(visibleIndices).sort((left, right) => left - right);
+  const items: PagePreviewStripItem[] = [];
+  sortedVisibleIndices.forEach((index, position) => {
+    if (position > 0) {
+      const previousIndex = sortedVisibleIndices[position - 1];
+      const skippedCount = index - previousIndex - 1;
+      if (skippedCount > 0) {
+        items.push({
+          kind: "gap",
+          key: `page-gap-${previousIndex}-${index}`,
+          skippedCount,
+        });
+      }
+    }
+    items.push({ kind: "page", page: orderedPages[index] });
+  });
+  return items;
+}
+
 function FigureCard({
   figure,
   onOpen,
@@ -162,6 +209,8 @@ function FigureCard({
           src={resolveApiAssetUrl(figure.image_url)}
           alt={figure.caption_text || `第 ${figure.page_no} 页图像 ${figure.figure_id}`}
           className="reader-figure-image"
+          loading="lazy"
+          decoding="async"
         />
       </button>
       <div className="reader-figure-meta">
@@ -513,6 +562,12 @@ export default function PaperReaderScreen({
   );
   const activeParagraph = activeParagraphId ? paragraphMap.get(activeParagraphId) ?? null : null;
   const currentPageIndex = pageIndexMap.get(effectivePageNo) ?? 0;
+  const pagePreviewStripItems = useMemo(
+    () => buildPagePreviewStripItems(reader?.pages ?? [], effectivePageNo),
+    [effectivePageNo, reader?.pages],
+  );
+  const renderedPagePreviewCount = pagePreviewStripItems.filter((item) => item.kind === "page").length;
+  const isPagePreviewWindowed = pagePreviewStripItems.some((item) => item.kind === "gap");
   const matchedParagraphIds = useMemo(() => {
     if (!locatorQuery.trim()) return [];
     const normalizedQuery = locatorQuery.trim().toLowerCase();
@@ -1441,7 +1496,12 @@ export default function PaperReaderScreen({
             <Button className="secondary" type="button" disabled={currentPageIndex <= 0} onClick={() => stepPage(-1)}>
               上一页
             </Button>
-            <select className="select" value={String(effectivePageNo)} onChange={(event) => goToPage(Number(event.target.value))}>
+            <select
+              className="select"
+              data-testid="reader-page-jump"
+              value={String(effectivePageNo)}
+              onChange={(event) => goToPage(Number(event.target.value))}
+            >
               {pageNumbers.map((pageNo) => (
                 <option key={pageNo} value={pageNo}>
                   第 {pageNo} 页
@@ -1769,26 +1829,45 @@ export default function PaperReaderScreen({
           </div>
 
           {reader.pages.length > 0 ? (
-            <div className="page-preview-strip">
-              {reader.pages.map((page) => (
-                <button
-                  key={page.page_no}
-                  type="button"
-                  className={`page-preview-card${page.page_no === effectivePageNo ? " active" : ""}`}
-                  onClick={() => goToPage(page.page_no)}
-                >
-                  <img
-                    src={resolveApiAssetUrl(page.thumbnail_url || page.image_url)}
-                    alt={`第 ${page.page_no} 页缩略图`}
-                    className="page-preview-image"
-                  />
-                  <div className="page-preview-footer">
-                    <strong>第 {page.page_no} 页</strong>
-                    <span className="subtle">点击切到该页</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <>
+              {isPagePreviewWindowed ? (
+                <div className="page-preview-strip-note subtle" data-testid="reader-page-preview-windowed-hint">
+                  长文档性能模式：当前仅渲染关键页缩略图，共 {renderedPagePreviewCount} / {reader.pages.length} 页；完整跳页仍可通过上方页码下拉框完成。
+                </div>
+              ) : null}
+              <div
+                className={`page-preview-strip${isPagePreviewWindowed ? " windowed" : ""}`}
+                data-testid="reader-page-preview-strip"
+              >
+                {pagePreviewStripItems.map((item) =>
+                  item.kind === "gap" ? (
+                    <div key={item.key} className="page-preview-gap" aria-hidden="true">
+                      <span>省略 {item.skippedCount} 页</span>
+                    </div>
+                  ) : (
+                    <button
+                      key={item.page.page_no}
+                      type="button"
+                      className={`page-preview-card${item.page.page_no === effectivePageNo ? " active" : ""}`}
+                      data-testid={`reader-page-preview-${item.page.page_no}`}
+                      onClick={() => goToPage(item.page.page_no)}
+                    >
+                      <img
+                        src={resolveApiAssetUrl(item.page.thumbnail_url || item.page.image_url)}
+                        alt={`第 ${item.page.page_no} 页缩略图`}
+                        className="page-preview-image"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <div className="page-preview-footer">
+                        <strong>第 {item.page.page_no} 页</strong>
+                        <span className="subtle">点击切到该页</span>
+                      </div>
+                    </button>
+                  ),
+                )}
+              </div>
+            </>
           ) : null}
         </Card>
       ) : null}
@@ -1808,6 +1887,8 @@ export default function PaperReaderScreen({
                     src={resolveApiAssetUrl(currentPagePreview.image_url)}
                     alt={`第 ${currentPagePreview.page_no} 页原版页面`}
                     className="paper-reader-page-image"
+                    loading="eager"
+                    decoding="async"
                   />
                 </button>
               </div>
@@ -2240,7 +2321,7 @@ export default function PaperReaderScreen({
                 关闭
               </Button>
             </div>
-            <img src={lightbox.src} alt={lightbox.title} className="reader-lightbox-image" />
+            <img src={lightbox.src} alt={lightbox.title} className="reader-lightbox-image" decoding="async" />
           </div>
         </div>
       ) : null}
