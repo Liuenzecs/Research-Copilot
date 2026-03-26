@@ -195,6 +195,32 @@ test("persists revisit markers with the reader session", async ({ page }) => {
   await expect(page.getByTestId("reader-toggle-revisit")).toContainText("取消待回看");
 });
 
+test("surfaces reader session state back in the project workspace", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+
+  const paperId = page.url().match(/\/papers\/(\d+)/)?.[1];
+  expect(paperId).toBeTruthy();
+  if (!paperId) {
+    throw new Error("expected paper id in reader url");
+  }
+
+  await page.getByTestId("reader-mode-text").click();
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await firstParagraph.click();
+  await page.getByTestId("reader-toggle-revisit").click();
+  await page.getByTestId("reader-return-project").click();
+  await page.waitForURL(/\/projects\/\d+$/);
+
+  await expect(page.getByTestId(`project-reader-state-${paperId}`)).toContainText("阅读会话已保存");
+  await expect(page.getByTestId(`project-reader-state-${paperId}`)).toContainText("待回看 1 段");
+  await expect(page.getByTestId(`project-open-reader-${paperId}`)).toContainText("继续阅读");
+  await expect(page.getByTestId("project-reader-overview")).toContainText("已保存会话 1 篇");
+  await expect(page.getByTestId("project-reader-overview")).toContainText("待回看 1 篇 / 1 段");
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

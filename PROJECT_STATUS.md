@@ -81,7 +81,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 增加结构化导航面板：章节、图表、批注、搜索命中快速跳转。
 - [ ] 优化辅助文本阅读排版，提升长段落可读性。
 - [x] 增加更清晰的阅读模式切换逻辑，降低 page/text/workspace 三种模式之间的切换成本。
-- [ ] 让项目工作台中的论文池与阅读器之间共享更明确的阅读状态。
+- [x] 让项目工作台中的论文池与阅读器之间共享更明确的阅读状态。
 - [ ] 补一轮围绕阅读器主路径的 E2E 与回归测试。
 
 ### 第三批：可选增强
@@ -242,3 +242,35 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 让论文池里能更明确看到最近阅读、待回看、批注密度等状态
 - 继续扩展阅读器与项目工作台之间的状态联动
 - 逐步补齐阅读器主链路回归测试
+
+### 2026-03-27 · 阶段 1E：阅读状态回流到项目工作台
+
+阶段目标：
+
+- 让项目工作台里的论文卡片不再只显示“静态收集状态”，而是能直接看见最近阅读和待回看线索。
+- 先复用前端本地阅读会话，把“继续阅读”入口和阅读概览做出来，再决定是否需要后端同步。
+
+已完成：
+
+- 项目工作台现在会按论文读取本地阅读会话，并把阅读状态回流到论文池卡片。
+- 论文卡片新增“阅读会话已保存”“待回看 X 段”“停在第 X 页”等线索，帮助快速恢复上下文。
+- 如果某篇论文已有本地阅读会话，论文池里的主入口会从“打开高级阅读器”切换为“继续阅读”，并优先回到记住的段落。
+- 右侧状态中心新增“阅读回流”概览，可直接看到已保存会话数、待回看分布和最近阅读入口。
+- 新增一条 E2E 回归测试，覆盖“从阅读器返回项目工作台后，阅读状态会回流到论文卡片与概览”。
+
+变更文件：
+
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace"`：通过
+
+下一阶段：
+
+- 阶段 1F：辅助文本排版与阅读密度优化
+- 收窄长段落阅读宽度，提升正文、标题、图注、公式之间的视觉节奏
+- 在辅助文本模式里补更清晰的页内阅读提示，减少“翻到这一页后先看哪里”的犹豫
+- 继续补一轮和阅读主链路强相关的验证

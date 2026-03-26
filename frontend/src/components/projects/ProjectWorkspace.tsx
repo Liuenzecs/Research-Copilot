@@ -25,6 +25,7 @@ import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
 import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench";
+import { loadPaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
   addProjectPaper,
@@ -87,6 +88,13 @@ type WorkspaceFocusSnapshot = {
   accent: "teal" | "amber" | "rose";
 };
 
+type ProjectPaperReadingState = {
+  paperId: number;
+  paperTitle: string;
+  session: PaperReaderSession;
+  resumePath: string;
+};
+
 type SearchScopeFilter = "all" | "not_in_project" | "in_project";
 type DownloadFilter = "all" | "downloaded" | "not_downloaded";
 
@@ -121,6 +129,25 @@ function formatDateTime(value?: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString("zh-CN", { hour12: false });
+}
+
+function timestampValue(value?: string | null) {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function readerModeLabel(mode: PaperReaderSession["viewMode"]) {
+  switch (mode) {
+    case "page":
+      return "原版页面";
+    case "text":
+      return "辅助文本";
+    case "workspace":
+      return "论文工作区";
+    default:
+      return mode;
+  }
 }
 
 function evidenceKindLabel(kind: string) {
@@ -1232,6 +1259,20 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     () => (workspace?.papers ?? []).filter((item) => smartViewMatches(activeSmartView, item, citedPaperIds, duplicatePaperIds)),
     [activeSmartView, citedPaperIds, duplicatePaperIds, workspace?.papers],
   );
+  const readerStateByPaperId = useMemo(() => {
+    const next = new Map<number, ProjectPaperReadingState>();
+    for (const item of workspace?.papers ?? []) {
+      const session = loadPaperReaderSession(item.paper.id);
+      if (!session) continue;
+      next.set(item.paper.id, {
+        paperId: item.paper.id,
+        paperTitle: item.paper.title_en,
+        session,
+        resumePath: paperReaderPath(item.paper.id, undefined, session.paragraphId ?? undefined, projectId),
+      });
+    }
+    return next;
+  }, [projectId, workspace?.papers]);
   const unusedEvidenceItems = useMemo(() => {
     const insertedIds = new Set(
       Array.isArray(reviewOutput?.content_json?.inserted_evidence_ids)
@@ -1271,6 +1312,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const riskyCount =
     workspace.smart_views.find((item) => item.key === "risky")?.count ??
     workspace.papers.filter((item) => ["warning", "error", "retracted"].includes(item.integrity_status)).length;
+  const readerStates = Array.from(readerStateByPaperId.values());
+  const papersWithReaderSession = readerStates.length;
+  const papersWithRevisit = readerStates.filter((item) => item.session.revisitParagraphIds.length > 0).length;
+  const totalRevisitParagraphs = readerStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
+  const latestReaderState = readerStates.reduce<ProjectPaperReadingState | null>((latest, current) => {
+    if (!latest) return current;
+    return timestampValue(current.session.savedAt) > timestampValue(latest.session.savedAt) ? current : latest;
+  }, null);
 
   function scrollToSection(ref: RefObject<HTMLElement | null>) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1351,7 +1400,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     {
       label: "阅读推进",
       value: totalPapers > 0 ? `${readCount}/${totalPapers}` : "0/0",
-      detail: `已收集 ${totalPapers} 篇 · 待摘要 ${pendingSummaryCount} 篇`,
+      detail: `会话 ${papersWithReaderSession} 篇 · 待摘要 ${pendingSummaryCount} 篇`,
       accent: "teal",
     },
     {
@@ -1722,6 +1771,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 ) : (
                   filteredProjectPapers.map((item) => {
                     const checked = selectedPaperIds.includes(item.paper.id);
+                    const readerState = readerStateByPaperId.get(item.paper.id);
+                    const readerEntryPath = readerState?.resumePath ?? paperReaderPath(item.paper.id, undefined, undefined, projectId);
                     return (
                       <div key={item.id} className="project-paper-card">
                         <div className="project-paper-card-top">
@@ -1745,6 +1796,26 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                           {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
                         </div>
                         {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
+                        {readerState ? (
+                          <>
+                            <div className="reader-chip-row" data-testid={`project-reader-state-${item.paper.id}`}>
+                              <span className="reader-chip">阅读会话已保存</span>
+                              {readerState.session.revisitParagraphIds.length > 0 ? (
+                                <span
+                                  className="reader-chip"
+                                  style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#c2410c" }}
+                                >
+                                  待回看 {readerState.session.revisitParagraphIds.length} 段
+                                </span>
+                              ) : null}
+                              {readerState.session.pageNo ? <span className="reader-chip">停在第 {readerState.session.pageNo} 页</span> : null}
+                            </div>
+                            <div className="subtle">
+                              上次阅读 {formatDateTime(readerState.session.savedAt)} · {readerModeLabel(readerState.session.viewMode)}
+                              {readerState.session.paragraphId ? ` · 记住段落 ${readerState.session.paragraphId}` : ""}
+                            </div>
+                          </>
+                        ) : null}
                         <div className="subtle">
                           PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
                         </div>
@@ -1756,8 +1827,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                           {item.integrity_note ? ` · ${item.integrity_note}` : ""}
                         </div>
                         <div className="projects-inline-actions">
-                          <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={paperReaderPath(item.paper.id, undefined, undefined, projectId)}>
-                            打开高级阅读器
+                          <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={readerEntryPath}>
+                            {readerState ? "继续阅读" : "打开高级阅读器"}
                           </Link>
                           <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
                             加入证据板
@@ -2066,6 +2137,24 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
               </div>
             </div>
             <div className="project-linked-artifacts">
+              <div className="project-linked-card" data-testid="project-reader-overview">
+                <strong>阅读回流</strong>
+                {latestReaderState ? (
+                  <>
+                    <div className="subtle">
+                      已保存会话 {papersWithReaderSession} 篇 · 待回看 {papersWithRevisit} 篇 / {totalRevisitParagraphs} 段
+                    </div>
+                    <div className="subtle">
+                      最近阅读：{latestReaderState.paperTitle} · {formatDateTime(latestReaderState.session.savedAt)}
+                    </div>
+                    <Link className="button secondary" data-testid="project-continue-latest-reading" to={latestReaderState.resumePath}>
+                      继续最近阅读
+                    </Link>
+                  </>
+                ) : (
+                  <div className="subtle">还没有本地阅读会话；从论文池进入阅读器后，这里会自动出现继续阅读线索。</div>
+                )}
+              </div>
               <div className="project-linked-card">
                 <strong>缺 PDF</strong>
                 <div className="subtle">{workspace.smart_views.find((item) => item.key === "missing_pdf")?.count ?? 0} 篇待补全</div>
