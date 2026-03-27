@@ -178,8 +178,9 @@ test("keeps the selected quote when continuing into annotation flow", async ({ p
     return text;
   });
 
-  await expect(page.getByRole("button", { name: "写批注" })).toBeVisible();
-  await page.getByRole("button", { name: "写批注" }).click();
+  const selectionToolbar = page.getByTestId("reader-selection-toolbar");
+  await expect(selectionToolbar.getByRole("button", { name: "写批注" })).toBeVisible();
+  await selectionToolbar.getByRole("button", { name: "写批注" }).click();
 
   await expect(page.getByText("将随批注保存的引用原文")).toBeVisible();
   await expect(page.getByTestId("reader-annotation-quote-text")).toContainText(selectedText);
@@ -411,6 +412,44 @@ test("supports desktop-style page navigation and zoom shortcuts", async ({ page 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", ctrlKey: true, bubbles: true }));
   });
   await expect(zoomSelect).toHaveValue("100");
+});
+
+test("keeps quote actions accessible after scrolling a text selection", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
+  await page.getByTestId("reader-mode-text").click();
+  await expect(page.getByTestId("reader-text-article")).toBeVisible();
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await expect(firstParagraph).toBeVisible();
+
+  const selectedText = await firstParagraph.evaluate((element) => {
+    const target = element.querySelector("p, h3, pre") ?? element;
+    const textNode = target.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE || !textNode.textContent) {
+      return "";
+    }
+
+    const text = textNode.textContent.trim().slice(0, 36);
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, text.length);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    return text;
+  });
+
+  await expect(page.getByTestId("reader-selection-toolbar")).toBeVisible();
+  await expect(page.getByTestId("reader-selection-context-text")).toContainText(selectedText);
+
+  await page.mouse.wheel(0, 1200);
+  await expect(page.getByTestId("reader-selection-context")).toBeVisible();
+  await expect(page.getByTestId("reader-selection-context-text")).toContainText(selectedText);
+
+  await page.getByTestId("reader-selection-context-annotate").click();
+  await expect(page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。")).toBeFocused();
+  await expect(page.getByTestId("reader-annotation-quote-text")).toContainText(selectedText);
 });
 
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {

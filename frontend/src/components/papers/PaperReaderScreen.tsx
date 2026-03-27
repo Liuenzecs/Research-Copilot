@@ -161,6 +161,16 @@ function compactTextPreview(value: string, maxLength = 96) {
   return `${normalized.slice(0, maxLength)}...`;
 }
 
+function resolveSelectionToolbarPosition(rect: Pick<DOMRect, "bottom" | "left">, hasProjectContext: boolean) {
+  const toolbarHeight = hasProjectContext ? 112 : 64;
+  const toolbarWidth = hasProjectContext ? 420 : 280;
+  const preferredTop = rect.bottom + 8;
+  return {
+    top: Math.max(Math.min(preferredTop, window.innerHeight - toolbarHeight), 16),
+    left: Math.max(Math.min(rect.left, window.innerWidth - toolbarWidth), 16),
+  };
+}
+
 function buildPagePreviewStripItems(pages: PaperReaderPagePreview[], currentPageNo: number): PagePreviewStripItem[] {
   const orderedPages = [...pages].sort((left, right) => left.page_no - right.page_no);
   if (orderedPages.length <= PAGE_PREVIEW_WINDOW_THRESHOLD) {
@@ -666,6 +676,7 @@ export default function PaperReaderScreen({
   const pinnedQuoteForActiveParagraph =
     pinnedQuote && activeParagraphId && pinnedQuote.paragraphId === activeParagraphId ? pinnedQuote.text : "";
   const selectedQuoteForAnnotation = selectionQuoteForActiveParagraph || pinnedQuoteForActiveParagraph;
+  const activeQuoteContext: QuoteContext | SelectionContext | null = selection ?? pinnedQuote;
 
   function buildParagraphStatusBadges(paragraph: PaperReaderParagraph): ParagraphStatusBadge[] {
     const badges: ParagraphStatusBadge[] = [];
@@ -771,10 +782,32 @@ export default function PaperReaderScreen({
     );
   }
 
-  function pinSelectionForFollowUp(context: SelectionContext | null) {
+  function pinSelectionForFollowUp(context: QuoteContext | SelectionContext | null) {
     if (!context) return;
     setPinnedQuote({
       text: context.text,
+      paragraphId: context.paragraphId,
+    });
+  }
+
+  function continueQuoteIntoAnnotation(context: QuoteContext | SelectionContext | null, message = "已保留当前选区，可继续写批注。") {
+    if (!context) return;
+    pinSelectionForFollowUp(context);
+    clearSelectionState({ keepPinnedQuote: true });
+    focusAnnotationComposer(message);
+    setRecentAction({
+      kind: "annotate",
+      message,
+      paragraphId: context.paragraphId,
+    });
+  }
+
+  function focusQuoteContextParagraph(context: QuoteContext | SelectionContext | null, message = "已回到引用原文对应段落。") {
+    if (!context) return;
+    focusParagraph(context.paragraphId, { behavior: "auto" });
+    setRecentAction({
+      kind: "locate",
+      message,
       paragraphId: context.paragraphId,
     });
   }
@@ -903,6 +936,12 @@ export default function PaperReaderScreen({
           setTranslationDrawerOpen(false);
           return;
         }
+        if (selection || pinnedQuote) {
+          event.preventDefault();
+          clearSelectionState();
+          setNotice("已清空当前引用原文。");
+          return;
+        }
       }
 
       if (normalizedKey === "arrowleft") {
@@ -990,19 +1029,17 @@ export default function PaperReaderScreen({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [figurePanelOpen, lightbox, navigate, projectId, stepPage, translationDrawerOpen, viewMode, zoomPercent]);
+  }, [figurePanelOpen, lightbox, navigate, pinnedQuote, projectId, selection, stepPage, translationDrawerOpen, viewMode, zoomPercent]);
 
-  function captureSelection() {
+  function readCurrentSelectionContext(): SelectionContext | null {
     const currentSelection = window.getSelection();
     if (!currentSelection || currentSelection.rangeCount === 0) {
-      setSelection(null);
-      return;
+      return null;
     }
 
     const text = currentSelection.toString().trim();
     if (!text) {
-      setSelection(null);
-      return;
+      return null;
     }
 
     const article = articleRef.current;
@@ -1010,34 +1047,84 @@ export default function PaperReaderScreen({
     const commonNode = range.commonAncestorContainer;
     const sourceElement = commonNode instanceof Element ? commonNode : commonNode.parentElement;
     if (!article || !sourceElement || !article.contains(sourceElement)) {
-      setSelection(null);
-      return;
+      return null;
     }
 
     const paragraphElement = sourceElement.closest<HTMLElement>("[data-paragraph-id]");
     if (!paragraphElement) {
-      setSelection(null);
-      return;
+      return null;
     }
 
     const paragraphId = Number(paragraphElement.dataset.paragraphId);
     if (!Number.isFinite(paragraphId)) {
+      return null;
+    }
+
+    const rect = range.getBoundingClientRect();
+    const placement = resolveSelectionToolbarPosition(rect, Boolean(projectId));
+    return {
+      text,
+      paragraphId,
+      top: placement.top,
+      left: placement.left,
+    };
+  }
+
+  function captureSelection() {
+    const nextSelection = readCurrentSelectionContext();
+    if (!nextSelection) {
       setSelection(null);
       return;
     }
 
-    const rect = range.getBoundingClientRect();
-    const toolbarHeight = projectId ? 112 : 64;
-    const preferredTop = rect.bottom + 8;
-    setSelection({
-      text,
-      paragraphId,
-      top: Math.max(Math.min(preferredTop, window.innerHeight - toolbarHeight), 16),
-      left: Math.max(Math.min(rect.left, window.innerWidth - 220), 16),
-    });
+    setSelection(nextSelection);
     setTranslationError("");
-    setActiveParagraphId(paragraphId);
+    setActiveParagraphId(nextSelection.paragraphId);
   }
+
+  useEffect(() => {
+    if (!selection) return;
+
+    let frameId = 0;
+    const syncSelectionPosition = () => {
+      const nextSelection = readCurrentSelectionContext();
+      if (!nextSelection || nextSelection.paragraphId !== selection.paragraphId || nextSelection.text !== selection.text) {
+        setSelection(null);
+        return;
+      }
+
+      setSelection((current) => {
+        if (!current || current.paragraphId !== nextSelection.paragraphId || current.text !== nextSelection.text) {
+          return current;
+        }
+        if (current.top === nextSelection.top && current.left === nextSelection.left) {
+          return current;
+        }
+        return {
+          ...current,
+          top: nextSelection.top,
+          left: nextSelection.left,
+        };
+      });
+    };
+
+    const scheduleSync = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(syncSelectionPosition);
+    };
+
+    window.addEventListener("scroll", scheduleSync, true);
+    window.addEventListener("resize", scheduleSync);
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("scroll", scheduleSync, true);
+      window.removeEventListener("resize", scheduleSync);
+    };
+  }, [projectId, selection]);
 
   async function handleDownload() {
     setDownloading(true);
@@ -1054,10 +1141,10 @@ export default function PaperReaderScreen({
     }
   }
 
-  async function handleTranslateSelection() {
-    if (!selection) return;
+  async function handleTranslateSelection(context: QuoteContext | SelectionContext | null = selection) {
+    if (!context) return;
 
-    pinSelectionForFollowUp(selection);
+    pinSelectionForFollowUp(context);
     setTranslationLoading(true);
     setTranslationError("");
     setStreamingTranslationText("");
@@ -1067,12 +1154,12 @@ export default function PaperReaderScreen({
     try {
       const result = await translateSegmentStream(
         {
-          text: selection.text,
+          text: context.text,
           mode: "selection",
           locator: {
             paper_id: paperId,
-            paragraph_id: selection.paragraphId,
-            selected_text: selection.text,
+            paragraph_id: context.paragraphId,
+            selected_text: context.text,
           },
         },
         {
@@ -1081,14 +1168,14 @@ export default function PaperReaderScreen({
       );
       setTranslation(result);
       setStreamingTranslationText(result.content_zh);
-      focusParagraph(selection.paragraphId, { behavior: "auto" });
-      rememberTouchedParagraph(setTranslatedParagraphIds, selection.paragraphId);
+      focusParagraph(context.paragraphId, { behavior: "auto" });
+      rememberTouchedParagraph(setTranslatedParagraphIds, context.paragraphId);
       clearSelectionState({ keepPinnedQuote: true });
       setNotice("已完成英译中辅助翻译，并回到当前段落。");
       setRecentAction({
         kind: "translate",
         message: "已完成当前选区翻译，可继续写批注或加入证据。",
-        paragraphId: selection.paragraphId,
+        paragraphId: context.paragraphId,
       });
     } catch (translateError) {
       setTranslationError((translateError as Error).message || "选词翻译失败，请稍后重试。");
@@ -1651,6 +1738,10 @@ export default function PaperReaderScreen({
               <kbd>Enter</kbd>
               保存批注
             </span>
+            <span className="reader-shortcut-chip">
+              <kbd>Esc</kbd>
+              收起浮层 / 清空引用
+            </span>
             {projectId ? (
               <span className="reader-shortcut-chip">
                 <kbd>b</kbd>
@@ -2000,6 +2091,71 @@ export default function PaperReaderScreen({
               data-reader-width={textWidthPreference}
               data-reader-density={textDensityPreference}
             >
+              {activeQuoteContext ? (
+                <div className="reader-selection-context" data-testid="reader-selection-context">
+                  <div className="reader-selection-context-top">
+                    <div>
+                      <strong>{selection ? "当前选区已就绪" : "引用原文已保留"}</strong>
+                      <div className="subtle" style={{ marginTop: 4 }}>
+                        {selection
+                          ? "滚动后也可以继续翻译、写批注或回到引用段落，不必重新选区。"
+                          : "当前引用原文会继续跟随批注和证据操作，直到你手动清空。"}
+                      </div>
+                    </div>
+                    <span className="reader-chip">段落 #{activeQuoteContext.paragraphId}</span>
+                  </div>
+                  <p className="reader-selection-context-text" data-testid="reader-selection-context-text">
+                    {compactTextPreview(activeQuoteContext.text, 220)}
+                  </p>
+                  <div className="reader-inline-action-row">
+                    <Button
+                      className="secondary"
+                      type="button"
+                      data-testid="reader-selection-context-translate"
+                      onClick={() => void handleTranslateSelection(activeQuoteContext)}
+                      disabled={translationLoading}
+                    >
+                      {translationLoading ? "翻译中..." : "翻译这段原文"}
+                    </Button>
+                    <Button
+                      className="secondary"
+                      type="button"
+                      data-testid="reader-selection-context-annotate"
+                      onClick={() => continueQuoteIntoAnnotation(activeQuoteContext)}
+                    >
+                      继续写批注
+                    </Button>
+                    <Button
+                      className="secondary"
+                      type="button"
+                      data-testid="reader-selection-context-focus"
+                      onClick={() => focusQuoteContextParagraph(activeQuoteContext)}
+                    >
+                      回到引用段落
+                    </Button>
+                    {projectId ? (
+                      <Button
+                        className="secondary"
+                        type="button"
+                        data-testid="reader-selection-context-evidence"
+                        onClick={() => void handleAddEvidenceToProject()}
+                        disabled={projectEvidenceSaving}
+                      >
+                        {projectEvidenceSaving ? "加入中..." : "加入证据板"}
+                      </Button>
+                    ) : null}
+                    <Button
+                      className="secondary"
+                      type="button"
+                      data-testid="reader-selection-context-clear"
+                      onClick={() => clearSelectionState()}
+                    >
+                      清空引用原文
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
               <div
                 ref={articleRef}
                 className="paper-reader-text-article"
@@ -2095,8 +2251,13 @@ export default function PaperReaderScreen({
                         {selectedQuoteForAnnotation}
                       </p>
                       <div className="reader-inline-action-row">
-                        {selection ? (
-                          <Button className="secondary" type="button" onClick={() => void handleTranslateSelection()} disabled={translationLoading}>
+                        {activeQuoteContext ? (
+                          <Button
+                            className="secondary"
+                            type="button"
+                            onClick={() => void handleTranslateSelection(activeQuoteContext)}
+                            disabled={translationLoading}
+                          >
                             {translationLoading ? "翻译中..." : "翻译这段原文"}
                           </Button>
                         ) : null}
@@ -2267,23 +2428,19 @@ export default function PaperReaderScreen({
       ) : null}
 
       {selection && viewMode === "text" ? (
-        <div className="reader-selection-toolbar" style={{ top: selection.top, left: selection.left }}>
-          <button type="button" className="reader-selection-action" onClick={() => void handleTranslateSelection()}>
+        <div
+          className="reader-selection-toolbar"
+          data-testid="reader-selection-toolbar"
+          style={{ top: selection.top, left: selection.left }}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <button type="button" className="reader-selection-action" onClick={() => void handleTranslateSelection(selection)}>
             {translationLoading ? "翻译中..." : "英译中"}
           </button>
           <button
             type="button"
             className="reader-selection-action secondary"
-            onClick={() => {
-              pinSelectionForFollowUp(selection);
-              clearSelectionState({ keepPinnedQuote: true });
-              focusAnnotationComposer("已保留当前选区，可继续写批注。");
-              setRecentAction({
-                kind: "annotate",
-                message: "已保留当前选区，可继续写批注。",
-                paragraphId: selection.paragraphId,
-              });
-            }}
+            onClick={() => continueQuoteIntoAnnotation(selection)}
           >
             写批注
           </button>

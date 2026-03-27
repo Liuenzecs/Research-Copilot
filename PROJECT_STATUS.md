@@ -96,6 +96,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 长文档页面预览条改为关键页窗口化，避免大 PDF 一次性渲染全部缩略图。
 - [x] 为页面缩略图、图像卡片和大图预览补充更友好的图片加载策略。
 - [x] 补桌面风格的翻页 / 缩放快捷操作，以及 `Esc` 关闭浮层的退回路径。
+- [x] 补稳定选区上下文，避免滚动后失去继续翻译、写批注和回到引用段落的入口。
 - [ ] 继续观察 Windows 下文本选择、滚动与键盘焦点的稳定性。
 - [ ] 补更极端的长文档 / 多图论文样本，扩展阅读器回归覆盖。
 
@@ -518,3 +519,36 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 聚焦选区工具条、滚动和焦点恢复在长文阅读里的连续性，减少选区后“刚读顺又被打断”的感觉
 - 优先补低风险交互整理和回归样本，不急着扩展新的阅读功能面
 - 如果 Windows 桌面上仍有明显热点，再继续补更细的专项验证
+
+### 2026-03-27 · 阶段 2C：文本选择与浮层交互收口
+
+阶段目标：
+
+- 把选区操作从“只靠瞬时浮层”收口成更稳定的连续交互，降低滚动后重新找入口的成本。
+- 先补低风险的选区上下文、焦点恢复和快捷清理路径，不引入新的重型阅读模式。
+
+已完成：
+
+- 阅读器新增稳定的“选区上下文”条，在滚动后仍可继续翻译、写批注、加入证据或回到引用段落。
+- 选区浮层现在会在滚动和窗口尺寸变化时同步更新位置，减少选区后浮层漂移带来的打断感。
+- 选区浮层补了 `onMouseDown` 保护，降低点击浮层动作时浏览器先清空原生选区的概率。
+- `Esc` 在没有其他浮层打开时，会直接清空当前引用原文，缩短“我现在只想回到纯阅读”的退回路径。
+- 新增一条 E2E 回归测试，覆盖“先选区、再滚动、仍能继续写批注”的主路径。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection"`：通过
+
+下一阶段：
+
+- 阶段 2D：浮层退回路径回归补样
+- 聚焦 `Esc` 关闭图像预览、翻译抽屉和引用清理这几条退回路径，减少桌面阅读里的“关不干净”感
+- 先补回归和轻量测试支撑，确认阅读器现在的退回动作在主路径上稳定可用
+- 如果这轮验证稳定，再继续补更极端的长文档 / 多图样本
