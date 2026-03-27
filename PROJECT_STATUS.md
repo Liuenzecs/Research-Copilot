@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2L：批注段落可视化增强
+
+阶段目标：
+
+- 让已有批注在正文流里更容易被再次发现，不只依赖右侧批注工作台回跳。
+- 把“这段已经记过什么”压缩成轻量、可扫读的页内反馈，降低回看成本。
+- 保持批注提示与搜索命中、当前焦点之间的层次清晰，不互相遮盖主次。
+
+## 最近完成
+
 ### 2K：搜索命中高亮与段内可视反馈
 
 阶段目标：
@@ -22,7 +32,26 @@
 - 减少用户跳到命中段落后还要重新扫读整段找关键词的摩擦。
 - 保持高亮、批注状态、当前焦点之间的层次清晰，不互相抢夺视觉主次。
 
-## 最近完成
+已完成：
+
+- 为正文、标题、图注和公式段落补上关键词高亮，让搜索命中不再只体现在“搜索命中”徽标上。
+- 为命中高亮补充阅读器局部样式，并针对当前焦点段落做更清晰的层次强化，减少高亮和焦点态打架的感觉。
+- 新增端到端回归，覆盖“定位后段落内确实出现关键词高亮”的视觉链路。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "supports keyboard-first reader navigation and actions|keeps locator jumps synced with page state and focus summary|cycles locator matches and keeps match status in sync|highlights locator keywords inside matched paragraphs|keeps quick navigation and figure anchors synced with focus summary|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports desktop-style page navigation and zoom shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays"`：11 项通过
+
+下一阶段：
+
+- 进入 `2L：批注段落可视化增强`
 
 ### 2J：搜索命中顺序跳转与结果反馈
 
@@ -153,12 +182,13 @@
 - `2H` 输入控件的 `Esc` 退回语义
 - `2I` 长文档定位与焦点摘要一致性
 - `2J` 搜索命中顺序跳转与结果反馈
+- `2K` 搜索命中高亮与段内可视反馈
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2K`：把搜索命中的关键词高亮到正文里，降低跳到命中段落后还要重新扫读整段的摩擦。
+- [ ] 做 `2L`：加强批注段落的页内可视反馈，让“这段已经记过内容”在正文流里更容易被再次发现。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

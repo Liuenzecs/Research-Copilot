@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { type Dispatch, type MouseEvent as ReactMouseEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -265,10 +265,48 @@ function FigureCard({
   );
 }
 
+function renderHighlightedText(text: string, query: string): ReactNode {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return text;
+  }
+
+  const normalizedText = text.toLowerCase();
+  const firstMatchIndex = normalizedText.indexOf(normalizedQuery);
+  if (firstMatchIndex < 0) {
+    return text;
+  }
+
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let matchIndex = firstMatchIndex;
+
+  while (matchIndex >= 0) {
+    if (matchIndex > cursor) {
+      parts.push(text.slice(cursor, matchIndex));
+    }
+    const matchText = text.slice(matchIndex, matchIndex + normalizedQuery.length);
+    parts.push(
+      <mark key={`${matchIndex}-${matchText}`} className="reader-search-highlight">
+        {matchText}
+      </mark>,
+    );
+    cursor = matchIndex + normalizedQuery.length;
+    matchIndex = normalizedText.indexOf(normalizedQuery, cursor);
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return parts.map((part, index) => <Fragment key={typeof part === "string" ? `text-${index}` : `mark-${index}`}>{part}</Fragment>);
+}
+
 function renderParagraph(
   paragraph: PaperReaderParagraph,
   className: string,
   statusBadges: ParagraphStatusBadge[],
+  highlightQuery: string,
   refCallback: (element: HTMLDivElement | null) => void,
   onClick: () => void,
 ) {
@@ -277,6 +315,7 @@ function renderParagraph(
     "data-paragraph-id": paragraph.paragraph_id,
     "data-testid": `reader-paragraph-${paragraph.paragraph_id}`,
   };
+  const highlightedText = renderHighlightedText(paragraph.text, highlightQuery);
   const meta =
     statusBadges.length > 0 ? (
       <div className="reader-text-block-meta">
@@ -297,7 +336,7 @@ function renderParagraph(
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
-        <h3 className="reader-text-heading">{paragraph.text}</h3>
+        <h3 className="reader-text-heading">{highlightedText}</h3>
       </div>
     );
   }
@@ -307,7 +346,7 @@ function renderParagraph(
       <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <div className="reader-text-formula-label">公式区</div>
-        <pre className="reader-text-formula">{paragraph.text}</pre>
+        <pre className="reader-text-formula">{highlightedText}</pre>
         <div className="subtle">公式与复杂排版请以原版页面为准。</div>
       </div>
     );
@@ -317,7 +356,7 @@ function renderParagraph(
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
-        <p className="reader-text-caption">{paragraph.text}</p>
+        <p className="reader-text-caption">{highlightedText}</p>
       </div>
     );
   }
@@ -331,7 +370,7 @@ function renderParagraph(
       onClick={onClick}
     >
       {meta}
-      <p className="reader-text-body">{paragraph.text}</p>
+      <p className="reader-text-body">{highlightedText}</p>
     </div>
   );
 }
@@ -2475,6 +2514,7 @@ export default function PaperReaderScreen({
                       paragraph,
                       className,
                       buildParagraphStatusBadges(paragraph),
+                      locatorQuery,
                       (element) => {
                         paragraphRefs.current[paragraph.paragraph_id] = element;
                       },

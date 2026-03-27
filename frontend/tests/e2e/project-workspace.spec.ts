@@ -398,6 +398,18 @@ test("cycles locator matches and keeps match status in sync", async ({ page }) =
   await expect(page.getByText("当前仅展示前 8 个命中")).toBeVisible();
 });
 
+test("highlights locator keywords inside matched paragraphs", async ({ page }) => {
+  await clearReaderLocalState(page);
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents", { stripResumeQuery: true });
+
+  await page.getByTestId("reader-locator-input").fill("Section 11");
+  await page.getByRole("button", { name: "定位关键词" }).click();
+
+  const activeParagraph = page.locator(".reader-text-block-active").first();
+  await expect(activeParagraph.locator(".reader-search-highlight")).toHaveText("Section 11");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("搜索命中");
+});
+
 test("keeps quick navigation and figure anchors synced with focus summary", async ({ page }) => {
   await clearReaderLocalState(page);
   await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis", { stripResumeQuery: true });
