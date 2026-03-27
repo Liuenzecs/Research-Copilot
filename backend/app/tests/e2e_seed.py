@@ -19,6 +19,15 @@ from app.services.project.service import project_service
 
 
 FIXTURE_DATE = date(2026, 3, 18)
+FIGURE_SWATCHES = [
+    0xCC8844,
+    0xC96F5B,
+    0xB85D72,
+    0x8F6BB3,
+    0x5C7CC2,
+    0x3C8F9C,
+    0x72A35B,
+]
 
 
 def _long_context_paragraphs() -> list[str]:
@@ -40,6 +49,32 @@ def _long_context_paragraphs() -> list[str]:
     return paragraphs
 
 
+def _retrieval_study_paragraphs() -> list[str]:
+    paragraphs = [
+        'Introduction',
+        'We study retrieval-augmented evidence synthesis for literature review agents.',
+        'The system aligns evidence cards with explicit source snippets and comparison workflows.',
+        'Methods',
+    ]
+    for figure_index in range(1, 8):
+        paragraphs.extend(
+            [
+                f'Figure block {figure_index}',
+                f'Figure {figure_index} tracks how evidence board summaries, comparison notes, and review drafting flow across the same workspace.',
+                f'Each figure page keeps a nearby anchor paragraph so readers can scan the visual first and then jump back to the supporting explanation for figure {figure_index}.',
+            ]
+        )
+    paragraphs.extend(
+        [
+            'Results',
+            'Retrieval improves evidence coverage and makes downstream comparison tables easier to audit.',
+            'Discussion',
+            'The figure-heavy workflow is most effective when readers can move quickly between visual summaries and paragraph-level evidence anchors.',
+        ]
+    )
+    return paragraphs
+
+
 def _fixture_items() -> list[dict]:
     fixture_path = Path(__file__).with_name('e2e') / 'search_fixtures.json'
     return json.loads(fixture_path.read_text(encoding='utf-8'))
@@ -47,15 +82,7 @@ def _fixture_items() -> list[dict]:
 
 def _paper_copy(source_id: str) -> list[str]:
     if source_id == 'e2e-retrieval-study':
-        return [
-            'Introduction',
-            'We study retrieval-augmented evidence synthesis for literature review agents.',
-            'The system aligns evidence cards with explicit source snippets and comparison workflows.',
-            'Methods',
-            'We compare retrieval prompting, chunk selection, and evidence ranking under the same project interface.',
-            'Results',
-            'Retrieval improves evidence coverage and makes downstream comparison tables easier to audit.',
-        ]
+        return _retrieval_study_paragraphs()
     if source_id == 'e2e-long-context-benchmark':
         return _long_context_paragraphs()
     return [
@@ -67,7 +94,7 @@ def _paper_copy(source_id: str) -> list[str]:
 
 
 def _write_pdf(path: Path, title: str, paragraphs: list[str]) -> None:
-    _write_pdf_document(path, title, paragraphs, include_figure=False)
+    _write_pdf_document(path, title, paragraphs, figure_count=0)
 
 
 def _make_png_bytes(width: int = 220, height: int = 140, color: int = 0xCC8844) -> bytes:
@@ -76,7 +103,7 @@ def _make_png_bytes(width: int = 220, height: int = 140, color: int = 0xCC8844) 
     return pix.tobytes('png')
 
 
-def _write_pdf_document(path: Path, title: str, paragraphs: list[str], *, include_figure: bool) -> None:
+def _write_pdf_document(path: Path, title: str, paragraphs: list[str], *, figure_count: int) -> None:
     doc = fitz.open()
 
     def new_page() -> fitz.Page:
@@ -102,19 +129,34 @@ def _write_pdf_document(path: Path, title: str, paragraphs: list[str], *, includ
     page.insert_text((72, y), title, fontsize=18)
     y += 36
 
-    if include_figure:
-        write_paragraphs(page, y, paragraphs[:4])
+    if figure_count > 0:
+        intro_paragraph_count = min(4, len(paragraphs))
+        write_paragraphs(page, y, paragraphs[:intro_paragraph_count])
 
-        figure_page = new_page()
-        figure_page.insert_text((72, 72), f'{title} · Figure-first page', fontsize=16)
-        figure_page.insert_image(fitz.Rect(72, 120, 300, 280), stream=_make_png_bytes())
-        figure_page.insert_textbox(
-            fitz.Rect(72, 300, 360, 352),
-            'Figure 1. E2E evidence board overview for figure-first reading.',
-            fontsize=12,
-            lineheight=1.25,
-        )
-        write_paragraphs(figure_page, 390, paragraphs[4:])
+        remaining_paragraphs = paragraphs[intro_paragraph_count:]
+        chunk_size = max(1, len(remaining_paragraphs) // figure_count) if remaining_paragraphs else 1
+        offset = 0
+
+        for figure_index in range(figure_count):
+            figure_page = new_page()
+            figure_no = figure_index + 1
+            figure_page.insert_text((72, 72), f'{title} · Figure-first page {figure_no}', fontsize=16)
+            figure_page.insert_image(
+                fitz.Rect(72, 120, 300, 280),
+                stream=_make_png_bytes(color=FIGURE_SWATCHES[figure_index % len(FIGURE_SWATCHES)]),
+            )
+            figure_page.insert_textbox(
+                fitz.Rect(72, 300, 360, 352),
+                f'Figure {figure_no}. E2E evidence board overview slice {figure_no} for figure-first reading.',
+                fontsize=12,
+                lineheight=1.25,
+            )
+
+            next_offset = min(len(remaining_paragraphs), offset + chunk_size)
+            if figure_index == figure_count - 1:
+                next_offset = len(remaining_paragraphs)
+            write_paragraphs(figure_page, 390, remaining_paragraphs[offset:next_offset])
+            offset = next_offset
     else:
         write_paragraphs(page, y, paragraphs)
 
@@ -138,7 +180,7 @@ def seed() -> None:
                 pdf_path,
                 str(item['title_en']),
                 _paper_copy(source_id),
-                include_figure=source_id == 'e2e-retrieval-study',
+                figure_count=7 if source_id == 'e2e-retrieval-study' else 0,
             )
 
             paper = PaperRecord(

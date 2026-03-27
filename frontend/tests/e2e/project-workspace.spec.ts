@@ -305,14 +305,11 @@ test("supports keyboard-first reader navigation and actions", async ({ page }) =
 });
 
 test("supports a figure-first reading flow", async ({ page }) => {
-  await openSeededProject(page);
-
-  await page.locator('[data-testid^="project-open-reader-"]').first().click();
-  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis");
 
   await expect(page.getByText("图表优先阅读")).toBeVisible();
   await expect(page.getByTestId("reader-figure-flow-list")).toBeVisible();
-  await expect(page.getByText("全文图像 1 张")).toBeVisible();
+  await expect(page.getByText("全文图像 7 张")).toBeVisible();
 
   await page.getByTestId("reader-figure-flow-open-1").click();
   await expect(page.getByRole("heading", { name: "图像 · 第 2 页" })).toBeVisible();
@@ -321,6 +318,15 @@ test("supports a figure-first reading flow", async ({ page }) => {
   await page.getByTestId("reader-figure-flow-anchor-1").click();
   await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
   await expect(page.getByTestId("reader-focus-summary")).toContainText("第 2 页");
+});
+
+test("keeps the multi-figure flow bounded for figure-heavy papers", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis");
+
+  const figureFlowItems = page.getByTestId("reader-figure-flow-list").locator('[data-testid^="reader-figure-flow-item-"]');
+  await expect(figureFlowItems).toHaveCount(6);
+  await expect(page.getByTestId("reader-figure-flow-overflow")).toContainText("前 6 张");
+  await expect(page.getByTestId("reader-figure-flow-overflow")).toContainText("剩余 1 张");
 });
 
 test("persists local reader layout preferences", async ({ page }) => {

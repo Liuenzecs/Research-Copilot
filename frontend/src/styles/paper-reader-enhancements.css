@@ -145,6 +145,15 @@
   box-shadow: 0 16px 30px rgba(14, 116, 144, 0.08);
 }
 
+.reader-figure-flow-overflow {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px dashed rgba(14, 116, 144, 0.22);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
 .reader-figure-flow-top {
   display: flex;
   gap: 10px;

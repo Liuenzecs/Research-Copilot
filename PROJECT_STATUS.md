@@ -1,587 +1,101 @@
-# 项目状态
+﻿# 项目状态
 
 更新时间：2026-03-27
 
-## 当前主线
+## 当前优先级
 
-Research Copilot 当前主线已经明确为桌面优先的研究工作台，围绕“项目制研究”组织以下流程：
+当前最高优先级仍然是“阅读体验”。
 
-- 建立研究项目
-- 搜索与收集论文
-- 进入阅读器深读论文
-- 提炼证据、生成对比表和综述草稿
-- 进入心得、复现、记忆、周报等后续工作流
+我们近期的判断保持不变：
 
-当前产品不是以聊天为主入口，也不是以 Web 兼容层为主线。
+- 优先减少阅读中断、上下文丢失、图文来回切换和证据提取摩擦。
+- 在没有明显收益前，不优先扩展与阅读主链路无关的新交互面。
+- 改动优先选择低风险、可回归、可在 Windows 桌面环境稳定复用的方案。
 
-## 已经落地的能力
+## 当前阶段
 
-- 主入口已经切到 `/projects`，项目工作台是当前主流程。
-- 阅读器已经具备项目上下文回跳能力，可从论文页返回项目工作台。
-- 阅读器已经有原版页面、辅助文本、论文工作区三种视图。
-- 阅读器已经支持页预览、段落定位、图像查看、段落批注、选区翻译、加入项目证据。
-- 搜索、心得、复现、记忆等页面已经逐步接入项目上下文。
-- 桌面启动链路、自动保存、基础测试与文档口径已经过一轮收口。
+### 2F：控件焦点与快捷键隔离
 
-## 当前重点
+阶段目标：
 
-当前最需要投入的一条线不是继续堆新模块，而是提升“阅读体验”。
+- 继续收口 Windows 下的阅读器焦点稳定性问题。
+- 优先处理页码跳转、缩放、阅读偏好等下拉控件获得焦点后，不应误触全局阅读快捷键的问题。
+- 保持“控件操作时由控件接管键盘，回到阅读壳层后快捷键恢复”的一致心智。
 
-原因：
+## 本轮已完成
 
-- 阅读器已经承载了阅读、翻译、批注、证据提取、项目回流等关键动作。
-- 如果阅读链路不顺，后面的证据、心得、复现、周报都会受到影响。
-- 目前从代码结构看，能力已经不少，但用户体感仍可能是“能做很多事，却读得不够顺”。
+### 2E：极端样本与回归扩展
 
-## 阅读体验问题整理
+阶段目标：
 
-以下是本轮整理出的重点问题，其中一部分是用户直接反馈，一部分是基于当前实现结构总结出的高优先观察点：
+- 把长文档、多图论文这类边界样本补齐，避免阅读器只在普通样本上表现稳定。
+- 控制图表优先阅读流的默认体积，避免多图论文把首页卡片拉得过长。
+- 扩大回归覆盖，确保新增边界样本不会打散已有阅读主路径。
 
-### P0：阅读流畅度
+已完成：
 
-- 进入阅读器后，用户需要在“原版页面 / 辅助文本 / 论文工作区”之间频繁切换，阅读主焦点容易丢失。
-- 当前段落、批注、翻译结果、证据提取之间的关联感还不够强，读到哪里、刚刚做了什么、下一步该做什么不够一目了然。
-- 阅读中断后的恢复体验还不够明确，需要更强的“继续上次阅读”能力。
+- E2E 种子里的 `E2E Retrieval Study for Evidence Synthesis` 扩展为 7 张图像的多图论文样本。
+- 多图样本改用固定色板生成图像页，避免 RGB 颜色溢出导致的 PDF 生成不稳定。
+- 阅读器中的“图表优先阅读”卡片现在会按页码和图像编号稳定排序。
+- 图表流继续保持有上限的轻量卡片展示，只默认显示前 6 张图像。
+- 当论文图像总数超过默认展示上限时，会显示明确的溢出提示，提醒用户继续通过图像跳转、页面图集或原版页面查看剩余图像。
+- 回归测试补充了“多图论文下图表流仍保持有界”的断言。
 
-### P0：可见性与反馈
+变更文件：
 
-- 需要更强的段落高亮、命中态、已批注态、已提取证据态反馈。
-- 需要让“当前页”“当前段落”“当前项目上下文”持续可见，减少迷失感。
-- 选择文本后的翻译、批注、加入证据，应该让结果回显更直接，而不是只停留在一次操作成功提示。
+- `backend/app/tests/e2e_seed.py`
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
 
-### P1：导航效率
+验证结果：
 
-- 长论文需要更快的结构化导航，例如按章节、图表、公式、批注、命中搜索结果跳转。
-- 需要更顺的页内跳转与页间切换，降低来回翻找成本。
-- 项目工作台、文库、阅读器之间虽然已经打通，但“从哪里来、读完去哪里”还可以继续压缩路径。
+- `python -m py_compile backend/app/tests/e2e_seed.py`：通过
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|keeps the multi-figure flow bounded for figure-heavy papers|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection|supports escape-based overlay exits and quote cleanup"`：14 项通过
 
-### P1：可读性
+下一阶段：
 
-- 需要继续优化阅读排版，包括正文宽度、行高、留白、视觉层级、重点信息密度。
-- 原版页面、辅助文本、批注区之间的主次关系需要更稳定，避免界面元素争抢注意力。
-- 图像、标题、正文、公式、caption 的阅读节奏还可以更清晰。
+- 进入 `2F：控件焦点与快捷键隔离`
 
-### P2：稳定性与性能
+## 已完成阶段总览
 
-- 长文档、大 PDF、多图论文的切页、缩略图、段落定位需要继续观察性能。
-- Windows 桌面环境下的文本选择、滚动、缩放、键盘导航体验值得专项优化。
+### 第一批：阅读连续性与主链路收口
+
+- `1A` 阅读会话恢复与焦点反馈
+- `1B` 结构化导航基础
+- `1C` 模式切换与选区到批注的连续流
+- `1D` 待回看与阅读进度表达
+- `1E` 阅读状态回流到项目工作台
+- `1F` 辅助文本排版与页内概览
+- `1G` 批注工作台分组整理
+- `1H` 键盘优先导航与快捷操作
+- `1I` 图表优先阅读流
+- `1J` 阅读宽度与密度偏好
+
+### 第二批：稳定性与性能收口
+
+- `2A` 长文档页面预览窗口化与图片加载策略收口
+- `2B` Windows 风格翻页、缩放与 `Esc` 退回路径补齐
+- `2C` 选区上下文稳定保留，滚动后仍可继续翻译/批注/提证据
+- `2D` 翻译抽屉、图像预览、图集面板的 `Esc` 退出路径回归补齐
+- `2E` 极端样本与回归扩展
 
 ## 后续待办
 
-### 第一批：优先做
+### P0：继续压低阅读摩擦
 
-- [x] 增加阅读会话恢复：记住上次阅读的论文、页码、段落、视图模式。
-- [x] 强化当前段落的视觉锚点，并同步显示“已批注 / 已加入证据 / 命中搜索”等状态。
-- [x] 优化阅读器顶层信息条，让项目上下文、当前页、当前段落状态更稳定可见。
-- [x] 收敛选区翻译、批注、加入证据的交互链路，减少重复操作和视线跳转。
-- [x] 明确阅读完成度表达，例如最近打开、阅读进度、待回看段落、未处理批注。
+- [ ] 补 `2F`：让页码跳转、缩放、阅读偏好等下拉控件获得焦点后，不再误触全局快捷键。
+- [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
+- [ ] 如果再发现高频“刚操作控件就误切模式/翻页”的路径，优先补回归再补交互收口。
 
-### 第二批：紧接着做
+### P1：面向长论文继续打磨
 
-- [x] 增加结构化导航面板：章节、图表、批注、搜索命中快速跳转。
-- [x] 优化辅助文本阅读排版，提升长段落可读性。
-- [x] 增加更清晰的阅读模式切换逻辑，降低 page/text/workspace 三种模式之间的切换成本。
-- [x] 让项目工作台中的论文池与阅读器之间共享更明确的阅读状态。
-- [x] 补一轮围绕阅读器主路径的 E2E 与回归测试。
+- [ ] 继续观察极长文档下正文模式、图表流和图集面板的首屏体感。
+- [ ] 如果长论文仍有明显热区，再评估更细粒度的窗口策略或局部虚拟化。
 
-### 第三批：可选增强
+### P2：文档与协作维护
 
-- [x] 增加键盘优先操作，例如页切换、段落跳转、批注保存、回到项目。
-- [x] 增加阅读器侧的批注汇总与待处理视图。
-- [x] 增加图表优先阅读流，适合先扫图、后精读正文的论文阅读习惯。
-- [x] 评估并提供轻量化阅读主题配置，例如字体大小、密度、宽度偏好。
-
-### 第四批：稳定性与性能收口
-
-- [x] 长文档页面预览条改为关键页窗口化，避免大 PDF 一次性渲染全部缩略图。
-- [x] 为页面缩略图、图像卡片和大图预览补充更友好的图片加载策略。
-- [x] 补桌面风格的翻页 / 缩放快捷操作，以及 `Esc` 关闭浮层的退回路径。
-- [x] 补稳定选区上下文，避免滚动后失去继续翻译、写批注和回到引用段落的入口。
-- [x] 为翻译抽屉、图像预览和引用清理补一轮 `Esc` 退回路径回归。
-- [ ] 继续观察 Windows 下文本选择、滚动与键盘焦点的稳定性。
-- [ ] 补更极端的长文档 / 多图论文样本，扩展阅读器回归覆盖。
-
-## 建议的实施顺序
-
-1. 先做“阅读会话恢复 + 当前焦点强化 + 操作反馈回显”。
-2. 再做“结构化导航 + 排版优化 + 模式切换收敛”。
-3. 最后补“键盘效率、主题偏好、批注汇总”等增强项。
-4. 然后进入“稳定性与性能收口”，优先压低长文档与桌面交互风险。
-
-## 维护规则
-
-- 每完成一批有意义的产品或工程改动，就更新一次本文件。
-- 新增待办时，优先按 P0 / P1 / P2 归类，而不是简单堆列表。
-- 如果产品主线发生变化，需要同步更新 `README.md`、`AGENTS.md` 和本文件。
-
-## 阶段推进记录
-
-### 2026-03-27 · 阶段 1A：阅读会话恢复与焦点反馈
-
-阶段目标：
-
-- 让阅读器能恢复上次阅读位置，而不是每次都从头找回上下文。
-- 让“当前正在读哪里、刚刚做了什么”在界面上更稳定可见。
-
-已完成：
-
-- 阅读器现在会按论文粒度记住上次的页码、段落、视图模式和缩放比例。
-- 重新打开同一篇论文后，会自动恢复到上次阅读位置，并在界面中显示恢复提示。
-- 阅读器新增焦点摘要区，持续显示当前阅读位置、最近一次阅读动作和焦点状态。
-- 辅助文本段落新增状态徽标，能更直观看到当前焦点、搜索命中、已批注、刚翻译、已加入证据等状态。
-- 翻译、保存批注、加入项目证据后，会同步更新段落反馈与焦点提示，不再只依赖一次性成功消息。
-- 增加了一条 E2E 回归测试，覆盖“刷新后恢复阅读会话”。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/lib/paperReaderSession.ts`
-- `frontend/src/styles/globals.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload"`：通过
-- 首次 Playwright 运行因为本地前后端拉起耗时较长而触发工具超时，延长等待窗口后验证通过
-
-下一阶段：
-
-- 阶段 1B：结构化导航与阅读模式收敛
-- 优先做章节 / 图表 / 批注 / 搜索命中的快速跳转
-- 继续优化 page / text / workspace 三种阅读模式之间的主次关系
-- 补更多围绕阅读器主链路的回归测试
-
-### 2026-03-27 · 阶段 1B：结构化导航基础
-
-阶段目标：
-
-- 让用户在长论文里能更快跳章节、找图像、回批注、回搜索命中。
-- 先用轻量化导航结构降低查找成本，不急着引入更重的阅读器侧栏体系。
-
-已完成：
-
-- 阅读器新增结构化导航卡，提供章节导航、图像跳转、批注回跳、搜索命中快速跳转。
-- 章节导航基于已解析的 heading 段落。
-- 图像跳转基于已提取图像，点击后会切到对应页并打开图像面板。
-- 批注回跳会展示最近更新的批注，便于在阅读与记录之间来回切换。
-- 搜索命中区会把当前关键词的命中结果整理成可快速跳转的列表。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/globals.css`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload"`：通过
-
-下一阶段：
-
-- 阶段 1C：阅读模式收敛与交互链路压缩
-- 继续降低 page / text / workspace 三种模式之间的切换成本
-- 优化翻译、批注、加入证据这三条操作链的主次关系与连续性
-- 继续补阅读器主链路的回归测试
-
-### 2026-03-27 · 阶段 1C：阅读模式收敛与交互链路压缩
-
-阶段目标：
-
-- 把选区翻译、写批注、加入证据这几条高频动作串成连续流程。
-- 减少 page / text / workspace 三种模式切换时的犹豫成本。
-
-已完成：
-
-- 阅读器现在会保留当前选区引用，用户可以从选区直接切入批注流，而不必重新选一次文本。
-- 选区浮动工具条改成一组连续动作：英译中、写批注、加入证据板。
-- 翻译完成后会保留引用原文，方便继续写批注或加入项目证据板。
-- 批注面板新增引用原文区的快捷动作，可继续翻译、加入证据板或清空引用。
-- 顶部新增模式引导区，明确三种阅读模式各自适合的任务，并提供直接跳转按钮。
-- 为了避免把阅读器增强样式混入其他全局样式修改，本轮新增了独立的阅读器增强样式文件。
-- 新增一条 E2E 回归测试，覆盖“保留选区后继续进入批注流”。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/main.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-- `AGENTS.md`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "keeps the selected quote when continuing into annotation flow|restores the last reader session after reload"`：通过
-
-下一阶段：
-
-- 阶段 1D：阅读完成度与状态回流
-- 明确最近阅读、待回看段落、未处理批注、阅读进度等状态表达
-- 继续把阅读器状态同步回项目工作台与论文池
-- 扩展阅读器主链路的回归测试覆盖面
-
-### 2026-03-27 · 阶段 1D：阅读完成度与状态回流
-
-阶段目标：
-
-- 把“读到哪了、哪些段落还要回看、最近什么时候打开过”这些状态显性化。
-- 先用低风险的本地会话方案把阅读状态表达做起来，再评估是否需要后端同步。
-
-已完成：
-
-- 阅读器焦点摘要区现在会显示阅读进度百分比、待回看段落数、累计批注数和最近打开时间。
-- 新增“待回看”段落标记能力，可对当前段落标记或取消标记。
-- 待回看段落会进入结构化导航卡，便于后续快速回跳。
-- 待回看状态已并入本地阅读会话，刷新或重新进入论文后仍会保留。
-- 新增一条 E2E 回归测试，覆盖“待回看标记会随阅读会话保留”。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/lib/paperReaderSession.ts`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session"`：通过
-
-下一阶段：
-
-- 阶段 1E：阅读状态回流到项目工作台
-- 让论文池里能更明确看到最近阅读、待回看、批注密度等状态
-- 继续扩展阅读器与项目工作台之间的状态联动
-- 逐步补齐阅读器主链路回归测试
-
-### 2026-03-27 · 阶段 1E：阅读状态回流到项目工作台
-
-阶段目标：
-
-- 让项目工作台里的论文卡片不再只显示“静态收集状态”，而是能直接看见最近阅读和待回看线索。
-- 先复用前端本地阅读会话，把“继续阅读”入口和阅读概览做出来，再决定是否需要后端同步。
-
-已完成：
-
-- 项目工作台现在会按论文读取本地阅读会话，并把阅读状态回流到论文池卡片。
-- 论文卡片新增“阅读会话已保存”“待回看 X 段”“停在第 X 页”等线索，帮助快速恢复上下文。
-- 如果某篇论文已有本地阅读会话，论文池里的主入口会从“打开高级阅读器”切换为“继续阅读”，并优先回到记住的段落。
-- 右侧状态中心新增“阅读回流”概览，可直接看到已保存会话数、待回看分布和最近阅读入口。
-- 新增一条 E2E 回归测试，覆盖“从阅读器返回项目工作台后，阅读状态会回流到论文卡片与概览”。
-
-变更文件：
-
-- `frontend/src/components/projects/ProjectWorkspace.tsx`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace"`：通过
-
-下一阶段：
-
-- 阶段 1F：辅助文本排版与阅读密度优化
-- 收窄长段落阅读宽度，提升正文、标题、图注、公式之间的视觉节奏
-- 在辅助文本模式里补更清晰的页内阅读提示，减少“翻到这一页后先看哪里”的犹豫
-- 继续补一轮和阅读主链路强相关的验证
-
-### 2026-03-27 · 阶段 1F：辅助文本排版与阅读密度优化
-
-阶段目标：
-
-- 让辅助文本模式不只是“可操作”，还要更适合连续精读长段正文。
-- 通过收窄正文阅读列、强化页内概览和阅读提示，降低用户翻到新一页后的重新定向成本。
-
-已完成：
-
-- 辅助文本模式新增“本页阅读概览”，会直接显示正文段落数、章节锚点、图示 / 公式数量和待回看段落数。
-- 阅读概览会根据当前页状态给出更具体的阅读提示，例如当前焦点预览、已有批注提示或“这一页建议对照原版页面”的提醒。
-- 辅助文本正文区现在会把实际阅读列收窄到更适合长段落连续阅读的宽度，并重新整理段落间距、卡片边界和标题节奏。
-- 标题、图注、公式和正文块的视觉层级进一步拉开，减少所有段落“长得都一样”带来的阅读疲劳。
-- 新增一条 E2E 回归测试，覆盖“辅助文本模式会显示页内概览，且待回看数量会跟着交互更新”。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode"`：通过
-
-下一阶段：
-
-- 阶段 1G：阅读器侧批注汇总与待处理视图
-- 继续把“当前页批注”提升为更清晰的待处理工作面，而不只是列表展示
-- 让用户更快分辨哪些批注已消化、哪些还需要回写到证据或心得
-- 在不打断阅读主链路的前提下，继续压缩记录整理成本
-
-### 2026-03-27 · 阶段 1G：阅读器侧批注汇总与待处理视图
-
-阶段目标：
-
-- 把阅读器里的“当前页批注”升级成更明确的批注工作台，而不只是静态列表。
-- 让用户能快速判断哪些批注还需要处理，哪些已经沉淀进当前项目证据或阅读结论。
-
-已完成：
-
-- 阅读器新增“批注工作台”，按“待处理批注 / 当前页批注 / 最近已沉淀”三个区块组织全文批注。
-- 批注工作台会把当前项目下尚未进入证据板的批注识别为待处理项，并保留“待回看”作为优先处理信号。
-- 工作台顶部新增摘要卡，集中显示待处理数量、当前页数量、已进证据数量与当前焦点关联情况。
-- 点击任意批注卡片后，会自动回到对应段落，恢复引用原文，并提示下一步可继续补证据或复核沉淀结果。
-- 保存批注后会立刻把新批注回填到当前阅读器状态与 Query 缓存里，避免刚保存就看不到记录的割裂感。
-- 新增一条 E2E 回归测试，覆盖“批注会进入待处理区，并在加入项目证据后转入已沉淀区”。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/lib/apiPapers.ts`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections"`：通过
-
-下一阶段：
-
-- 阶段 1H：键盘优先导航与阅读快捷操作
-- 先补页切换、模式切换、回到项目、聚焦搜索等高频快捷操作，减少鼠标来回移动
-- 让阅读器在 Windows 桌面环境里更接近“可连续操作”的研究工具，而不是只能点按的页面
-- 继续围绕阅读主链路补回归测试，避免快捷键引入焦点或输入冲突
-
-### 2026-03-27 · 阶段 1H：键盘优先导航与阅读快捷操作
-
-阶段目标：
-
-- 让阅读器在 Windows 桌面环境里具备一条更顺手的键盘优先操作链，而不必频繁来回点按钮。
-- 把快捷操作做成“可发现”的能力，避免功能存在但只有作者自己知道。
-
-已完成：
-
-- 阅读器新增一组可发现的快捷键提示条，直接展示 `/` 聚焦定位、`j / k` 跳段、`← / →` 翻页、`p / t / w` 切模式、`Ctrl + Enter` 保存批注、`b` 返回项目。
-- 新增键盘快捷操作支持：聚焦定位输入框、在当前页内前后跳段、切换三种阅读模式、从阅读器快速返回项目工作台。
-- 批注输入框支持 `Ctrl + Enter` 快速保存，减少从键盘回到鼠标再点保存的中断。
-- 阅读器壳层补充可聚焦状态，进入阅读后更容易承接后续键盘操作。
-- 新增一条 E2E 回归测试，覆盖“通过键盘切模式、聚焦定位、跳段、快捷保存批注并返回项目”的主路径。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions"`：通过
-
-下一阶段：
-
-- 阶段 1I：图表优先阅读流
-- 优先把“先扫图、再回正文”的阅读习惯显性化，让图示密集论文更容易快速建立全局判断
-- 尽量复用当前阅读器已有的图像提取、页面预览和结构化导航能力，避免为 1I 引入重型新布局
-- 继续补围绕图像跳转与阅读回流的验证
-
-### 2026-03-27 · 阶段 1I：图表优先阅读流
-
-阶段目标：
-
-- 让“先扫图、再回正文”的阅读习惯在阅读器里变成一条显性的轻量流程，而不是只能靠用户自己来回切页。
-- 优先复用已有的图像提取、页面预览和正文锚点能力，不为这一阶段引入重型新布局。
-
-已完成：
-
-- 为 E2E 种子论文补充了真实可提取的图示页，确保图表优先流有稳定的验证样本。
-- 阅读器新增“图表优先阅读”卡片，集中展示全文图像数量、覆盖页面和建议先看的图像页。
-- 每条图示现在都支持“先看图”和“回到正文锚点”两步操作，能先打开图像预览，再回到锚点段落核对论证。
-- 辅助文本模式的页内提示会在当前页存在图像时，明确提示先扫图再回正文，减少图示密集页的犹豫。
-- 新增一条 E2E 回归测试，覆盖“从图表优先流打开图像预览，再回到正文锚点”的主路径。
-
-变更文件：
-
-- `backend/app/tests/e2e_seed.py`
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow"`：通过
-
-下一阶段：
-
-- 阶段 1J：轻量阅读主题与密度偏好
-- 先评估并补最小可用的字体大小、阅读宽度或密度偏好，而不是一次做完整主题系统
-- 让个性化配置保持在阅读器局部，不扩散到全局界面基线
-- 继续补验证，避免偏好设置和阅读会话、模式切换互相打架
-
-### 2026-03-27 · 阶段 1J：轻量阅读主题与密度偏好
-
-阶段目标：
-
-- 给阅读器补上最小可用的个性化阅读偏好，让长文阅读能按个人习惯微调，而不是被迫接受单一默认排版。
-- 把偏好控制限定在阅读器局部和本机持久化范围内，不把这轮优化扩散成新的全局主题系统。
-
-已完成：
-
-- 新增本机级阅读偏好持久化，当前会保存阅读宽度和阅读密度两类配置。
-- 阅读器当前页概览区新增“阅读宽度”“阅读密度”两个下拉项，可在专注 / 标准 / 舒展、舒展 / 标准 / 紧凑之间切换。
-- 辅助文本模式现在会按偏好动态调整正文最大宽度、段落间距、卡片内边距和正文字号 / 行高。
-- 偏好设置会在刷新后继续保留，不依赖单篇论文会话，也不会影响阅读器之外的全局界面。
-- 新增一条 E2E 回归测试，覆盖“修改阅读宽度与密度后刷新，偏好仍然保留”的主路径。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/lib/paperReaderPreferences.ts`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences"`：通过
-
-下一阶段：
-
-- 阶段 2A：阅读稳定性与性能观察
-- 开始转向长文档、大 PDF、Windows 文本选择和滚动等稳定性问题的专项观察
-- 在继续加功能之前，先确认本轮阅读体验增强项在真实桌面使用中没有引入新的负担
-- 后续优先补性能观测、更多回归样本和必要的交互收口，而不是继续堆新入口
-
-### 2026-03-27 · 阶段 2A：阅读稳定性与性能观察
-
-阶段目标：
-
-- 先处理长文档和大 PDF 最容易拖慢阅读体验的一类问题：页面预览条全量渲染所有缩略图。
-- 在不引入重型新布局的前提下，为阅读器补一轮低风险性能收口，并把长文档样本加入回归验证。
-
-已完成：
-
-- 阅读器页面预览条现在会在页数超过 10 页时进入“长文档性能模式”，仅保留首页、尾页和当前页附近的关键页缩略图。
-- 预览条会显式提示当前是窗口化渲染，同时保留完整页码下拉框，避免为了降压而牺牲任意页跳转能力。
-- 页面缩略图、图表卡片和大图预览补充了更友好的图片加载策略，减少无关图片抢占切页和首屏资源。
-- E2E 长文档种子扩展为稳定的多页样本，新增“长文档预览条保持紧凑”的阅读器回归测试。
-- 既有的阅读会话、待回看、项目回流、页内概览、批注工作台、键盘快捷键、图表优先流和阅读偏好主路径回归在这一轮保持通过。
-
-变更文件：
-
-- `backend/app/tests/e2e_seed.py`
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents"`：通过
-
-下一阶段：
-
-- 阶段 2B：Windows 阅读交互收口
-- 聚焦文本选择、滚动、缩放和键盘焦点在 Windows 桌面下的稳定性与冲突点
-- 优先做低风险交互收口和回归补样，而不是继续扩展新的阅读入口
-- 如果长文档热点仍明显，再继续补更极端样本和进一步的渲染降压手段
-
-### 2026-03-27 · 阶段 2B：Windows 阅读交互收口
-
-阶段目标：
-
-- 把 Windows 桌面环境里更自然的一组阅读按键直接补进阅读器，减少频繁回到鼠标和下拉框。
-- 先收口翻页、缩放和浮层退回动作，不引入更重的命令面板或新的全局快捷键系统。
-
-已完成：
-
-- 阅读器新增 `PageUp / PageDown / Home / End` 桌面翻页快捷操作，可快速前后翻页或跳到首页 / 末页。
-- 原版页面模式新增 `Ctrl +` / `Ctrl -` / `Ctrl 0` 页面缩放快捷操作，和现有缩放下拉框保持一致。
-- `Esc` 现在可直接关闭图像预览、图集面板和翻译抽屉，降低桌面阅读中浮层叠加后的退回成本。
-- 快捷键提示条同步补充“桌面翻页”和“页面缩放”提示，避免新增能力再次变成隐藏功能。
-- 新增一条 E2E 回归测试，覆盖桌面风格翻页与页面缩放快捷路径。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts"`：通过
-
-下一阶段：
-
-- 阶段 2C：文本选择与浮层交互收口
-- 聚焦选区工具条、滚动和焦点恢复在长文阅读里的连续性，减少选区后“刚读顺又被打断”的感觉
-- 优先补低风险交互整理和回归样本，不急着扩展新的阅读功能面
-- 如果 Windows 桌面上仍有明显热点，再继续补更细的专项验证
-
-### 2026-03-27 · 阶段 2C：文本选择与浮层交互收口
-
-阶段目标：
-
-- 把选区操作从“只靠瞬时浮层”收口成更稳定的连续交互，降低滚动后重新找入口的成本。
-- 先补低风险的选区上下文、焦点恢复和快捷清理路径，不引入新的重型阅读模式。
-
-已完成：
-
-- 阅读器新增稳定的“选区上下文”条，在滚动后仍可继续翻译、写批注、加入证据或回到引用段落。
-- 选区浮层现在会在滚动和窗口尺寸变化时同步更新位置，减少选区后浮层漂移带来的打断感。
-- 选区浮层补了 `onMouseDown` 保护，降低点击浮层动作时浏览器先清空原生选区的概率。
-- `Esc` 在没有其他浮层打开时，会直接清空当前引用原文，缩短“我现在只想回到纯阅读”的退回路径。
-- 新增一条 E2E 回归测试，覆盖“先选区、再滚动、仍能继续写批注”的主路径。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection"`：通过
-
-下一阶段：
-
-- 阶段 2D：浮层退回路径回归补样
-- 聚焦 `Esc` 关闭图像预览、翻译抽屉和引用清理这几条退回路径，减少桌面阅读里的“关不干净”感
-- 先补回归和轻量测试支撑，确认阅读器现在的退回动作在主路径上稳定可用
-- 如果这轮验证稳定，再继续补更极端的长文档 / 多图样本
-
-### 2026-03-27 · 阶段 2D：浮层退回路径回归补样
-
-阶段目标：
-
-- 把翻译抽屉、图像预览和引用清理这几条 `Esc` 退回路径做成更一致、更可验证的桌面交互。
-- 先补轻量退出动作收口和回归覆盖，避免继续加功能时把退出路径越做越散。
-
-已完成：
-
-- 阅读器为翻译抽屉、图像预览和图集面板补了更统一的关闭 helper，减少不同按钮和快捷键各走一套逻辑的漂移。
-- 翻译抽屉、图像预览和图集面板新增了更稳定的测试定位点，便于持续回归桌面退回路径。
-- `Esc` 现在已覆盖三类主路径：清空当前引用原文、关闭翻译抽屉、关闭图像预览。
-- 新增一条 E2E 回归测试，覆盖 `Esc` 清理引用、关闭翻译抽屉和关闭图像预览的连续退出路径。
-- 既有的阅读器会话、选区批注、阅读概览、批注工作台、图表优先流、长文档预览和桌面快捷键回归在这一轮保持通过。
-
-变更文件：
-
-- `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/tests/e2e/project-workspace.spec.ts`
-
-验证结果：
-
-- `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection|supports escape-based overlay exits and quote cleanup"`：通过
-
-下一阶段：
-
-- 阶段 2E：极端样本与回归扩展
-- 聚焦更长文档、多图论文和更密集页面样本，继续扩大阅读器稳定性验证边界
-- 优先补样本和回归覆盖，而不是继续增加新的阅读器入口
-- 如果极端样本下仍有热点，再评估更进一步的渲染降压或交互收口
+- [ ] 每完成一批有意义的阅读器改动，就同步更新本文件。
+- [ ] 如出现新的关键实现取舍，同时更新 `DECISIONS.md`。
+- [ ] 保持“每个有意义批次都提交并推送”的协作节奏。

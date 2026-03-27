@@ -116,6 +116,8 @@ type PagePreviewStripItem =
 const ZOOM_OPTIONS = [100, 115, 130, 150];
 const PAGE_PREVIEW_WINDOW_THRESHOLD = 10;
 const PAGE_PREVIEW_WINDOW_RADIUS = 2;
+const FIGURE_FLOW_VISIBLE_LIMIT = 6;
+const FIGURE_SHORTCUT_VISIBLE_LIMIT = 8;
 
 function normalizeZoomPercent(value: number | null | undefined) {
   if (typeof value !== "number" || !ZOOM_OPTIONS.includes(value)) {
@@ -159,6 +161,13 @@ function compactTextPreview(value: string, maxLength = 96) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength)}...`;
+}
+
+function compareReaderFigures(left: PaperReaderFigure, right: PaperReaderFigure) {
+  if (left.page_no !== right.page_no) {
+    return left.page_no - right.page_no;
+  }
+  return left.figure_id - right.figure_id;
 }
 
 function resolveSelectionToolbarPosition(rect: Pick<DOMRect, "bottom" | "left">, hasProjectContext: boolean) {
@@ -485,6 +494,7 @@ export default function PaperReaderScreen({
     pageNumbers.forEach((pageNo, index) => map.set(pageNo, index));
     return map;
   }, [pageNumbers]);
+  const orderedFigures = useMemo(() => [...(reader?.figures ?? [])].sort(compareReaderFigures), [reader?.figures]);
 
   useEffect(() => {
     if (!reader) return;
@@ -652,12 +662,12 @@ export default function PaperReaderScreen({
     [annotationWorkbenchItems],
   );
   const figurePages = useMemo(
-    () => Array.from(new Set((reader?.figures ?? []).map((figure) => figure.page_no))),
-    [reader?.figures],
+    () => Array.from(new Set(orderedFigures.map((figure) => figure.page_no))),
+    [orderedFigures],
   );
   const figureFlowItems = useMemo<FigureFlowItem[]>(
     () =>
-      (reader?.figures ?? []).slice(0, 6).map((figure) => {
+      orderedFigures.slice(0, FIGURE_FLOW_VISIBLE_LIMIT).map((figure) => {
         const anchorParagraph = figure.anchor_paragraph_id ? paragraphMap.get(figure.anchor_paragraph_id) ?? null : null;
         return {
           figure,
@@ -668,8 +678,9 @@ export default function PaperReaderScreen({
             : "当前图像缺少稳定锚点，建议先看图再回原版页面。 ",
         };
       }),
-    [effectivePageNo, paragraphMap, reader?.figures],
+    [effectivePageNo, orderedFigures, paragraphMap],
   );
+  const figureFlowOverflowCount = Math.max(0, orderedFigures.length - figureFlowItems.length);
 
   const selectionQuoteForActiveParagraph =
     selection && activeParagraphId && selection.paragraphId === activeParagraphId ? selection.text : "";
@@ -1447,7 +1458,7 @@ export default function PaperReaderScreen({
         .filter((paragraph) => paragraph.text.toLowerCase().includes(locatorQuery.trim().toLowerCase()))
         .slice(0, 8)
     : [];
-  const quickFigureShortcuts = reader.figures.slice(0, 8);
+  const quickFigureShortcuts = orderedFigures.slice(0, FIGURE_SHORTCUT_VISIBLE_LIMIT);
   const quickRevisitShortcuts = revisitParagraphIds
     .map((paragraphId) => paragraphMap.get(paragraphId))
     .filter((paragraph): paragraph is PaperReaderParagraph => Boolean(paragraph))
@@ -1916,7 +1927,7 @@ export default function PaperReaderScreen({
               </p>
             </div>
             <div className="reader-status-row">
-              <span className="reader-status-badge tone-focus">全文图像 {reader.figures.length} 张</span>
+              <span className="reader-status-badge tone-focus">全文图像 {orderedFigures.length} 张</span>
               <span className="reader-status-badge tone-info">覆盖页面 {figurePages.length} 页</span>
               {figurePages[0] ? <span className="reader-status-badge tone-success">建议先看第 {figurePages[0]} 页</span> : null}
             </div>
@@ -1965,6 +1976,11 @@ export default function PaperReaderScreen({
               </div>
             ))}
           </div>
+          {figureFlowOverflowCount > 0 ? (
+            <div className="reader-figure-flow-overflow subtle" data-testid="reader-figure-flow-overflow">
+              当前图流只展示前 {figureFlowItems.length} 张，剩余 {figureFlowOverflowCount} 张请继续通过“图像跳转”、页面图集或原版页面查看，避免多图论文把首页卡片拉得过长。
+            </div>
+          ) : null}
         </Card>
       ) : null}
 
