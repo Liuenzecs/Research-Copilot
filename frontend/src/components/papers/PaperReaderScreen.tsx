@@ -88,6 +88,11 @@ type ParagraphStatusBadge = {
   tone: "focus" | "info" | "success";
 };
 
+type ParagraphAnnotationSummary = {
+  count: number;
+  latestNote: string;
+};
+
 type ReaderRecentAction = {
   kind: "resume" | "translate" | "annotate" | "evidence" | "locate";
   message: string;
@@ -306,6 +311,7 @@ function renderParagraph(
   paragraph: PaperReaderParagraph,
   className: string,
   statusBadges: ParagraphStatusBadge[],
+  annotationSummary: ParagraphAnnotationSummary | null,
   highlightQuery: string,
   refCallback: (element: HTMLDivElement | null) => void,
   onClick: () => void,
@@ -331,12 +337,25 @@ function renderParagraph(
         </div>
       </div>
     ) : null;
+  const annotationPreview = annotationSummary ? (
+    <div
+      className="reader-text-block-annotation-preview"
+      data-testid={`reader-paragraph-annotation-preview-${paragraph.paragraph_id}`}
+    >
+      <div className="reader-text-block-annotation-preview-top">
+        <span className="reader-text-block-annotation-label">最近批注</span>
+        <span className="subtle">共 {annotationSummary.count} 条</span>
+      </div>
+      <p className="reader-text-block-annotation-note">{compactTextPreview(annotationSummary.latestNote, 132)}</p>
+    </div>
+  ) : null;
 
   if (paragraph.kind === "heading") {
     return (
       <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <h3 className="reader-text-heading">{highlightedText}</h3>
+        {annotationPreview}
       </div>
     );
   }
@@ -348,6 +367,7 @@ function renderParagraph(
         <div className="reader-text-formula-label">公式区</div>
         <pre className="reader-text-formula">{highlightedText}</pre>
         <div className="subtle">公式与复杂排版请以原版页面为准。</div>
+        {annotationPreview}
       </div>
     );
   }
@@ -357,6 +377,7 @@ function renderParagraph(
       <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <p className="reader-text-caption">{highlightedText}</p>
+        {annotationPreview}
       </div>
     );
   }
@@ -371,6 +392,7 @@ function renderParagraph(
     >
       {meta}
       <p className="reader-text-body">{highlightedText}</p>
+      {annotationPreview}
     </div>
   );
 }
@@ -647,8 +669,14 @@ export default function PaperReaderScreen({
     [currentPageParagraphs],
   );
   const currentPageFigures = (reader?.figures ?? []).filter((figure) => figure.page_no === effectivePageNo);
-  const currentPageAnnotations = (reader?.annotations ?? []).filter((annotation) =>
-    currentPageParagraphIdSet.has(annotation.paragraph_id),
+  const readerAnnotations = reader?.annotations ?? [];
+  const allAnnotationsSorted = useMemo(
+    () => [...readerAnnotations].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at)),
+    [readerAnnotations],
+  );
+  const currentPageAnnotations = useMemo(
+    () => allAnnotationsSorted.filter((annotation) => currentPageParagraphIdSet.has(annotation.paragraph_id)),
+    [allAnnotationsSorted, currentPageParagraphIdSet],
   );
   const activeParagraph = activeParagraphId ? paragraphMap.get(activeParagraphId) ?? null : null;
   const currentPageIndex = pageIndexMap.get(effectivePageNo) ?? 0;
@@ -668,10 +696,21 @@ export default function PaperReaderScreen({
     [allSearchMatches, effectivePageNo],
   );
   const matchedParagraphIdSet = useMemo(() => new Set(matchedParagraphIds), [matchedParagraphIds]);
-  const currentPageAnnotationParagraphIdSet = useMemo(
-    () => new Set(currentPageAnnotations.map((annotation) => annotation.paragraph_id)),
-    [currentPageAnnotations],
-  );
+  const currentPageAnnotationSummaryByParagraphId = useMemo(() => {
+    const summaryMap = new Map<number, ParagraphAnnotationSummary>();
+    for (const annotation of currentPageAnnotations) {
+      const existing = summaryMap.get(annotation.paragraph_id);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      summaryMap.set(annotation.paragraph_id, {
+        count: 1,
+        latestNote: annotation.note_text.trim(),
+      });
+    }
+    return summaryMap;
+  }, [currentPageAnnotations]);
   const translatedParagraphIdSet = useMemo(() => new Set(translatedParagraphIds), [translatedParagraphIds]);
   const projectEvidenceParagraphIdSet = useMemo(() => {
     const resolved = new Set<number>(projectEvidenceParagraphIds);
@@ -683,11 +722,6 @@ export default function PaperReaderScreen({
     return resolved;
   }, [paperId, projectEvidenceParagraphIds, projectWorkspaceQuery.data?.evidence_items]);
   const revisitParagraphIdSet = useMemo(() => new Set(revisitParagraphIds), [revisitParagraphIds]);
-  const readerAnnotations = reader?.annotations ?? [];
-  const allAnnotationsSorted = useMemo(
-    () => [...readerAnnotations].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at)),
-    [readerAnnotations],
-  );
   const annotationWorkbenchItems = useMemo<AnnotationWorkbenchItem[]>(
     () =>
       allAnnotationsSorted.map((annotation) => {
@@ -769,8 +803,13 @@ export default function PaperReaderScreen({
     if (matchedParagraphIdSet.has(paragraph.paragraph_id)) {
       badges.push({ key: `match-${paragraph.paragraph_id}`, label: "搜索命中", tone: "info" });
     }
-    if (currentPageAnnotationParagraphIdSet.has(paragraph.paragraph_id)) {
-      badges.push({ key: `annotation-${paragraph.paragraph_id}`, label: "已批注", tone: "success" });
+    const annotationSummary = currentPageAnnotationSummaryByParagraphId.get(paragraph.paragraph_id);
+    if (annotationSummary) {
+      badges.push({
+        key: `annotation-${paragraph.paragraph_id}`,
+        label: `批注 ${annotationSummary.count} 条`,
+        tone: "success",
+      });
     }
     if (translatedParagraphIdSet.has(paragraph.paragraph_id)) {
       badges.push({ key: `translation-${paragraph.paragraph_id}`, label: "刚翻译", tone: "info" });
@@ -2499,7 +2538,8 @@ export default function PaperReaderScreen({
                   {currentPageParagraphs.map((paragraph) => {
                     const isActive = activeParagraphId === paragraph.paragraph_id;
                     const isMatched = matchedParagraphIds.includes(paragraph.paragraph_id);
-                    const hasAnnotation = currentPageAnnotations.some((item) => item.paragraph_id === paragraph.paragraph_id);
+                    const annotationSummary = currentPageAnnotationSummaryByParagraphId.get(paragraph.paragraph_id) ?? null;
+                    const hasAnnotation = Boolean(annotationSummary);
                     const className = [
                       "reader-text-block",
                       `reader-text-block-${paragraph.kind}`,
@@ -2514,6 +2554,7 @@ export default function PaperReaderScreen({
                       paragraph,
                       className,
                       buildParagraphStatusBadges(paragraph),
+                      annotationSummary,
                       locatorQuery,
                       (element) => {
                         paragraphRefs.current[paragraph.paragraph_id] = element;

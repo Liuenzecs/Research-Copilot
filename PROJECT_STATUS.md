@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2M：焦点摘要补充批注上下文
+
+阶段目标：
+
+- 把当前焦点段落的批注上下文带进顶部摘要区，减少键盘跳转后还要回正文重新找提示的摩擦。
+- 让“当前正在看的这段已经记过什么”在焦点摘要里可一眼扫到，但不要把顶部摘要做成新的重型工作台。
+- 保持顶部摘要、正文段内批注反馈和右侧批注工作台的职责边界清晰，不重复堆叠同一批信息。
+
+## 最近完成
+
 ### 2L：批注段落可视化增强
 
 阶段目标：
@@ -22,7 +32,27 @@
 - 把“这段已经记过什么”压缩成轻量、可扫读的页内反馈，降低回看成本。
 - 保持批注提示与搜索命中、当前焦点之间的层次清晰，不互相遮盖主次。
 
-## 最近完成
+已完成：
+
+- 为已批注段落补上更明确的正文卡片视觉态，让批注不再只体现在通用状态徽标上。
+- 将段落级批注状态从泛化的“已批注”升级为 `批注 N 条`，让用户快速判断这一段是否已经多次记录过内容。
+- 在已批注段落内新增“最近批注”摘要卡片，把最近一条批注内容直接压缩进正文流，降低回看和复核成本。
+- 新增端到端回归，覆盖“保存批注后，正文段落即时出现条数反馈和最近批注摘录”的链路。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "keeps the selected quote when continuing into annotation flow|groups annotations into pending and resolved workbench sections|shows inline annotation feedback inside annotated paragraphs|supports keyboard-first reader navigation and actions|keeps locator jumps synced with page state and focus summary|cycles locator matches and keeps match status in sync|highlights locator keywords inside matched paragraphs|keeps quick navigation and figure anchors synced with focus summary|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports desktop-style page navigation and zoom shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays"`：14 项通过
+
+下一阶段：
+
+- 进入 `2M：焦点摘要补充批注上下文`
 
 ### 2K：搜索命中高亮与段内可视反馈
 
@@ -183,12 +213,13 @@
 - `2I` 长文档定位与焦点摘要一致性
 - `2J` 搜索命中顺序跳转与结果反馈
 - `2K` 搜索命中高亮与段内可视反馈
+- `2L` 批注段落可视化增强
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2L`：加强批注段落的页内可视反馈，让“这段已经记过内容”在正文流里更容易被再次发现。
+- [ ] 做 `2M`：把当前焦点段落的最近批注上下文带进顶部摘要区，降低键盘跳转后还要回正文重新找批注提示的摩擦。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

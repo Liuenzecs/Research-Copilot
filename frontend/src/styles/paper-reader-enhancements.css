@@ -457,6 +457,15 @@
   background: linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(255, 255, 255, 0.9) 100%);
 }
 
+.reader-text-block-annotated {
+  border-left-color: rgba(13, 148, 136, 0.42);
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.96) 0%, rgba(255, 255, 255, 0.94) 100%);
+}
+
+.reader-text-block-annotated.reader-text-block-match {
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.98) 0%, rgba(239, 246, 255, 0.96) 52%, rgba(255, 255, 255, 0.94) 100%);
+}
+
 .reader-search-highlight {
   display: inline;
   padding: 0 0.18em;
@@ -480,6 +489,42 @@
   box-shadow:
     inset 3px 0 0 #0f766e,
     0 16px 32px rgba(15, 118, 110, 0.12);
+}
+
+.reader-text-block-annotation-preview {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(20, 184, 166, 0.16);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.94) 0%, rgba(248, 250, 252, 0.9) 100%);
+}
+
+.reader-text-block-annotation-preview-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.reader-text-block-annotation-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f766e;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reader-text-block-annotation-note {
+  margin: 8px 0 0;
+  color: #134e4a;
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.reader-text-block-active .reader-text-block-annotation-preview {
+  border-color: rgba(20, 184, 166, 0.24);
+  background: linear-gradient(180deg, rgba(204, 251, 241, 0.72) 0%, rgba(240, 253, 250, 0.98) 100%);
 }
 
 .reader-text-block-meta {

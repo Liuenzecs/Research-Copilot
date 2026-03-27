@@ -316,6 +316,24 @@ test("groups annotations into pending and resolved workbench sections", async ({
   await expect(page.getByTestId("reader-resolved-annotations")).toContainText(note);
 });
 
+test("shows inline annotation feedback inside annotated paragraphs", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const note = `E2E inline note ${Date.now()}`;
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await firstParagraph.click();
+  await page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。").fill(note);
+  await page.getByRole("button", { name: "保存当前段落批注" }).click();
+
+  await expect(firstParagraph).toHaveClass(/reader-text-block-annotated/);
+  await expect(firstParagraph).toContainText(/批注 \d+ 条/);
+  await expect(firstParagraph.locator('[data-testid^="reader-paragraph-annotation-preview-"]')).toContainText(note);
+});
+
 test("supports keyboard-first reader navigation and actions", async ({ page }) => {
   await openSeededProject(page);
 
