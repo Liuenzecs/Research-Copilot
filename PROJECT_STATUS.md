@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2J：搜索命中顺序跳转与结果反馈
+
+阶段目标：
+
+- 为长文档定位补上“上一处 / 下一处”命中顺序跳转，减少重复输入和来回回看导航卡的摩擦。
+- 让定位栏直接反馈总命中数、当前位置和无命中状态，降低“到底跳到哪了”的不确定感。
+- 确保顺序跳转继续和当前页、当前段落、焦点摘要保持稳定同步。
+
+## 最近完成
+
 ### 2I：长文档定位与焦点摘要一致性
 
 阶段目标：
@@ -22,7 +32,26 @@
 - 重点观察通过定位输入、快速导航、图像锚点跳转后，当前页、当前段落和焦点摘要是否仍然稳定同步。
 - 减少“已经跳到了，但页级状态和焦点提示还在旧位置”的迟滞感。
 
-## 最近完成
+已完成：
+
+- 修复了阅读器内部 `paragraph_id` URL 同步与“外部指定段落”初始深链之间的串扰，避免内部导航后 recent action 被旧的“指定段落”提示覆盖。
+- 为正文段落统一补充 `data-page-no`、`data-paragraph-id` 和稳定的测试标识，便于持续校验页级状态、当前段落和焦点摘要是否一致。
+- 定位输入、章节导航、图像锚点、图像扫描跳转、页码跳转等路径统一写入最近动作；在原版页面模式下新增“当前页锚点”提示，减少切模式后的上下文丢失。
+- 新增 2 条端到端回归，覆盖“关键词定位后焦点摘要与页码同步”和“章节导航 / 图像锚点后焦点摘要不被旧深链文案反向覆盖”。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "supports keyboard-first reader navigation and actions|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays|supports desktop-style page navigation and zoom shortcuts|keeps locator jumps synced with page state and focus summary|keeps quick navigation and figure anchors synced with focus summary"`：9 项通过
+
+下一阶段：
+
+- 进入 `2J：搜索命中顺序跳转与结果反馈`
 
 ### 2H：输入控件的 `Esc` 退回语义
 
@@ -93,12 +122,13 @@
 - `2F` 控件焦点与快捷键隔离
 - `2G` 浮层关闭后的键盘焦点回收
 - `2H` 输入控件的 `Esc` 退回语义
+- `2I` 长文档定位与焦点摘要一致性
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 补 `2I`：观察定位输入、快速导航、图像锚点跳转后，当前页、当前段落和焦点摘要是否稳定同步。
+- [ ] 做 `2J`：为搜索命中补上一处 / 下一处顺序跳转和当前位置反馈，降低长文档里反复输入同一关键词的摩擦。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

@@ -14,12 +14,30 @@ async function openSeededProject(page: Page) {
   await page.waitForURL(/\/projects\/\d+$/);
 }
 
-async function openSeededPaperReader(page: Page, title: string) {
+async function openSeededPaperReader(page: Page, title: string, options?: { stripResumeQuery?: boolean }) {
   await openSeededProject(page);
   const paperCard = page.locator(".project-paper-card", { hasText: title });
   await expect(paperCard).toBeVisible();
-  await paperCard.getByRole("link", { name: /打开高级阅读器|继续阅读/ }).click();
+  const readerLink = paperCard.getByRole("link", { name: /打开高级阅读器|继续阅读/ });
+  if (options?.stripResumeQuery) {
+    const href = await readerLink.getAttribute("href");
+    if (!href) {
+      throw new Error("expected seeded reader link href");
+    }
+    const nextUrl = new URL(href, page.url());
+    nextUrl.searchParams.delete("paragraph_id");
+    nextUrl.searchParams.delete("summary_id");
+    const cleanPath = `${nextUrl.pathname}${nextUrl.search ? nextUrl.search : ""}`;
+    await page.goto(cleanPath);
+  } else {
+    await readerLink.click();
+  }
   await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+}
+
+async function clearReaderLocalState(page: Page) {
+  await page.goto("/projects");
+  await page.evaluate(() => window.localStorage.clear());
 }
 
 async function firstSearchResults(page: Page) {
@@ -58,6 +76,28 @@ async function expectReaderShellFocused(page: Page) {
   await expect.poll(async () =>
     page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? ""),
   ).toBe("reader-shell");
+}
+
+async function readParagraphMeta(locator: Locator) {
+  const pageNo = await locator.getAttribute("data-page-no");
+  const paragraphId = await locator.getAttribute("data-paragraph-id");
+  if (!pageNo || !paragraphId) {
+    throw new Error("expected paragraph data attributes");
+  }
+  return {
+    pageNo,
+    paragraphId,
+  };
+}
+
+async function expectFocusSummarySyncedToActiveParagraph(page: Page) {
+  const activeParagraph = page.locator(".reader-text-block-active").first();
+  await expect(activeParagraph).toBeVisible();
+  const meta = await readParagraphMeta(activeParagraph);
+  await expect(page.getByTestId("reader-page-jump")).toHaveValue(meta.pageNo);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText(`第 ${meta.pageNo} 页`);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText(`段落 #${meta.paragraphId}`);
+  return meta;
 }
 
 test("supports saved search, triage persistence, ai reasons, and citation add", async ({ page }) => {
@@ -308,6 +348,50 @@ test("supports keyboard-first reader navigation and actions", async ({ page }) =
   await page.getByTestId("reader-focus-summary").click();
   await page.keyboard.press("b");
   await page.waitForURL(/\/projects\/\d+$/);
+});
+
+test("keeps locator jumps synced with page state and focus summary", async ({ page }) => {
+  await clearReaderLocalState(page);
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents", { stripResumeQuery: true });
+
+  await page.getByTestId("reader-shell").focus();
+  await page.keyboard.press("/");
+  await expect(page.getByTestId("reader-locator-input")).toBeFocused();
+  await page.getByTestId("reader-locator-input").fill("Section 11");
+  await page.getByRole("button", { name: "定位关键词" }).click();
+
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+  const meta = await expectFocusSummarySyncedToActiveParagraph(page);
+  await expect(page.getByTestId(`reader-paragraph-${meta.paragraphId}`)).toContainText("Section 11");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("按关键词定位");
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText(`当前阅读位置：第 ${meta.pageNo} 页`);
+  await expect(page.getByTestId("reader-page-anchor-hint")).toContainText(`段落 #${meta.paragraphId}`);
+});
+
+test("keeps quick navigation and figure anchors synced with focus summary", async ({ page }) => {
+  await clearReaderLocalState(page);
+  await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis", { stripResumeQuery: true });
+
+  const headingButton = page.locator('[data-testid^="reader-quick-nav-heading-"]').nth(1);
+  await expect(headingButton).toBeVisible();
+  const headingPageNo = await headingButton.getAttribute("data-target-page-no");
+  const headingParagraphId = await headingButton.getAttribute("data-target-paragraph-id");
+  if (!headingPageNo || !headingParagraphId) {
+    throw new Error("expected heading navigation target attributes");
+  }
+
+  await headingButton.click();
+  await expect(page.getByTestId("reader-page-jump")).toHaveValue(headingPageNo);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText(`第 ${headingPageNo} 页`);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText(`段落 #${headingParagraphId}`);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("章节导航");
+
+  await page.getByTestId("reader-figure-flow-anchor-1").click();
+  await expectFocusSummarySyncedToActiveParagraph(page);
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("图像附近正文锚点");
 });
 
 test("supports a figure-first reading flow", async ({ page }) => {

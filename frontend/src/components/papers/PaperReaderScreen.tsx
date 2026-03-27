@@ -64,6 +64,16 @@ type FocusParagraphOptions = {
   behavior?: ScrollBehavior;
   updateUrl?: boolean;
   switchToText?: boolean;
+  recentActionMessage?: string;
+  recentActionKind?: ReaderRecentAction["kind"];
+};
+
+type GoToPageOptions = {
+  behavior?: ScrollBehavior;
+  switchMode?: ReaderMode;
+  recentActionMessage?: string;
+  recentActionKind?: ReaderRecentAction["kind"];
+  recentActionParagraphId?: number | null;
 };
 
 type LightboxState = {
@@ -262,6 +272,11 @@ function renderParagraph(
   refCallback: (element: HTMLDivElement | null) => void,
   onClick: () => void,
 ) {
+  const paragraphDataProps = {
+    "data-page-no": paragraph.page_no,
+    "data-paragraph-id": paragraph.paragraph_id,
+    "data-testid": `reader-paragraph-${paragraph.paragraph_id}`,
+  };
   const meta =
     statusBadges.length > 0 ? (
       <div className="reader-text-block-meta">
@@ -280,7 +295,7 @@ function renderParagraph(
 
   if (paragraph.kind === "heading") {
     return (
-      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <h3 className="reader-text-heading">{paragraph.text}</h3>
       </div>
@@ -289,7 +304,7 @@ function renderParagraph(
 
   if (paragraph.kind === "formula") {
     return (
-      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <div className="reader-text-formula-label">公式区</div>
         <pre className="reader-text-formula">{paragraph.text}</pre>
@@ -300,7 +315,7 @@ function renderParagraph(
 
   if (paragraph.kind === "caption") {
     return (
-      <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+      <div key={paragraph.paragraph_id} ref={refCallback} {...paragraphDataProps} className={className} onClick={onClick}>
         {meta}
         <p className="reader-text-caption">{paragraph.text}</p>
       </div>
@@ -308,7 +323,13 @@ function renderParagraph(
   }
 
   return (
-    <div key={paragraph.paragraph_id} ref={refCallback} data-paragraph-id={paragraph.paragraph_id} data-testid={`reader-paragraph-${paragraph.paragraph_id}`} className={className} onClick={onClick}>
+    <div
+      key={paragraph.paragraph_id}
+      ref={refCallback}
+      {...paragraphDataProps}
+      className={className}
+      onClick={onClick}
+    >
       {meta}
       <p className="reader-text-body">{paragraph.text}</p>
     </div>
@@ -507,23 +528,25 @@ export default function PaperReaderScreen({
   useEffect(() => {
     if (!reader) return;
 
-    if (!initialTargetAppliedRef.current && requestedParagraphId) {
-      const target = paragraphMap.get(requestedParagraphId);
+    if (!initialTargetAppliedRef.current) {
       initialTargetAppliedRef.current = true;
-      sessionAppliedRef.current = true;
-      if (target) {
-        setViewMode("text");
-        setCurrentPageNo(target.page_no);
-        setActiveParagraphId(target.paragraph_id);
-        pendingFocusRef.current = { paragraphId: target.paragraph_id, behavior: "auto" };
-        setNotice("已定位到指定段落，当前已切到辅助文本模式。");
-        setRecentAction({
-          kind: "locate",
-          message: `已定位到第 ${target.page_no} 页的指定段落。`,
-          paragraphId: target.paragraph_id,
-        });
-        setSessionReady(true);
-        return;
+      if (requestedParagraphId) {
+        const target = paragraphMap.get(requestedParagraphId);
+        sessionAppliedRef.current = true;
+        if (target) {
+          setViewMode("text");
+          setCurrentPageNo(target.page_no);
+          setActiveParagraphId(target.paragraph_id);
+          pendingFocusRef.current = { paragraphId: target.paragraph_id, behavior: "auto" };
+          setNotice("已定位到指定段落，当前已切到辅助文本模式。");
+          setRecentAction({
+            kind: "locate",
+            message: `已定位到第 ${target.page_no} 页的指定段落。`,
+            paragraphId: target.paragraph_id,
+          });
+          setSessionReady(true);
+          return;
+        }
       }
     }
 
@@ -888,29 +911,55 @@ export default function PaperReaderScreen({
     }
   }
 
-  function goToPage(pageNo: number) {
+  function recordRecentNavigationAction(
+    message: string,
+    options?: { kind?: ReaderRecentAction["kind"]; paragraphId?: number | null },
+  ) {
+    setRecentAction({
+      kind: options?.kind ?? "locate",
+      message,
+      paragraphId: options?.paragraphId ?? null,
+    });
+  }
+
+  function goToPage(pageNo: number, options?: GoToPageOptions) {
     if (!pageIndexMap.has(pageNo)) return;
+    const nextMode = options?.switchMode ?? viewMode;
     setCurrentPageNo(pageNo);
+    if (options?.switchMode) {
+      setViewMode(options.switchMode);
+    }
     clearSelectionState();
     setLocatorError("");
     const firstParagraph = (paragraphsByPage.get(pageNo) ?? [])[0] ?? null;
     setActiveParagraphId(firstParagraph?.paragraph_id ?? null);
-    if (viewMode === "text" && firstParagraph) {
-      pendingFocusRef.current = { paragraphId: firstParagraph.paragraph_id, behavior: "smooth" };
+    if (nextMode === "text" && firstParagraph) {
+      pendingFocusRef.current = { paragraphId: firstParagraph.paragraph_id, behavior: options?.behavior ?? "smooth" };
     }
     updateReaderUrl(null);
+    if (options?.recentActionMessage) {
+      recordRecentNavigationAction(options.recentActionMessage, {
+        kind: options.recentActionKind,
+        paragraphId: options?.recentActionParagraphId ?? firstParagraph?.paragraph_id ?? null,
+      });
+    }
   }
 
   function stepPage(direction: -1 | 1) {
     const nextIndex = currentPageIndex + direction;
     if (nextIndex < 0 || nextIndex >= pageNumbers.length) return;
-    goToPage(pageNumbers[nextIndex]);
+    const targetPage = pageNumbers[nextIndex];
+    goToPage(targetPage, {
+      recentActionMessage: `已切到第 ${targetPage} 页。`,
+    });
   }
 
   function jumpToBoundaryPage(edge: "start" | "end") {
     const targetPage = edge === "start" ? pageNumbers[0] : pageNumbers[pageNumbers.length - 1];
     if (!targetPage) return;
-    goToPage(targetPage);
+    goToPage(targetPage, {
+      recentActionMessage: edge === "start" ? "已跳到首页。" : "已跳到末页。",
+    });
   }
 
   function stepZoom(direction: -1 | 1) {
@@ -939,6 +988,12 @@ export default function PaperReaderScreen({
     pendingFocusRef.current = { paragraphId, behavior };
     if (options?.updateUrl !== false) {
       updateReaderUrl(paragraphId);
+    }
+    if (options?.recentActionMessage) {
+      recordRecentNavigationAction(options.recentActionMessage, {
+        kind: options.recentActionKind,
+        paragraphId,
+      });
     }
   }
 
@@ -1419,13 +1474,10 @@ export default function PaperReaderScreen({
     }
 
     setLocatorError("");
-    focusParagraph(target.paragraph_id);
-    setNotice(`已定位到第 ${target.page_no} 页相关段落。`);
-    setRecentAction({
-      kind: "locate",
-      message: `已按关键词定位到第 ${target.page_no} 页相关段落。`,
-      paragraphId: target.paragraph_id,
+    focusParagraph(target.paragraph_id, {
+      recentActionMessage: `已按关键词定位到第 ${target.page_no} 页相关段落。`,
     });
+    setNotice(`已定位到第 ${target.page_no} 页相关段落。`);
   }
 
   function openAnnotationForFollowUp(item: AnnotationWorkbenchItem) {
@@ -1435,13 +1487,13 @@ export default function PaperReaderScreen({
         paragraphId: item.annotation.paragraph_id,
       });
     }
-    focusParagraph(item.annotation.paragraph_id, { behavior: "auto", switchToText: true });
-    annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setRecentAction({
-      kind: "annotate",
-      message: item.status === "pending" ? "已回到待处理批注对应段落。" : "已回到已沉淀批注对应段落。",
-      paragraphId: item.annotation.paragraph_id,
+    focusParagraph(item.annotation.paragraph_id, {
+      behavior: "auto",
+      switchToText: true,
+      recentActionKind: "annotate",
+      recentActionMessage: item.status === "pending" ? "已回到待处理批注对应段落。" : "已回到已沉淀批注对应段落。",
     });
+    annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setNotice(
       item.status === "pending"
         ? "已回到待处理批注对应段落，可继续补证据或整理心得。"
@@ -1465,29 +1517,27 @@ export default function PaperReaderScreen({
   }
 
   function openFigureForScan(figure: PaperReaderFigure) {
-    goToPage(figure.page_no);
+    goToPage(figure.page_no, {
+      recentActionMessage: `已跳到第 ${figure.page_no} 页图像，适合先扫图再回正文。`,
+      recentActionParagraphId: figure.anchor_paragraph_id ?? null,
+    });
     openFigurePreview(figure);
     setNotice(`已打开第 ${figure.page_no} 页图像，可先扫图再回正文。`);
-    setRecentAction({
-      kind: "locate",
-      message: `已跳到第 ${figure.page_no} 页图像，适合先扫图再回正文。`,
-      paragraphId: figure.anchor_paragraph_id ?? null,
-    });
   }
 
   function openFigureAnchor(item: FigureFlowItem) {
     if (item.anchorParagraph) {
-      focusParagraph(item.anchorParagraph.paragraph_id, { behavior: "auto" });
-      setNotice("已回到图像附近正文锚点，可继续核对论证。");
-      setRecentAction({
-        kind: "locate",
-        message: "已回到图像附近正文锚点。",
-        paragraphId: item.anchorParagraph.paragraph_id,
+      focusParagraph(item.anchorParagraph.paragraph_id, {
+        behavior: "auto",
+        recentActionMessage: "已回到图像附近正文锚点。",
       });
+      setNotice("已回到图像附近正文锚点，可继续核对论证。");
       return;
     }
-    goToPage(item.figure.page_no);
-    activateReaderMode("page");
+    goToPage(item.figure.page_no, {
+      switchMode: "page",
+      recentActionMessage: `已切到第 ${item.figure.page_no} 页原版页面，可继续核对图像。`,
+    });
     setNotice(`已切到第 ${item.figure.page_no} 页原版页面，可结合版式继续核对图像。`);
   }
 
@@ -1513,6 +1563,12 @@ export default function PaperReaderScreen({
   const activePageAnnotationCount = currentPageAnnotations.length;
   const totalAnnotationCount = reader.annotations.length;
   const readingProgressPercent = pageNumbers.length > 0 ? Math.round(((currentPageIndex + 1) / pageNumbers.length) * 100) : 0;
+  const focusSummaryTitle =
+    viewMode === "text" && activeParagraph
+      ? `当前焦点：第 ${activeParagraph.page_no} 页 · 段落 #${activeParagraph.paragraph_id}`
+      : `当前阅读位置：第 ${effectivePageNo} 页`;
+  const pageModeAnchorHint =
+    viewMode !== "text" && activeParagraph ? `当前页锚点：段落 #${activeParagraph.paragraph_id}` : null;
   const headingParagraphs = reader.paragraphs.filter((paragraph) => paragraph.kind === "heading").slice(0, 10);
   const quickSearchMatches = locatorQuery.trim()
     ? reader.paragraphs
@@ -1714,16 +1770,17 @@ export default function PaperReaderScreen({
           <div className="reader-focus-summary" data-testid="reader-focus-summary">
             <div className="reader-focus-summary-top">
               <div>
-                <strong>
-                  {activeParagraph
-                    ? `当前焦点：第 ${activeParagraph.page_no} 页 · 段落 #${activeParagraph.paragraph_id}`
-                    : `当前阅读位置：第 ${effectivePageNo} 页`}
-                </strong>
+                <strong>{focusSummaryTitle}</strong>
                 <div className="subtle" style={{ marginTop: 6 }}>
                   {recentAction
                     ? `刚刚完成：${recentAction.message}`
                     : "阅读器会记住你的上次阅读位置、视图模式和缩放设置。"}
                 </div>
+                {pageModeAnchorHint ? (
+                  <div className="subtle" style={{ marginTop: 6 }} data-testid="reader-page-anchor-hint">
+                    {pageModeAnchorHint}
+                  </div>
+                ) : null}
                 <div className="reader-status-row" style={{ marginTop: 8 }}>
                   <span className="reader-status-badge tone-focus">阅读进度 {readingProgressPercent}%</span>
                   <span className="reader-status-badge tone-info">待回看 {revisitParagraphIds.length} 段</span>
@@ -1760,7 +1817,11 @@ export default function PaperReaderScreen({
               className="select"
               data-testid="reader-page-jump"
               value={String(effectivePageNo)}
-              onChange={(event) => goToPage(Number(event.target.value))}
+              onChange={(event) =>
+                goToPage(Number(event.target.value), {
+                  recentActionMessage: `已切到第 ${event.target.value} 页。`,
+                })
+              }
             >
               {pageNumbers.map((pageNo) => (
                 <option key={pageNo} value={pageNo}>
@@ -1876,7 +1937,15 @@ export default function PaperReaderScreen({
                       key={paragraph.paragraph_id}
                       type="button"
                       className="reader-quick-nav-button"
-                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                      data-testid={`reader-quick-nav-heading-${paragraph.paragraph_id}`}
+                      data-target-page-no={paragraph.page_no}
+                      data-target-paragraph-id={paragraph.paragraph_id}
+                      onClick={() =>
+                        focusParagraph(paragraph.paragraph_id, {
+                          behavior: "auto",
+                          recentActionMessage: `已通过章节导航跳到第 ${paragraph.page_no} 页。`,
+                        })
+                      }
                     >
                       <span className="reader-status-badge tone-focus">p.{paragraph.page_no}</span>
                       <span>{paragraph.text.slice(0, 72)}{paragraph.text.length > 72 ? "..." : ""}</span>
@@ -1897,8 +1966,12 @@ export default function PaperReaderScreen({
                       key={figure.figure_id}
                       type="button"
                       className="reader-quick-nav-button"
+                      data-testid={`reader-quick-nav-figure-${figure.figure_id}`}
+                      data-target-page-no={figure.page_no}
                       onClick={() => {
-                        goToPage(figure.page_no);
+                        goToPage(figure.page_no, {
+                          recentActionMessage: `已切到第 ${figure.page_no} 页图像导航。`,
+                        });
                         setFigurePanelOpen(true);
                       }}
                     >
@@ -1921,7 +1994,15 @@ export default function PaperReaderScreen({
                       key={annotation.id}
                       type="button"
                       className="reader-quick-nav-button"
-                      onClick={() => focusParagraph(annotation.paragraph_id, { behavior: "auto" })}
+                      data-testid={`reader-quick-nav-annotation-${annotation.id}`}
+                      data-target-paragraph-id={annotation.paragraph_id}
+                      onClick={() =>
+                        focusParagraph(annotation.paragraph_id, {
+                          behavior: "auto",
+                          recentActionKind: "annotate",
+                          recentActionMessage: "已从批注回跳到对应段落。",
+                        })
+                      }
                     >
                       <span className="reader-status-badge tone-success">{formatDateTime(annotation.updated_at)}</span>
                       <span>{annotation.note_text.slice(0, 80)}{annotation.note_text.length > 80 ? "..." : ""}</span>
@@ -1942,7 +2023,15 @@ export default function PaperReaderScreen({
                       key={paragraph.paragraph_id}
                       type="button"
                       className="reader-quick-nav-button"
-                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                      data-testid={`reader-quick-nav-revisit-${paragraph.paragraph_id}`}
+                      data-target-page-no={paragraph.page_no}
+                      data-target-paragraph-id={paragraph.paragraph_id}
+                      onClick={() =>
+                        focusParagraph(paragraph.paragraph_id, {
+                          behavior: "auto",
+                          recentActionMessage: "已回到待回看段落。",
+                        })
+                      }
                     >
                       <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
                       <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
@@ -1963,7 +2052,15 @@ export default function PaperReaderScreen({
                       key={paragraph.paragraph_id}
                       type="button"
                       className="reader-quick-nav-button"
-                      onClick={() => focusParagraph(paragraph.paragraph_id, { behavior: "auto" })}
+                      data-testid={`reader-quick-nav-search-${paragraph.paragraph_id}`}
+                      data-target-page-no={paragraph.page_no}
+                      data-target-paragraph-id={paragraph.paragraph_id}
+                      onClick={() =>
+                        focusParagraph(paragraph.paragraph_id, {
+                          behavior: "auto",
+                          recentActionMessage: `已从搜索命中跳到第 ${paragraph.page_no} 页段落。`,
+                        })
+                      }
                     >
                       <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
                       <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
