@@ -1,6 +1,6 @@
 # 项目状态
 
-更新时间：2026-03-27
+更新时间：2026-03-28
 
 ## 当前优先级
 
@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2K：搜索命中高亮与段内可视反馈
+
+阶段目标：
+
+- 让关键词命中在正文里有更直接的段内高亮，不只停留在命中数和跳转按钮。
+- 减少用户跳到命中段落后还要重新扫读整段找关键词的摩擦。
+- 保持高亮、批注状态、当前焦点之间的层次清晰，不互相抢夺视觉主次。
+
+## 最近完成
+
 ### 2J：搜索命中顺序跳转与结果反馈
 
 阶段目标：
@@ -22,7 +32,26 @@
 - 让定位栏直接反馈总命中数、当前位置和无命中状态，降低“到底跳到哪了”的不确定感。
 - 确保顺序跳转继续和当前页、当前段落、焦点摘要保持稳定同步。
 
-## 最近完成
+已完成：
+
+- 为定位栏补上“上一处 / 下一处”按钮，以及 `Enter` / `Shift + Enter` 的顺序跳转语义，让长文档搜索不再只停在首个命中。
+- 增加定位状态反馈，直接展示总命中数、当前位置和无命中状态，帮助用户判断自己正处在第几个结果上。
+- 搜索命中列表改为展示总命中数，并在结果过多时给出“仅展示前 8 个，其余继续顺序跳转”的提示，避免长文档导航卡无限增长。
+- 新增端到端回归，覆盖多命中关键词在长文档里的前进 / 后退循环，以及页码、焦点摘要和命中状态的同步。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "supports keyboard-first reader navigation and actions|keeps locator jumps synced with page state and focus summary|cycles locator matches and keeps match status in sync|keeps quick navigation and figure anchors synced with focus summary|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports desktop-style page navigation and zoom shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays"`：10 项通过
+
+下一阶段：
+
+- 进入 `2K：搜索命中高亮与段内可视反馈`
 
 ### 2I：长文档定位与焦点摘要一致性
 
@@ -123,12 +152,13 @@
 - `2G` 浮层关闭后的键盘焦点回收
 - `2H` 输入控件的 `Esc` 退回语义
 - `2I` 长文档定位与焦点摘要一致性
+- `2J` 搜索命中顺序跳转与结果反馈
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2J`：为搜索命中补上一处 / 下一处顺序跳转和当前位置反馈，降低长文档里反复输入同一关键词的摩擦。
+- [ ] 做 `2K`：把搜索命中的关键词高亮到正文里，降低跳到命中段落后还要重新扫读整段的摩擦。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

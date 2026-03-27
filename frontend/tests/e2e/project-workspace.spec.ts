@@ -371,6 +371,33 @@ test("keeps locator jumps synced with page state and focus summary", async ({ pa
   await expect(page.getByTestId("reader-page-anchor-hint")).toContainText(`段落 #${meta.paragraphId}`);
 });
 
+test("cycles locator matches and keeps match status in sync", async ({ page }) => {
+  await clearReaderLocalState(page);
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents", { stripResumeQuery: true });
+
+  await page.getByTestId("reader-locator-input").fill("Section");
+  await page.getByRole("button", { name: "定位关键词" }).click();
+
+  await expect(page.getByTestId("reader-locator-match-status")).toContainText("命中 12 处");
+  await expect(page.getByTestId("reader-locator-match-status")).toContainText("当前第 1 处");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("1/12 个搜索命中");
+  await expect(page.getByTestId("reader-paragraph-6")).toContainText("Section 1");
+
+  await page.getByTestId("reader-locator-next-match").click();
+  await expectFocusSummarySyncedToActiveParagraph(page);
+  await expect(page.getByTestId("reader-locator-match-status")).toContainText("当前第 2 处");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("2/12 个搜索命中");
+  await expect(page.getByTestId("reader-page-jump")).toHaveValue("2");
+  await expect(page.getByTestId("reader-paragraph-7")).toContainText("Section 2");
+
+  await page.getByTestId("reader-locator-prev-match").click();
+  await expect(page.getByTestId("reader-locator-match-status")).toContainText("当前第 1 处");
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("1/12 个搜索命中");
+  await expect(page.getByTestId("reader-page-jump")).toHaveValue("1");
+  await expect(page.getByTestId("reader-paragraph-6")).toContainText("Section 1");
+  await expect(page.getByText("当前仅展示前 8 个命中")).toBeVisible();
+});
+
 test("keeps quick navigation and figure anchors synced with focus summary", async ({ page }) => {
   await clearReaderLocalState(page);
   await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis", { stripResumeQuery: true });

@@ -619,13 +619,15 @@ export default function PaperReaderScreen({
   );
   const renderedPagePreviewCount = pagePreviewStripItems.filter((item) => item.kind === "page").length;
   const isPagePreviewWindowed = pagePreviewStripItems.some((item) => item.kind === "gap");
-  const matchedParagraphIds = useMemo(() => {
+  const allSearchMatches = useMemo(() => {
     if (!locatorQuery.trim()) return [];
     const normalizedQuery = locatorQuery.trim().toLowerCase();
-    return currentPageParagraphs
-      .filter((paragraph) => paragraph.text.toLowerCase().includes(normalizedQuery))
-      .map((paragraph) => paragraph.paragraph_id);
-  }, [currentPageParagraphs, locatorQuery]);
+    return (reader?.paragraphs ?? []).filter((paragraph) => paragraph.text.toLowerCase().includes(normalizedQuery));
+  }, [locatorQuery, reader?.paragraphs]);
+  const matchedParagraphIds = useMemo(
+    () => allSearchMatches.filter((paragraph) => paragraph.page_no === effectivePageNo).map((paragraph) => paragraph.paragraph_id),
+    [allSearchMatches, effectivePageNo],
+  );
   const matchedParagraphIdSet = useMemo(() => new Set(matchedParagraphIds), [matchedParagraphIds]);
   const currentPageAnnotationParagraphIdSet = useMemo(
     () => new Set(currentPageAnnotations.map((annotation) => annotation.paragraph_id)),
@@ -1460,24 +1462,45 @@ export default function PaperReaderScreen({
     }
   }
 
-  function handleLocateParagraph() {
+  function jumpToSearchMatch(direction: -1 | 1, options?: { continueFromCurrent?: boolean }) {
     const query = locatorQuery.trim();
-    if (!query || !reader) {
+    if (!query) {
       setLocatorError("请输入关键词后再定位。");
       return;
     }
 
-    const target = reader.paragraphs.find((paragraph) => paragraph.text.toLowerCase().includes(query.toLowerCase()));
-    if (!target) {
+    if (!allSearchMatches.length) {
       setLocatorError(`辅助文本中暂未找到“${query}”。`);
       return;
     }
 
+    const currentMatchIndex = activeParagraphId
+      ? allSearchMatches.findIndex((paragraph) => paragraph.paragraph_id === activeParagraphId)
+      : -1;
+    let targetIndex = direction > 0 ? 0 : allSearchMatches.length - 1;
+    if (currentMatchIndex >= 0) {
+      targetIndex = options?.continueFromCurrent
+        ? (currentMatchIndex + direction + allSearchMatches.length) % allSearchMatches.length
+        : currentMatchIndex;
+    }
+    const target = allSearchMatches[targetIndex];
     setLocatorError("");
     focusParagraph(target.paragraph_id, {
-      recentActionMessage: `已按关键词定位到第 ${target.page_no} 页相关段落。`,
+      behavior: "auto",
+      recentActionMessage:
+        allSearchMatches.length > 1
+          ? `已跳到第 ${targetIndex + 1}/${allSearchMatches.length} 个搜索命中（第 ${target.page_no} 页）。`
+          : `已按关键词定位到第 ${target.page_no} 页相关段落。`,
     });
-    setNotice(`已定位到第 ${target.page_no} 页相关段落。`);
+    setNotice(
+      allSearchMatches.length > 1
+        ? `已跳到第 ${targetIndex + 1}/${allSearchMatches.length} 个搜索命中。`
+        : `已定位到第 ${target.page_no} 页相关段落。`,
+    );
+  }
+
+  function handleLocateParagraph() {
+    jumpToSearchMatch(1, { continueFromCurrent: true });
   }
 
   function openAnnotationForFollowUp(item: AnnotationWorkbenchItem) {
@@ -1570,11 +1593,17 @@ export default function PaperReaderScreen({
   const pageModeAnchorHint =
     viewMode !== "text" && activeParagraph ? `当前页锚点：段落 #${activeParagraph.paragraph_id}` : null;
   const headingParagraphs = reader.paragraphs.filter((paragraph) => paragraph.kind === "heading").slice(0, 10);
-  const quickSearchMatches = locatorQuery.trim()
-    ? reader.paragraphs
-        .filter((paragraph) => paragraph.text.toLowerCase().includes(locatorQuery.trim().toLowerCase()))
-        .slice(0, 8)
-    : [];
+  const activeSearchMatchIndex = activeParagraphId
+    ? allSearchMatches.findIndex((paragraph) => paragraph.paragraph_id === activeParagraphId)
+    : -1;
+  const quickSearchMatches = allSearchMatches.slice(0, 8);
+  const locatorMatchStatusText = locatorQuery.trim()
+    ? allSearchMatches.length > 0
+      ? activeSearchMatchIndex >= 0
+        ? `命中 ${allSearchMatches.length} 处 · 当前第 ${activeSearchMatchIndex + 1} 处`
+        : `命中 ${allSearchMatches.length} 处 · 还未跳到具体命中`
+      : "当前关键词暂未命中结果"
+    : "输入关键词后，可在命中间顺序跳转。";
   const quickFigureShortcuts = orderedFigures.slice(0, FIGURE_SHORTCUT_VISIBLE_LIMIT);
   const quickRevisitShortcuts = revisitParagraphIds
     .map((paragraphId) => paragraphMap.get(paragraphId))
@@ -1851,6 +1880,10 @@ export default function PaperReaderScreen({
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
+                  if (event.shiftKey) {
+                    jumpToSearchMatch(-1, { continueFromCurrent: true });
+                    return;
+                  }
                   handleLocateParagraph();
                 }
               }}
@@ -1858,6 +1891,30 @@ export default function PaperReaderScreen({
             <Button type="button" onClick={handleLocateParagraph}>
               定位关键词
             </Button>
+            <Button
+              className="secondary"
+              type="button"
+              data-testid="reader-locator-prev-match"
+              disabled={allSearchMatches.length === 0}
+              onClick={() => jumpToSearchMatch(-1, { continueFromCurrent: true })}
+            >
+              上一处
+            </Button>
+            <Button
+              className="secondary"
+              type="button"
+              data-testid="reader-locator-next-match"
+              disabled={allSearchMatches.length === 0}
+              onClick={() => jumpToSearchMatch(1, { continueFromCurrent: true })}
+            >
+              下一处
+            </Button>
+          </div>
+          <div className="reader-status-row" data-testid="reader-locator-match-status" style={{ marginTop: 8 }}>
+            <span className="reader-status-badge tone-info">{locatorMatchStatusText}</span>
+            {allSearchMatches.length > 1 ? (
+              <span className="subtle">Enter 继续下一处，Shift + Enter 回到上一处。</span>
+            ) : null}
           </div>
 
           <div className="reader-shortcut-strip" data-testid="reader-shortcuts">
@@ -2044,29 +2101,36 @@ export default function PaperReaderScreen({
             </div>
 
             <div className="reader-quick-nav-section">
-              <strong>{locatorQuery.trim() ? `搜索命中 (${quickSearchMatches.length})` : "搜索命中"}</strong>
+              <strong>{locatorQuery.trim() ? `搜索命中 (${allSearchMatches.length})` : "搜索命中"}</strong>
               {quickSearchMatches.length > 0 ? (
-                <div className="reader-quick-nav-buttons">
-                  {quickSearchMatches.map((paragraph) => (
-                    <button
-                      key={paragraph.paragraph_id}
-                      type="button"
-                      className="reader-quick-nav-button"
-                      data-testid={`reader-quick-nav-search-${paragraph.paragraph_id}`}
-                      data-target-page-no={paragraph.page_no}
-                      data-target-paragraph-id={paragraph.paragraph_id}
-                      onClick={() =>
-                        focusParagraph(paragraph.paragraph_id, {
-                          behavior: "auto",
-                          recentActionMessage: `已从搜索命中跳到第 ${paragraph.page_no} 页段落。`,
-                        })
-                      }
-                    >
-                      <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
-                      <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="reader-quick-nav-buttons">
+                    {quickSearchMatches.map((paragraph) => (
+                      <button
+                        key={paragraph.paragraph_id}
+                        type="button"
+                        className="reader-quick-nav-button"
+                        data-testid={`reader-quick-nav-search-${paragraph.paragraph_id}`}
+                        data-target-page-no={paragraph.page_no}
+                        data-target-paragraph-id={paragraph.paragraph_id}
+                        onClick={() =>
+                          focusParagraph(paragraph.paragraph_id, {
+                            behavior: "auto",
+                            recentActionMessage: `已从搜索命中跳到第 ${paragraph.page_no} 页段落。`,
+                          })
+                        }
+                      >
+                        <span className="reader-status-badge tone-info">第 {paragraph.page_no} 页</span>
+                        <span>{paragraph.text.slice(0, 84)}{paragraph.text.length > 84 ? "..." : ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {allSearchMatches.length > quickSearchMatches.length ? (
+                    <div className="subtle" style={{ marginTop: 8 }}>
+                      当前仅展示前 {quickSearchMatches.length} 个命中，剩余结果可继续通过“上一处 / 下一处”顺序跳转。
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <div className="subtle">
                   {locatorQuery.trim()
