@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type MouseEvent as ReactMouseEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -154,7 +154,15 @@ function isEditableShortcutTarget(target: EventTarget | null) {
   if (!element) {
     return false;
   }
-  return ["INPUT", "TEXTAREA"].includes(element.tagName) || element.isContentEditable;
+  return ["INPUT", "TEXTAREA", "SELECT", "OPTION"].includes(element.tagName) || element.isContentEditable;
+}
+
+function isReaderInteractiveTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) {
+    return false;
+  }
+  return Boolean(element.closest("button, a, input, textarea, select, option, [role='button']")) || element.isContentEditable;
 }
 
 function compactTextPreview(value: string, maxLength = 96) {
@@ -940,6 +948,17 @@ export default function PaperReaderScreen({
     });
   }
 
+  function reclaimReaderShellFocus() {
+    readerShellRef.current?.focus();
+  }
+
+  function handleReaderShellMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (isReaderInteractiveTarget(event.target)) {
+      return;
+    }
+    reclaimReaderShellFocus();
+  }
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1520,7 +1539,13 @@ export default function PaperReaderScreen({
   }
 
   return (
-    <div ref={readerShellRef} className="paper-reader-shell" data-testid="reader-shell" tabIndex={-1}>
+    <div
+      ref={readerShellRef}
+      className="paper-reader-shell"
+      data-testid="reader-shell"
+      tabIndex={-1}
+      onMouseDownCapture={handleReaderShellMouseDown}
+    >
       <Card>
         <div className="paper-reader-header">
           <div>

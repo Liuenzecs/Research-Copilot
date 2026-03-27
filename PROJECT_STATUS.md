@@ -1,4 +1,4 @@
-﻿# 项目状态
+# 项目状态
 
 更新时间：2026-03-27
 
@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2G：浮层关闭后的键盘焦点回收
+
+阶段目标：
+
+- 继续收口 Windows 下阅读器的键盘焦点稳定性。
+- 重点观察翻译抽屉、图像预览、图集面板关闭后，是否还需要额外点一下壳层才能继续使用快捷键。
+- 保持“关闭一层，继续操作一层”的桌面阅读心智，不把退回路径做成新的焦点断点。
+
+## 最近完成
+
 ### 2F：控件焦点与快捷键隔离
 
 阶段目标：
@@ -22,41 +32,34 @@
 - 优先处理页码跳转、缩放、阅读偏好等下拉控件获得焦点后，不应误触全局阅读快捷键的问题。
 - 保持“控件操作时由控件接管键盘，回到阅读壳层后快捷键恢复”的一致心智。
 
-## 本轮已完成
-
-### 2E：极端样本与回归扩展
-
-阶段目标：
-
-- 把长文档、多图论文这类边界样本补齐，避免阅读器只在普通样本上表现稳定。
-- 控制图表优先阅读流的默认体积，避免多图论文把首页卡片拉得过长。
-- 扩大回归覆盖，确保新增边界样本不会打散已有阅读主路径。
-
 已完成：
 
-- E2E 种子里的 `E2E Retrieval Study for Evidence Synthesis` 扩展为 7 张图像的多图论文样本。
-- 多图样本改用固定色板生成图像页，避免 RGB 颜色溢出导致的 PDF 生成不稳定。
-- 阅读器中的“图表优先阅读”卡片现在会按页码和图像编号稳定排序。
-- 图表流继续保持有上限的轻量卡片展示，只默认显示前 6 张图像。
-- 当论文图像总数超过默认展示上限时，会显示明确的溢出提示，提醒用户继续通过图像跳转、页面图集或原版页面查看剩余图像。
-- 回归测试补充了“多图论文下图表流仍保持有界”的断言。
+- 阅读器现在把 `select / option` 也视为需要优先保留原生键盘语义的控件，不再在它们获得焦点时直接响应全局阅读快捷键。
+- 页码跳转、页面缩放、阅读宽度、阅读密度等下拉控件在获得焦点后，不会再误触模式切换或翻页快捷键。
+- 阅读壳层补了空白区域的焦点回收逻辑，用户从下拉控件离开后，更容易把键盘控制权交还给阅读器。
+- 回归测试新增“控件持有焦点时暂停快捷键，回到壳层后恢复快捷键”的断言。
 
 变更文件：
 
-- `backend/app/tests/e2e_seed.py`
 - `frontend/src/components/papers/PaperReaderScreen.tsx`
-- `frontend/src/styles/paper-reader-enhancements.css`
 - `frontend/tests/e2e/project-workspace.spec.ts`
 
 验证结果：
 
-- `python -m py_compile backend/app/tests/e2e_seed.py`：通过
 - `cd frontend && npm run build`：通过
-- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|keeps the multi-figure flow bounded for figure-heavy papers|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection|supports escape-based overlay exits and quote cleanup"`：14 项通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "supports keyboard-first reader navigation and actions|persists local reader layout preferences|pauses reader shortcuts while dropdown controls hold focus|supports desktop-style page navigation and zoom shortcuts"`：4 项通过
 
 下一阶段：
 
-- 进入 `2F：控件焦点与快捷键隔离`
+- 进入 `2G：浮层关闭后的键盘焦点回收`
+
+### 上一阶段：2E 极端样本与回归扩展
+
+已完成：
+
+- E2E 多图论文样本扩展为 7 图，图表优先流保持有界展示。
+- 图像卡片默认只展示前 6 张，并在超出时显示溢出提示。
+- 长文档、多图论文相关回归扩展到 14 项通过。
 
 ## 已完成阶段总览
 
@@ -80,12 +83,13 @@
 - `2C` 选区上下文稳定保留，滚动后仍可继续翻译/批注/提证据
 - `2D` 翻译抽屉、图像预览、图集面板的 `Esc` 退出路径回归补齐
 - `2E` 极端样本与回归扩展
+- `2F` 控件焦点与快捷键隔离
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 补 `2F`：让页码跳转、缩放、阅读偏好等下拉控件获得焦点后，不再误触全局快捷键。
+- [ ] 补 `2G`：观察翻译抽屉、图像预览、图集面板关闭后，键盘快捷键是否能无缝恢复。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚操作控件就误切模式/翻页”的路径，优先补回归再补交互收口。
 

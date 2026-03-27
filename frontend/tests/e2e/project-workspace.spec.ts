@@ -276,7 +276,7 @@ test("supports keyboard-first reader navigation and actions", async ({ page }) =
   await page.locator('[data-testid^="project-open-reader-"]').first().click();
   await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
 
-  await page.getByTestId("reader-shell").click();
+  await page.getByTestId("reader-shell").focus();
   await page.keyboard.press("t");
   await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
   await expect(page.getByTestId("reader-text-article")).toBeVisible();
@@ -351,6 +351,30 @@ test("persists local reader layout preferences", async ({ page }) => {
   await expect(page.getByTestId("reader-text-article")).toHaveAttribute("data-reader-density", "compact");
 });
 
+test("pauses reader shortcuts while dropdown controls hold focus", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
+
+  const pageJump = page.getByTestId("reader-page-jump");
+  await pageJump.focus();
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+  await expect(page.getByTestId("reader-mode-text")).toHaveClass(/secondary/);
+
+  await page.getByTestId("reader-shell").focus();
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  const widthSelect = page.getByTestId("reader-preference-width");
+  await widthSelect.focus();
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+  await expect(page.getByTestId("reader-mode-page")).toHaveClass(/secondary/);
+
+  await page.getByTestId("reader-shell").focus();
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+});
+
 test("keeps the page preview strip compact for long documents", async ({ page }) => {
   await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
 
@@ -379,7 +403,7 @@ test("supports desktop-style page navigation and zoom shortcuts", async ({ page 
   await expect.poll(async () => pageJump.locator("option").count()).toBeGreaterThan(10);
   const totalPages = await pageJump.locator("option").count();
 
-  await page.getByTestId("reader-shell").click();
+  await page.getByTestId("reader-shell").focus();
   await expect(page.getByTestId("reader-shortcuts")).toContainText("桌面翻页");
   await expect(page.getByTestId("reader-shortcuts")).toContainText("页面缩放");
 
