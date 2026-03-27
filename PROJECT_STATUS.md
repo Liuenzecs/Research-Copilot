@@ -97,6 +97,7 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - [x] 为页面缩略图、图像卡片和大图预览补充更友好的图片加载策略。
 - [x] 补桌面风格的翻页 / 缩放快捷操作，以及 `Esc` 关闭浮层的退回路径。
 - [x] 补稳定选区上下文，避免滚动后失去继续翻译、写批注和回到引用段落的入口。
+- [x] 为翻译抽屉、图像预览和引用清理补一轮 `Esc` 退回路径回归。
 - [ ] 继续观察 Windows 下文本选择、滚动与键盘焦点的稳定性。
 - [ ] 补更极端的长文档 / 多图论文样本，扩展阅读器回归覆盖。
 
@@ -552,3 +553,35 @@ Research Copilot 当前主线已经明确为桌面优先的研究工作台，围
 - 聚焦 `Esc` 关闭图像预览、翻译抽屉和引用清理这几条退回路径，减少桌面阅读里的“关不干净”感
 - 先补回归和轻量测试支撑，确认阅读器现在的退回动作在主路径上稳定可用
 - 如果这轮验证稳定，再继续补更极端的长文档 / 多图样本
+
+### 2026-03-27 · 阶段 2D：浮层退回路径回归补样
+
+阶段目标：
+
+- 把翻译抽屉、图像预览和引用清理这几条 `Esc` 退回路径做成更一致、更可验证的桌面交互。
+- 先补轻量退出动作收口和回归覆盖，避免继续加功能时把退出路径越做越散。
+
+已完成：
+
+- 阅读器为翻译抽屉、图像预览和图集面板补了更统一的关闭 helper，减少不同按钮和快捷键各走一套逻辑的漂移。
+- 翻译抽屉、图像预览和图集面板新增了更稳定的测试定位点，便于持续回归桌面退回路径。
+- `Esc` 现在已覆盖三类主路径：清空当前引用原文、关闭翻译抽屉、关闭图像预览。
+- 新增一条 E2E 回归测试，覆盖 `Esc` 清理引用、关闭翻译抽屉和关闭图像预览的连续退出路径。
+- 既有的阅读器会话、选区批注、阅读概览、批注工作台、图表优先流、长文档预览和桌面快捷键回归在这一轮保持通过。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|keeps the selected quote when continuing into annotation flow|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode|groups annotations into pending and resolved workbench sections|supports keyboard-first reader navigation and actions|supports a figure-first reading flow|persists local reader layout preferences|keeps the page preview strip compact for long documents|supports desktop-style page navigation and zoom shortcuts|keeps quote actions accessible after scrolling a text selection|supports escape-based overlay exits and quote cleanup"`：通过
+
+下一阶段：
+
+- 阶段 2E：极端样本与回归扩展
+- 聚焦更长文档、多图论文和更密集页面样本，继续扩大阅读器稳定性验证边界
+- 优先补样本和回归覆盖，而不是继续增加新的阅读器入口
+- 如果极端样本下仍有热点，再评估更进一步的渲染降压或交互收口

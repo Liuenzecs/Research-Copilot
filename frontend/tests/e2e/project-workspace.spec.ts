@@ -452,6 +452,53 @@ test("keeps quote actions accessible after scrolling a text selection", async ({
   await expect(page.getByTestId("reader-annotation-quote-text")).toContainText(selectedText);
 });
 
+test("supports escape-based overlay exits and quote cleanup", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis");
+  await page.getByTestId("reader-mode-text").click();
+  await expect(page.getByTestId("reader-text-article")).toBeVisible();
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  const selectSnippet = async () =>
+    firstParagraph.evaluate((element) => {
+      const target = element.querySelector("p, h3, pre") ?? element;
+      const textNode = target.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE || !textNode.textContent) {
+        return "";
+      }
+
+      const text = textNode.textContent.trim().slice(0, 24);
+      const range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, text.length);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      return text;
+    });
+
+  const selectedText = await selectSnippet();
+  await expect(page.getByTestId("reader-selection-context-text")).toContainText(selectedText);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-selection-context")).toHaveCount(0);
+  await expect(page.getByTestId("reader-selection-toolbar")).toHaveCount(0);
+
+  await selectSnippet();
+  const selectionToolbar = page.getByTestId("reader-selection-toolbar");
+  await selectionToolbar.getByRole("button", { name: "英译中" }).click();
+  await expect(page.getByTestId("reader-translation-drawer")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-translation-drawer")).toHaveCount(0);
+
+  await page.getByTestId("reader-figure-flow-open-1").click();
+  await expect(page.getByTestId("reader-lightbox")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-lightbox")).toHaveCount(0);
+});
+
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {
   await openSeededProject(page);
   const projectUrl = page.url();

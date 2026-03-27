@@ -767,6 +767,30 @@ export default function PaperReaderScreen({
     }
   }
 
+  function clearQuoteContext(message?: string) {
+    clearSelectionState();
+    if (message) {
+      setNotice(message);
+    }
+  }
+
+  function closeTranslationDrawer(options?: { clearContent?: boolean }) {
+    setTranslationDrawerOpen(false);
+    if (options?.clearContent) {
+      setStreamingTranslationText("");
+      setTranslation(null);
+      setTranslationError("");
+    }
+  }
+
+  function closeFigurePanel() {
+    setFigurePanelOpen(false);
+  }
+
+  function closeLightbox() {
+    setLightbox(null);
+  }
+
   function rememberTouchedParagraph(
     setter: Dispatch<SetStateAction<number[]>>,
     paragraphId: number,
@@ -923,23 +947,22 @@ export default function PaperReaderScreen({
       if (normalizedKey === "escape") {
         if (lightbox) {
           event.preventDefault();
-          setLightbox(null);
+          closeLightbox();
           return;
         }
         if (figurePanelOpen) {
           event.preventDefault();
-          setFigurePanelOpen(false);
+          closeFigurePanel();
           return;
         }
         if (translationDrawerOpen) {
           event.preventDefault();
-          setTranslationDrawerOpen(false);
+          closeTranslationDrawer();
           return;
         }
         if (selection || pinnedQuote) {
           event.preventDefault();
-          clearSelectionState();
-          setNotice("已清空当前引用原文。");
+          clearQuoteContext("已清空当前引用原文。");
           return;
         }
       }
@@ -2148,7 +2171,7 @@ export default function PaperReaderScreen({
                       className="secondary"
                       type="button"
                       data-testid="reader-selection-context-clear"
-                      onClick={() => clearSelectionState()}
+                      onClick={() => clearQuoteContext()}
                     >
                       清空引用原文
                     </Button>
@@ -2271,7 +2294,7 @@ export default function PaperReaderScreen({
                             {projectEvidenceSaving ? "加入中..." : "把这段加入证据板"}
                           </Button>
                         ) : null}
-                        <Button className="secondary" type="button" onClick={() => clearSelectionState()}>
+                        <Button className="secondary" type="button" onClick={() => clearQuoteContext()}>
                           清空引用原文
                         </Button>
                       </div>
@@ -2459,21 +2482,21 @@ export default function PaperReaderScreen({
       ) : null}
 
       {translationDrawerOpen ? (
-        <div className="reader-bottom-drawer">
+        <div className="reader-bottom-drawer" data-testid="reader-translation-drawer">
           <div className="reader-bottom-drawer-header">
             <div>
               <strong>英译中辅助翻译</strong>
               <div className="subtle">翻译结果会保留英文原文，并尽量不打断当前阅读位置。</div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button
-                className="secondary"
-                type="button"
-                onClick={() => {
-                  setTranslationDrawerOpen(false);
-                  focusAnnotationComposer("翻译结果已保留，可继续写批注。");
-                }}
-              >
+                <Button
+                  className="secondary"
+                  type="button"
+                  onClick={() => {
+                    closeTranslationDrawer();
+                    focusAnnotationComposer("翻译结果已保留，可继续写批注。");
+                  }}
+                >
                 继续写批注
               </Button>
               {projectId ? (
@@ -2486,16 +2509,15 @@ export default function PaperReaderScreen({
                   {projectEvidenceSaving ? "加入中..." : "加入当前项目证据板"}
                 </Button>
               ) : null}
-              <Button
-                className="secondary"
-                type="button"
-                onClick={() => {
-                  setTranslationDrawerOpen(false);
-                  setStreamingTranslationText("");
-                  setTranslation(null);
-                }}
-              >
-                关闭
+                <Button
+                  className="secondary"
+                  type="button"
+                  data-testid="reader-translation-close"
+                  onClick={() => {
+                    closeTranslationDrawer({ clearContent: true });
+                  }}
+                >
+                  关闭
               </Button>
             </div>
           </div>
@@ -2523,8 +2545,8 @@ export default function PaperReaderScreen({
       ) : null}
 
       {figurePanelOpen ? (
-        <div className="reader-lightbox-overlay" onClick={() => setFigurePanelOpen(false)}>
-          <div className="reader-lightbox reader-figure-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="reader-lightbox-overlay" onClick={() => closeFigurePanel()}>
+          <div className="reader-lightbox reader-figure-panel" data-testid="reader-figure-panel" onClick={(event) => event.stopPropagation()}>
             <div className="paper-reader-header" style={{ alignItems: "center" }}>
               <div>
                 <h4 className="title" style={{ fontSize: 18, margin: 0 }}>
@@ -2534,7 +2556,7 @@ export default function PaperReaderScreen({
                   第 {effectivePageNo} 页 · 共 {currentPageFigures.length} 张图像
                 </p>
               </div>
-              <Button className="secondary" type="button" onClick={() => setFigurePanelOpen(false)}>
+              <Button className="secondary" type="button" onClick={() => closeFigurePanel()}>
                 关闭
               </Button>
             </div>
@@ -2552,8 +2574,8 @@ export default function PaperReaderScreen({
       ) : null}
 
       {lightbox ? (
-        <div className="reader-lightbox-overlay" onClick={() => setLightbox(null)}>
-          <div className="reader-lightbox" onClick={(event) => event.stopPropagation()}>
+        <div className="reader-lightbox-overlay" onClick={() => closeLightbox()}>
+          <div className="reader-lightbox" data-testid="reader-lightbox" onClick={(event) => event.stopPropagation()}>
             <div className="paper-reader-header" style={{ alignItems: "center" }}>
               <div>
                 <h4 className="title" style={{ fontSize: 18, margin: 0 }}>
@@ -2561,7 +2583,7 @@ export default function PaperReaderScreen({
                 </h4>
                 {lightbox.caption ? <p className="subtle" style={{ margin: "6px 0 0" }}>{lightbox.caption}</p> : null}
               </div>
-              <Button className="secondary" type="button" onClick={() => setLightbox(null)}>
+              <Button className="secondary" type="button" onClick={() => closeLightbox()}>
                 关闭
               </Button>
             </div>
