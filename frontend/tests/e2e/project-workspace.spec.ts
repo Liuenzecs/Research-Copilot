@@ -54,6 +54,12 @@ async function checkFirstCandidate(page: Page) {
   return results.first();
 }
 
+async function expectReaderShellFocused(page: Page) {
+  await expect.poll(async () =>
+    page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? ""),
+  ).toBe("reader-shell");
+}
+
 test("supports saved search, triage persistence, ai reasons, and citation add", async ({ page }) => {
   const suffix = Date.now();
   await createProject(page, `E2E search workbench ${suffix}: Which literature agents deserve deeper review?`);
@@ -375,6 +381,40 @@ test("pauses reader shortcuts while dropdown controls hold focus", async ({ page
   await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
 });
 
+test("uses escape to leave reader inputs and resume shortcuts", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
+  await page.getByTestId("reader-shell").focus();
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  await page.keyboard.press("/");
+  await expect(page.getByTestId("reader-locator-input")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expectReaderShellFocused(page);
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  const note = `E2E escape blur note ${Date.now()}`;
+  await page.locator('[data-testid^="reader-paragraph-"]').first().click();
+  const annotationField = page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。");
+  await annotationField.fill(note);
+  await expect(annotationField).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expectReaderShellFocused(page);
+  await expect(annotationField).toHaveValue(note);
+
+  await page.getByTestId("reader-preference-width").focus();
+  await page.keyboard.press("Escape");
+  await expectReaderShellFocused(page);
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+});
+
 test("keeps the page preview strip compact for long documents", async ({ page }) => {
   await openSeededPaperReader(page, "E2E Long Context Benchmark for Literature Agents");
 
@@ -527,6 +567,73 @@ test("supports escape-based overlay exits and quote cleanup", async ({ page }) =
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("reader-lightbox")).toHaveCount(0);
+});
+
+test("restores reader keyboard flow after closing overlays", async ({ page }) => {
+  await openSeededPaperReader(page, "E2E Retrieval Study for Evidence Synthesis");
+  await page.getByTestId("reader-shell").focus();
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  const selectSnippet = async () =>
+    firstParagraph.evaluate((element) => {
+      const target = element.querySelector("p, h3, pre") ?? element;
+      const textNode = target.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE || !textNode.textContent) {
+        return "";
+      }
+
+      const text = textNode.textContent.trim().slice(0, 24);
+      const range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, text.length);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      return text;
+    });
+
+  await selectSnippet();
+  await page.getByTestId("reader-selection-toolbar").getByRole("button", { name: "英译中" }).click();
+  await expect(page.getByTestId("reader-translation-drawer")).toBeVisible();
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-translation-drawer")).toHaveCount(0);
+  await expectReaderShellFocused(page);
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+
+  await page.getByRole("button", { name: /本页图像/ }).click();
+  await expect(page.getByTestId("reader-figure-panel")).toBeVisible();
+
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-page")).not.toHaveClass(/secondary/);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-figure-panel")).toHaveCount(0);
+  await expectReaderShellFocused(page);
+
+  await page.keyboard.press("t");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  await page.getByTestId("reader-figure-flow-open-1").click();
+  await expect(page.getByTestId("reader-lightbox")).toBeVisible();
+
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("reader-mode-text")).not.toHaveClass(/secondary/);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("reader-lightbox")).toHaveCount(0);
+  await expectReaderShellFocused(page);
+
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("reader-mode-workspace")).not.toHaveClass(/secondary/);
 });
 
 test("keeps search, reflections, reproduction, and memory scoped to the project context", async ({ page }) => {

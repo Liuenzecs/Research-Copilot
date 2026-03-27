@@ -793,21 +793,36 @@ export default function PaperReaderScreen({
     }
   }
 
-  function closeTranslationDrawer(options?: { clearContent?: boolean }) {
+  function restoreReaderShellFocusSoon() {
+    window.requestAnimationFrame(() => {
+      readerShellRef.current?.focus();
+    });
+  }
+
+  function closeTranslationDrawer(options?: { clearContent?: boolean; restoreFocus?: boolean }) {
     setTranslationDrawerOpen(false);
     if (options?.clearContent) {
       setStreamingTranslationText("");
       setTranslation(null);
       setTranslationError("");
     }
+    if (options?.restoreFocus !== false) {
+      restoreReaderShellFocusSoon();
+    }
   }
 
-  function closeFigurePanel() {
+  function closeFigurePanel(options?: { restoreFocus?: boolean }) {
     setFigurePanelOpen(false);
+    if (options?.restoreFocus !== false) {
+      restoreReaderShellFocusSoon();
+    }
   }
 
-  function closeLightbox() {
+  function closeLightbox(options?: { restoreFocus?: boolean }) {
     setLightbox(null);
+    if (options?.restoreFocus !== false) {
+      restoreReaderShellFocusSoon();
+    }
   }
 
   function rememberTouchedParagraph(
@@ -959,6 +974,24 @@ export default function PaperReaderScreen({
     reclaimReaderShellFocus();
   }
 
+  function exitReaderInputTarget(target: HTMLElement | null) {
+    if (!target) {
+      return false;
+    }
+    if (target === locatorInputRef.current) {
+      setLocatorError("");
+      target.blur();
+      restoreReaderShellFocusSoon();
+      return true;
+    }
+    if (target === annotationTextareaRef.current || target.tagName === "SELECT") {
+      target.blur();
+      restoreReaderShellFocusSoon();
+      return true;
+    }
+    return false;
+  }
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -967,6 +1000,11 @@ export default function PaperReaderScreen({
       if ((event.ctrlKey || event.metaKey) && normalizedKey === "enter" && target === annotationTextareaRef.current) {
         event.preventDefault();
         void handleCreateAnnotation();
+        return;
+      }
+
+      if (normalizedKey === "escape" && exitReaderInputTarget(target)) {
+        event.preventDefault();
         return;
       }
 
@@ -995,6 +1033,10 @@ export default function PaperReaderScreen({
           clearQuoteContext("已清空当前引用原文。");
           return;
         }
+      }
+
+      if (lightbox || figurePanelOpen || translationDrawerOpen) {
+        return;
       }
 
       if (normalizedKey === "arrowleft") {
@@ -2534,7 +2576,7 @@ export default function PaperReaderScreen({
                   className="secondary"
                   type="button"
                   onClick={() => {
-                    closeTranslationDrawer();
+                    closeTranslationDrawer({ restoreFocus: false });
                     focusAnnotationComposer("翻译结果已保留，可继续写批注。");
                   }}
                 >
