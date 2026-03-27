@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -340,7 +340,7 @@ function renderParagraph(
   const annotationPreview = annotationSummary ? (
     <div
       className="reader-text-block-annotation-preview"
-      data-testid={`reader-paragraph-annotation-preview-${paragraph.paragraph_id}`}
+      data-testid={`reader-annotation-preview-${paragraph.paragraph_id}`}
     >
       <div className="reader-text-block-annotation-preview-top">
         <span className="reader-text-block-annotation-label">最近批注</span>
@@ -680,6 +680,11 @@ export default function PaperReaderScreen({
   );
   const activeParagraph = activeParagraphId ? paragraphMap.get(activeParagraphId) ?? null : null;
   const currentPageIndex = pageIndexMap.get(effectivePageNo) ?? 0;
+  const overlayOpenRef = useRef({
+    figurePanelOpen: false,
+    translationDrawerOpen: false,
+    lightboxOpen: false,
+  });
   const pagePreviewStripItems = useMemo(
     () => buildPagePreviewStripItems(reader?.pages ?? [], effectivePageNo),
     [effectivePageNo, reader?.pages],
@@ -824,6 +829,9 @@ export default function PaperReaderScreen({
   }
 
   const activeParagraphStatusBadges = activeParagraph ? buildParagraphStatusBadges(activeParagraph) : [];
+  const activeParagraphAnnotationSummary = activeParagraph
+    ? currentPageAnnotationSummaryByParagraphId.get(activeParagraph.paragraph_id) ?? null
+    : null;
 
   useEffect(() => {
     if (!currentPageParagraphs.length) return;
@@ -873,6 +881,14 @@ export default function PaperReaderScreen({
     readerShellRef.current?.focus();
     keyboardFocusReadyRef.current = true;
   }, [reader?.pdf_downloaded]);
+
+  useLayoutEffect(() => {
+    overlayOpenRef.current = {
+      figurePanelOpen,
+      translationDrawerOpen,
+      lightboxOpen: Boolean(lightbox),
+    };
+  }, [figurePanelOpen, lightbox, translationDrawerOpen]);
 
   function updateReaderUrl(paragraphId?: number | null) {
     navigate(paperReaderPath(paperId, requestedSummaryId, paragraphId ?? undefined, projectId ?? undefined), {
@@ -1131,6 +1147,7 @@ export default function PaperReaderScreen({
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const normalizedKey = event.key.toLowerCase();
+      const overlayState = overlayOpenRef.current;
 
       if ((event.ctrlKey || event.metaKey) && normalizedKey === "enter" && target === annotationTextareaRef.current) {
         event.preventDefault();
@@ -1148,17 +1165,17 @@ export default function PaperReaderScreen({
       }
 
       if (normalizedKey === "escape") {
-        if (lightbox) {
+        if (overlayState.lightboxOpen) {
           event.preventDefault();
           closeLightbox();
           return;
         }
-        if (figurePanelOpen) {
+        if (overlayState.figurePanelOpen) {
           event.preventDefault();
           closeFigurePanel();
           return;
         }
-        if (translationDrawerOpen) {
+        if (overlayState.translationDrawerOpen) {
           event.preventDefault();
           closeTranslationDrawer();
           return;
@@ -1170,7 +1187,7 @@ export default function PaperReaderScreen({
         }
       }
 
-      if (lightbox || figurePanelOpen || translationDrawerOpen) {
+      if (overlayState.lightboxOpen || overlayState.figurePanelOpen || overlayState.translationDrawerOpen) {
         return;
       }
 
@@ -1886,6 +1903,17 @@ export default function PaperReaderScreen({
                 {pageModeAnchorHint ? (
                   <div className="subtle" style={{ marginTop: 6 }} data-testid="reader-page-anchor-hint">
                     {pageModeAnchorHint}
+                  </div>
+                ) : null}
+                {viewMode === "text" && activeParagraphAnnotationSummary ? (
+                  <div className="reader-focus-annotation-context" data-testid="reader-focus-annotation-context">
+                    <div className="reader-focus-annotation-context-top">
+                      <span className="reader-focus-annotation-context-label">当前段落批注</span>
+                      <span className="subtle">共 {activeParagraphAnnotationSummary.count} 条</span>
+                    </div>
+                    <p className="reader-focus-annotation-context-note">
+                      {compactTextPreview(activeParagraphAnnotationSummary.latestNote, 160)}
+                    </p>
                   </div>
                 ) : null}
                 <div className="reader-status-row" style={{ marginTop: 8 }}>

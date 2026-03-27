@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2N：批注回跳与顶部摘要继续去重收口
+
+阶段目标：
+
+- 让从批注工作台、批注快捷入口回到正文后，顶部摘要更明确地说明“当前是被哪条批注带回来的”。
+- 继续压低顶部摘要和正文段内批注摘录之间的信息重复，避免同一条内容在多个区域机械重复。
+- 保持批注回跳、最近动作、段内摘录和顶部摘要之间的层次稳定，不把摘要区重新做成第二个批注工作台。
+
+## 最近完成
+
 ### 2M：焦点摘要补充批注上下文
 
 阶段目标：
@@ -22,7 +32,27 @@
 - 让“当前正在看的这段已经记过什么”在焦点摘要里可一眼扫到，但不要把顶部摘要做成新的重型工作台。
 - 保持顶部摘要、正文段内批注反馈和右侧批注工作台的职责边界清晰，不重复堆叠同一批信息。
 
-## 最近完成
+已完成：
+
+- 在顶部焦点摘要中新增“当前段落批注”上下文卡片，当前焦点段落已有批注时会直接展示最近一条摘录和批注条数。
+- 焦点摘要内的批注上下文已和当前段落联动，切换到其他段落后会同步更新，不再停留在旧焦点的批注内容上。
+- 顺手修复了图集 / 浮层刚打开时键盘拦截偶发读取旧状态的 race，避免长回归串跑时快捷键穿透到底层阅读器。
+- 新增端到端回归，覆盖“焦点摘要跟随当前段落显示 / 清除批注上下文”的链路。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "keeps the selected quote when continuing into annotation flow|groups annotations into pending and resolved workbench sections|shows inline annotation feedback inside annotated paragraphs|keeps focus summary annotation context synced with the active paragraph|supports keyboard-first reader navigation and actions|keeps locator jumps synced with page state and focus summary|cycles locator matches and keeps match status in sync|highlights locator keywords inside matched paragraphs|keeps quick navigation and figure anchors synced with focus summary|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports desktop-style page navigation and zoom shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays"`：15 项通过
+
+下一阶段：
+
+- 进入 `2N：批注回跳与顶部摘要继续去重收口`
 
 ### 2L：批注段落可视化增强
 
@@ -214,12 +244,13 @@
 - `2J` 搜索命中顺序跳转与结果反馈
 - `2K` 搜索命中高亮与段内可视反馈
 - `2L` 批注段落可视化增强
+- `2M` 焦点摘要补充批注上下文
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2M`：把当前焦点段落的最近批注上下文带进顶部摘要区，降低键盘跳转后还要回正文重新找批注提示的摩擦。
+- [ ] 做 `2N`：让批注回跳后的顶部摘要更明确说明来源动作，并继续压低和正文段内摘录之间的信息重复。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

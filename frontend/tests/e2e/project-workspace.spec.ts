@@ -331,7 +331,28 @@ test("shows inline annotation feedback inside annotated paragraphs", async ({ pa
 
   await expect(firstParagraph).toHaveClass(/reader-text-block-annotated/);
   await expect(firstParagraph).toContainText(/批注 \d+ 条/);
-  await expect(firstParagraph.locator('[data-testid^="reader-paragraph-annotation-preview-"]')).toContainText(note);
+  await expect(firstParagraph.locator('[data-testid^="reader-annotation-preview-"]')).toContainText(note);
+});
+
+test("keeps focus summary annotation context synced with the active paragraph", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const note = `E2E focus note ${Date.now()}`;
+  const paragraphs = page.locator('[data-testid^="reader-paragraph-"]');
+  const firstParagraph = paragraphs.first();
+  await firstParagraph.click();
+  await page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。").fill(note);
+  await page.getByRole("button", { name: "保存当前段落批注" }).click();
+
+  await expect(page.getByTestId("reader-focus-annotation-context")).toContainText(note);
+
+  await paragraphs.nth(1).click();
+  await expect(page.getByTestId("reader-focus-summary")).toContainText("段落 #2");
+  await expect(page.getByTestId("reader-focus-summary")).not.toContainText(note);
 });
 
 test("supports keyboard-first reader navigation and actions", async ({ page }) => {

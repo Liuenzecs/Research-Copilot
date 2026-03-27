@@ -15,6 +15,37 @@
   flex-wrap: wrap;
 }
 
+.reader-focus-annotation-context {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 184, 166, 0.16);
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.9) 0%, rgba(248, 250, 252, 0.92) 100%);
+}
+
+.reader-focus-annotation-context-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.reader-focus-annotation-context-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f766e;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reader-focus-annotation-context-note {
+  margin: 8px 0 0;
+  color: #134e4a;
+  font-size: 14px;
+  line-height: 1.72;
+}
+
 .reader-status-row {
   display: flex;
   gap: 8px;
