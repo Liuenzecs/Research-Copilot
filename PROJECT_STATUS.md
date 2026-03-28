@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2Q：项目论文池里的阅读接续入口
+
+阶段目标：
+
+- 让用户在项目论文池主舞台里看到已经加入项目的论文时，也能直接判断“继续阅读 / 优先回看 / 先留在池里待处理”，而不是先跳去工作台概览或再次打开搜索台。
+- 把论文池卡片、项目主舞台和本地阅读会话重新接上，减少“先找到论文池卡片、再回忆是否读过、再切回其他区域确认”的摩擦。
+- 延续当前前端本地阅读会话方案，先做低风险的阅读接续可见性增强，不额外引入新的后端阅读同步模型。
+
+## 最近完成
+
 ### 2P：搜索工作台里的阅读接续入口
 
 阶段目标：
@@ -22,7 +32,29 @@
 - 把搜索候选、阅读会话和回看入口重新接上，减少“先搜到、再回忆、再重新定位”的链路断裂。
 - 优先复用现有本地阅读会话与待回看状态，不为这一轮额外引入新的后端阅读同步模型。
 
-## 最近完成
+已完成：
+
+- 搜索结果卡片现在会直接显示本地阅读接续状态；如果论文已经有阅读会话，会展示上次停留页码、阅读模式、保存时间，以及是否存在待回看段落。
+- 搜索结果行和右侧检查面板都新增了专门的“阅读接续”入口；当存在待回看段落时，入口会从“继续阅读”切换成“优先回看”，把动作语义前置到搜索阶段。
+- 右侧检查面板把阅读入口从 AI 理由区独立出来，改成单独的阅读接续卡片，避免“要不要继续读”被埋在推荐理由和引文链下面。
+- 顺手修复了 2P 回归里暴露出的两个真实问题：已保存搜索的测试标识前缀冲突，以及返回搜索台后缺失 `paperReaderPath` 导致的运行时报错。
+- 新增并修稳端到端回归，覆盖“搜索台展示阅读接续线索”和“已有保存搜索链路不被新入口打断”的组合路径。
+
+变更文件：
+
+- `frontend/src/components/projects/ProjectSearchWorkbench.tsx`
+- `frontend/src/components/projects/ProjectSearchWorkbenchLayout.tsx`
+- `frontend/src/styles/globals.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "supports saved search, triage persistence, ai reasons, and citation add|surfaces reader continuation cues inside the search workbench|persists revisit markers with the reader session|surfaces reader session state back in the project workspace"`：4 项通过
+
+下一阶段：
+
+- 进入 `2Q：项目论文池里的阅读接续入口`
 
 ### 2O：项目工作台里的阅读延续线索
 
@@ -307,12 +339,13 @@
 - `2M` 焦点摘要补充批注上下文
 - `2N` 批注回跳与顶部摘要继续去重收口
 - `2O` 项目工作台里的阅读延续线索
+- `2P` 搜索工作台里的阅读接续入口
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2P`：把本地阅读会话和待回看线索继续带进搜索工作台，让搜到已读论文时能直接判断“继续读 / 优先回看 / 先跳过”。
+- [ ] 做 `2Q`：把本地阅读会话和待回看线索继续带进项目论文池主舞台，让已加入项目的论文也能直接判断“继续读 / 优先回看 / 暂不处理”。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

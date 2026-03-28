@@ -21,7 +21,9 @@ import {
   updateProjectSavedSearch,
   updateProjectSavedSearchCandidate,
 } from "@/lib/api";
+import { loadPaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { queryKeys } from "@/lib/queryKeys";
+import { paperReaderPath } from "@/lib/routes";
 import type {
   PaperCitationTrail,
   PaperSearchFilters,
@@ -75,6 +77,11 @@ function normalizeFilters(filters?: Partial<PaperSearchFilters> | null): PaperSe
 }
 
 type LocalRecent = { query: string; filters: PaperSearchFilters; sort_mode: PaperSearchSortMode | string; updated_at: string };
+type SearchCandidateReaderState = {
+  paperId: number;
+  session: PaperReaderSession;
+  resumePath: string;
+};
 
 function readLocalRecent(): LocalRecent[] {
   if (typeof window === "undefined") return [];
@@ -156,6 +163,23 @@ export default function ProjectSearchWorkbench({
   const activeCandidate = useMemo(
     () => displayedItems.find((item) => item.paper.id === activePaperId) ?? displayedItems[0] ?? null,
     [activePaperId, displayedItems],
+  );
+  const readerStateByPaperId = useMemo(() => {
+    const next = new Map<number, SearchCandidateReaderState>();
+    for (const item of items) {
+      const session = loadPaperReaderSession(item.paper.id);
+      if (!session) continue;
+      next.set(item.paper.id, {
+        paperId: item.paper.id,
+        session,
+        resumePath: paperReaderPath(item.paper.id, undefined, session.paragraphId ?? undefined, projectId),
+      });
+    }
+    return next;
+  }, [items, projectId]);
+  const activeCandidateReaderState = useMemo(
+    () => (activeCandidate ? readerStateByPaperId.get(activeCandidate.paper.id) ?? null : null),
+    [activeCandidate, readerStateByPaperId],
   );
   const selectedCandidates = items.filter((item) => selectedPaperIds.includes(item.paper.id));
   const trailItems = trail ? [...trail.references, ...trail.cited_by] : [];
@@ -579,6 +603,8 @@ export default function ProjectSearchWorkbench({
       }}
       activeSavedSearch={activeSavedSearch}
       activeCandidate={activeCandidate}
+      readerStateByPaperId={readerStateByPaperId}
+      activeCandidateReaderState={activeCandidateReaderState}
       displayedItems={displayedItems}
       items={items}
       setActivePaperId={setActivePaperId}

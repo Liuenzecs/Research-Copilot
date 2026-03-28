@@ -5,6 +5,7 @@ import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import StatusStack from "@/components/common/StatusStack";
+import type { PaperReaderSession } from "@/lib/paperReaderSession";
 import { paperReaderPath } from "@/lib/routes";
 import type {
   PaperCitationTrail,
@@ -28,6 +29,11 @@ type LocalRecentItem = {
   filters: PaperSearchFilters;
   sort_mode: PaperSearchSortMode | string;
   updated_at: string;
+};
+type SearchCandidateReaderState = {
+  paperId: number;
+  session: PaperReaderSession;
+  resumePath: string;
 };
 
 function fmt(value?: string | null) {
@@ -62,6 +68,17 @@ function topicScoreLabel(score: number) {
   if (score >= 0.5) return "基础主题匹配";
   return "边缘命中，建议人工复核";
 }
+function readerModeLabel(mode: PaperReaderSession["viewMode"]) {
+  if (mode === "text") return "\u8f85\u52a9\u6587\u672c";
+  if (mode === "workspace") return "\u8bba\u6587\u5de5\u4f5c\u533a";
+  return "\u539f\u7248\u9875\u9762";
+}
+
+function readerResumeLabel(readerState: SearchCandidateReaderState | null) {
+  if (!readerState) return "\u6253\u5f00\u9605\u8bfb\u5668";
+  return readerState.session.revisitParagraphIds.length > 0 ? "\u4f18\u5148\u56de\u770b" : "\u7ee7\u7eed\u9605\u8bfb";
+}
+
 
 type Props = {
   hasProject: boolean;
@@ -85,6 +102,8 @@ type Props = {
   onLoadLocalRecent: (item: LocalRecentItem) => void;
   activeSavedSearch: ProjectSavedSearch | null;
   activeCandidate: SearchCandidate | null;
+  readerStateByPaperId: Map<number, SearchCandidateReaderState>;
+  activeCandidateReaderState: SearchCandidateReaderState | null;
   displayedItems: SearchCandidate[];
   items: SearchCandidate[];
   setActivePaperId: Dispatch<SetStateAction<number | null>>;
@@ -146,6 +165,8 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
     onLoadLocalRecent,
     activeSavedSearch,
     activeCandidate,
+    readerStateByPaperId,
+    activeCandidateReaderState,
     displayedItems,
     items,
     setActivePaperId,
@@ -387,7 +408,11 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                 ) : null}
                 <div className="project-saved-search-list">
                   {savedSearches.length === 0 ? <EmptyState title="还没有已保存搜索" hint="先跑一次项目搜索，再把值得复用的查询保存下来。" /> : savedSearches.map((item) => (
-                    <div key={item.id} className={`search-row-card${activeSavedSearch?.id === item.id ? " is-active" : ""}`.trim()}>
+                    <div
+                      key={item.id}
+                      className={`search-row-card${activeSavedSearch?.id === item.id ? " is-active" : ""}`.trim()}
+                      data-testid={`saved-search-card-${item.id}`}
+                    >
                       <div className="search-row-meta">
                         <strong>{item.title}</strong>
                         <span className="project-filter-chip is-static">{item.sort_mode}</span>
@@ -395,7 +420,7 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                       <div className="subtle">{item.query}</div>
                       <div className="subtle">{item.last_result_count} 条 · 更新于 {fmt(item.updated_at)}</div>
                       <div className="search-row-actions">
-                        <Button className="secondary" type="button" data-testid={`saved-search-${item.id}`} onClick={() => void onOpenSavedSearch(item.id)}>打开</Button>
+                        <Button className="secondary" type="button" data-testid={`saved-search-open-${item.id}`} onClick={() => void onOpenSavedSearch(item.id)}>打开</Button>
                         <Button className="secondary" type="button" onClick={() => void onRerunSavedSearch(item.id)} disabled={busy !== ""}>重跑</Button>
                       </div>
                     </div>
@@ -448,6 +473,7 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
             <div className="project-search-result-list">
               {displayedItems.length === 0 ? <EmptyState title="还没有候选结果" hint="先运行一次搜索，或打开一条已保存搜索。" /> : displayedItems.map((candidate) => {
                 const checked = selectedPaperIds.includes(candidate.paper.id);
+                const readerState = readerStateByPaperId.get(candidate.paper.id) ?? null;
                 return (
                   <article key={candidate.paper.id} className={`search-row-card${activeCandidate?.paper.id === candidate.paper.id ? " is-active" : ""}`.trim()} data-testid={`search-result-${candidate.paper.id}`}>
                     <div className="search-row-meta">
@@ -466,11 +492,53 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                     <div className="subtle">{candidate.paper.authors || "作者未知"} · {candidate.paper.year ?? "年份未知"} · 引用 {candidate.paper.citation_count ?? 0}</div>
                     <div className="subtle">{topicScoreLabel(candidate.reason.topic_match_score)} · 摘要 {candidate.summary_count} · 心得 {candidate.reflection_count} · 复现 {candidate.reproduction_count}</div>
                     <div className="project-chip-row">{chips(candidate).map((chip) => <span key={`${candidate.paper.id}-${chip}`} className="project-filter-chip is-static">{chip}</span>)}</div>
+                    {readerState ? (
+                      <div className="search-reader-state" data-testid={`search-reader-state-${candidate.paper.id}`}>
+                        <div className="search-reader-state-top">
+                          <strong>{"\u9605\u8bfb\u63a5\u7eed"}</strong>
+                          <span className="reader-chip">
+                            {readerState.session.revisitParagraphIds.length > 0
+                              ? `\u5f85\u56de\u770b ${readerState.session.revisitParagraphIds.length} \u6bb5`
+                              : "\u5df2\u4fdd\u5b58\u4f1a\u8bdd"}
+                          </span>
+                        </div>
+                        <div className="subtle">
+                          {`\u4e0a\u6b21\u505c\u5728\u7b2c ${readerState.session.pageNo ?? "?"} \u9875`} / {readerModeLabel(readerState.session.viewMode)}
+                          {readerState.session.paragraphId ? ` / \u6bb5\u843d ${readerState.session.paragraphId}` : ""}
+                        </div>
+                        <div className="subtle">{`\u4fdd\u5b58\u4e8e ${fmt(readerState.session.savedAt)}`}</div>
+                      </div>
+                    ) : null}
                     <div className="search-row-actions">
                       <div className="subtle">主题分 {candidate.reason.topic_match_score.toFixed(2)}</div>
                       <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
-                        <Button className="secondary" type="button" onClick={() => setActivePaperId(candidate.paper.id)}>查看详情</Button>
-                        {projectId ? <Button type="button" onClick={() => void onAddCandidatesToProject([candidate])} disabled={busy !== ""}>{candidate.is_in_project ? "已在项目中" : "加入项目"}</Button> : null}
+                        {readerState ? (
+                          <Link
+                            className="button secondary"
+                            data-testid={`search-open-reader-${candidate.paper.id}`}
+                            to={readerState.resumePath}
+                          >
+                            {readerResumeLabel(readerState)}
+                          </Link>
+                        ) : null}
+                        <Button
+                          className="secondary"
+                          data-testid={`search-view-detail-${candidate.paper.id}`}
+                          type="button"
+                          onClick={() => setActivePaperId(candidate.paper.id)}
+                        >
+                          查看详情
+                        </Button>
+                        {projectId ? (
+                          <Button
+                            data-testid={`search-add-project-${candidate.paper.id}`}
+                            type="button"
+                            onClick={() => void onAddCandidatesToProject([candidate])}
+                            disabled={busy !== ""}
+                          >
+                            {candidate.is_in_project ? "已在项目中" : "加入项目"}
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   </article>
@@ -498,6 +566,52 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                 <div className="subtle">{activeCandidate.paper.abstract_en || "当前没有摘要。"}</div>
               </div>
 
+              <div className="search-inspector-card" data-testid="search-inspector-reader-panel">
+                <strong>{"\u9605\u8bfb\u63a5\u7eed"}</strong>
+                {activeCandidateReaderState ? (
+                  <>
+                    <div className="search-reader-state">
+                      <div className="search-reader-state-top">
+                        <strong>{"\u5df2\u4fdd\u5b58\u672c\u5730\u9605\u8bfb\u4f1a\u8bdd"}</strong>
+                        <span className="reader-chip">
+                          {activeCandidateReaderState.session.revisitParagraphIds.length > 0
+                            ? `\u5f85\u56de\u770b ${activeCandidateReaderState.session.revisitParagraphIds.length} \u6bb5`
+                            : "\u53ef\u7ee7\u7eed\u4e0a\u6b21\u9605\u8bfb"}
+                        </span>
+                      </div>
+                      <div className="subtle">
+                        {`\u4e0a\u6b21\u505c\u5728\u7b2c ${activeCandidateReaderState.session.pageNo ?? "?"} \u9875`} / {readerModeLabel(activeCandidateReaderState.session.viewMode)}
+                        {activeCandidateReaderState.session.paragraphId ? ` / \u6bb5\u843d ${activeCandidateReaderState.session.paragraphId}` : ""}
+                      </div>
+                      <div className="subtle">{`\u4fdd\u5b58\u4e8e ${fmt(activeCandidateReaderState.session.savedAt)}`}</div>
+                    </div>
+                    <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                      <Link
+                        className="button secondary"
+                        data-testid="search-inspector-open-reader"
+                        to={activeCandidateReaderState.resumePath}
+                      >
+                        {readerResumeLabel(activeCandidateReaderState)}
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="subtle">{"\u8fd8\u6ca1\u6709\u672c\u5730\u9605\u8bfb\u4f1a\u8bdd\uff1b\u5982\u679c\u8fd9\u7bc7\u503c\u5f97\u6df1\u8bfb\uff0c\u53ef\u4ee5\u76f4\u63a5\u8fdb\u5165\u9605\u8bfb\u5668\u5f00\u59cb\u6807\u8bb0\u5f85\u56de\u770b\u4e0e\u6279\u6ce8\u3002"}</div>
+                    <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                      <Link
+                        className="button secondary"
+                        data-testid="search-inspector-open-reader"
+                        to={paperReaderPath(activeCandidate.paper.id, undefined, undefined, projectId)}
+                      >
+                        {"\u6253\u5f00\u9605\u8bfb\u5668"}
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </div>
+
+
               <div className="search-inspector-card">
                 <strong>为什么进入结果前排</strong>
                 <div className="subtle">{activeCandidate.reason.summary || "系统会展示规则解释。"}</div>
@@ -512,7 +626,6 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                 <div className="subtle">{activeCandidate.ai_reason_text || "默认先展示规则解释；需要时可按需生成 AI 推荐理由。"}</div>
                 <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
                   <Button className="secondary" data-testid="generate-ai-reason-button" type="button" onClick={() => void onGenerateAiReason(activeCandidate)} disabled={!projectId || !activeSavedSearch || !activeCandidate.candidate_id || busy !== ""}>{busy === `ai-${activeCandidate.paper.id}` ? "生成中..." : "生成 AI 推荐理由"}</Button>
-                  <Link className="button secondary" to={paperReaderPath(activeCandidate.paper.id, undefined, undefined, projectId)}>打开阅读器</Link>
                   <Button className="secondary" data-testid="load-citation-trail-button" type="button" onClick={() => void onLoadTrail(activeCandidate)} disabled={busy !== ""}>{busy === "trail" ? "加载中..." : "查看单跳引文链"}</Button>
                 </div>
               </div>

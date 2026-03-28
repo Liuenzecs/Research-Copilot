@@ -63,7 +63,7 @@ async function addFixturePapersToProject(page: Page, query: string) {
 async function saveCurrentSearch(page: Page, title: string) {
   await page.getByPlaceholder("保存搜索名称").fill(title);
   await page.getByTestId("save-search-button").click();
-  await expect(page.locator('[data-testid^="saved-search-"]')).toContainText(title);
+  await expect(page.locator('[data-testid^="saved-search-card-"]')).toContainText(title);
 }
 
 async function checkFirstCandidate(page: Page) {
@@ -109,9 +109,9 @@ test("supports saved search, triage persistence, ai reasons, and citation add", 
   await firstSearchResults(page);
 
   await saveCurrentSearch(page, "核心检索");
-  await checkFirstCandidate(page);
+  const firstResult = await checkFirstCandidate(page);
   await page.getByRole("button", { name: "标为待重点阅读" }).click();
-  await expect(page.locator(".project-candidate-card").first()).toContainText("待重点阅读");
+  await expect(firstResult).toContainText("待重点阅读");
 
   await page.getByTestId("generate-ai-reason-button").click();
   await expect(page.getByText("默认先展示规则解释；需要时可按需生成 AI 推荐理由。")).toHaveCount(0);
@@ -124,10 +124,50 @@ test("supports saved search, triage persistence, ai reasons, and citation add", 
   await expect(page.getByTestId("project-paper-pool")).toContainText("Reference Evidence Board Methods");
 
   await page.reload();
-  const savedSearches = page.locator('[data-testid^="saved-search-"]');
+  const savedSearches = page.locator('[data-testid^="saved-search-open-"]');
   await savedSearches.first().click();
-  await expect(page.locator(".project-candidate-card").first()).toContainText("待重点阅读");
+  const reloadedResults = await firstSearchResults(page);
+  await expect(reloadedResults.first()).toContainText("待重点阅读");
   await expect(page.getByText("默认先展示规则解释；需要时可按需生成 AI 推荐理由。")).toHaveCount(0);
+});
+
+test("surfaces reader continuation cues inside the search workbench", async ({ page }) => {
+  const suffix = Date.now();
+  await createProject(page, `E2E search continuation ${suffix}: Which papers should I resume reading first?`);
+
+  await page.getByTestId("project-search-input").fill("long context evidence synthesis");
+  await page.getByTestId("project-search-run").click();
+
+  const results = await firstSearchResults(page);
+  const firstResult = results.first();
+  const resultTestId = await firstResult.getAttribute("data-testid");
+  const paperId = Number(resultTestId?.match(/search-result-(\d+)/)?.[1] ?? 0);
+  expect(paperId).toBeGreaterThan(0);
+
+  await page.getByTestId(`search-add-project-${paperId}`).click();
+  await expect(firstResult).toContainText("已在项目中");
+  await page.getByTestId(`search-view-detail-${paperId}`).click();
+
+  await page.getByTestId("search-inspector-open-reader").click();
+  await expect(page).toHaveURL(new RegExp(`/papers/${paperId}\\?project_id=\\d+`));
+
+  await page.getByTestId("reader-mode-text").click();
+  const firstParagraph = page.locator('[data-testid^="reader-paragraph-"]').first();
+  await firstParagraph.click();
+  await page.getByTestId("reader-toggle-revisit").click();
+  await page.getByTestId("reader-return-project").click();
+  await page.waitForURL(/\/projects\/\d+$/);
+
+  await page.getByTestId("project-search-input").fill("long context evidence synthesis");
+  await page.getByTestId("project-search-run").click();
+  await firstSearchResults(page);
+
+  await expect(page.getByTestId(`search-reader-state-${paperId}`)).toContainText("待回看 1 段");
+  await expect(page.getByTestId(`search-open-reader-${paperId}`)).toContainText("优先回看");
+
+  await page.getByTestId(`search-view-detail-${paperId}`).click();
+  await expect(page.getByTestId("search-inspector-reader-panel")).toContainText("待回看 1 段");
+  await expect(page.getByTestId("search-inspector-open-reader")).toContainText("优先回看");
 });
 
 test("creates a project, runs actions, and persists autosaved outputs", async ({ page }) => {
