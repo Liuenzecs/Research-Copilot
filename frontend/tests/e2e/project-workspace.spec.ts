@@ -296,6 +296,56 @@ test("opens the recent project by default and keeps project navigation inside th
   await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
 });
 
+test("paginates the project paper pool and resets to the first page when scope changes", async ({ page }) => {
+  await page.route("**/projects/*/workspace", async (route) => {
+    const response = await route.fetch();
+    const workspace = await response.json();
+    const template = workspace.papers?.[0];
+
+    if (!template) {
+      await route.fulfill({ response, json: workspace });
+      return;
+    }
+
+    workspace.papers = Array.from({ length: 25 }, (_, index) => ({
+      ...JSON.parse(JSON.stringify(template)),
+      id: 9000 + index,
+      sort_order: index + 1,
+      read_at: null,
+      paper: {
+        ...JSON.parse(JSON.stringify(template.paper)),
+        id: 7000 + index,
+        title_en: `E2E Pagination Paper ${index + 1}`,
+      },
+    }));
+
+    workspace.smart_views = Array.isArray(workspace.smart_views)
+      ? workspace.smart_views.map((view: { key: string; count: number }) => (
+        view.key === "all_papers" ? { ...view, count: workspace.papers.length } : view
+      ))
+      : workspace.smart_views;
+
+    await route.fulfill({ response, json: workspace });
+  });
+
+  await openSeededProject(page);
+
+  const paperPool = page.getByTestId("project-paper-pool");
+  await expect(page.getByTestId("project-paper-pagination-top-summary")).toContainText("当前第 1 / 2 页");
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("第 1 / 2 页");
+  await expect(paperPool.locator(".project-paper-card")).toHaveCount(20);
+
+  await page.getByTestId("project-paper-pagination-top-next").click();
+  await expect(page.getByTestId("project-paper-pagination-top-summary")).toContainText("当前第 2 / 2 页");
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("第 2 / 2 页");
+  await expect(paperPool.locator(".project-paper-card")).toHaveCount(5);
+
+  await page.getByTestId("project-reading-focus-parked").click();
+  await expect(page.getByTestId("project-paper-pagination-top-summary")).toContainText("当前第 1 / 2 页");
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("第 1 / 2 页");
+  await expect(paperPool.locator(".project-paper-card")).toHaveCount(20);
+});
+
 test("persists revisit markers with the reader session", async ({ page }) => {
   await openSeededProject(page);
 

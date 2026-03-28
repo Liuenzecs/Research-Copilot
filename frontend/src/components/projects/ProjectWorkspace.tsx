@@ -149,6 +149,7 @@ const PROJECT_PAPER_READING_FOCUS_OPTIONS: Array<{
 
 const EVIDENCE_AUTOSAVE_DELAY = 1200;
 const OUTPUT_AUTOSAVE_DELAY = 1500;
+const PROJECT_PAPER_PAGE_SIZE = 20;
 const COMPARE_COLUMN_LABELS: Record<string, string> = {
   Paper: "论文",
   "Research Question": "研究问题",
@@ -416,6 +417,10 @@ function featuredTask(tasks: ResearchProjectTask[]) {
   return tasks.find((task) => task.status === "running") ?? tasks[0] ?? null;
 }
 
+function clampProjectPaperPage(page: number, totalPages: number) {
+  return Math.min(Math.max(page, 1), Math.max(totalPages, 1));
+}
+
 function smartViewMatches(
   key: string,
   paper: ResearchProjectWorkspace["papers"][number],
@@ -514,6 +519,77 @@ function SortableEvidenceCard({
   );
 }
 
+function ProjectPaperPoolPagination({
+  currentPage,
+  totalPages,
+  totalItems,
+  testId,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  testId: string;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalItems === 0) return null;
+
+  const start = (currentPage - 1) * PROJECT_PAPER_PAGE_SIZE + 1;
+  const end = Math.min(currentPage * PROJECT_PAPER_PAGE_SIZE, totalItems);
+
+  return (
+    <div
+      className="project-paper-reader-toolbar"
+      data-testid={testId}
+      style={{ marginBottom: 12, padding: "14px 16px" }}
+    >
+      <div className="project-paper-reader-toolbar-top">
+        <div>
+          <strong>论文池分页</strong>
+          <div className="subtle" data-testid={`${testId}-summary`}>
+            当前第 {currentPage} / {totalPages} 页，显示第 {start}-{end} 篇，共 {totalItems} 篇。
+          </div>
+        </div>
+        <span className="reader-chip">每页 {PROJECT_PAPER_PAGE_SIZE} 篇</span>
+      </div>
+      {totalPages > 1 ? (
+        <div className="projects-inline-actions">
+          <Button className="secondary" type="button" data-testid={`${testId}-first`} onClick={() => onPageChange(1)} disabled={currentPage === 1}>
+            第一页
+          </Button>
+          <Button
+            className="secondary"
+            type="button"
+            data-testid={`${testId}-prev`}
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+          >
+            上一页
+          </Button>
+          <Button
+            className="secondary"
+            type="button"
+            data-testid={`${testId}-next`}
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+          >
+            下一页
+          </Button>
+          <Button
+            className="secondary"
+            type="button"
+            data-testid={`${testId}-last`}
+            onClick={() => onPageChange(totalPages)}
+            disabled={currentPage === totalPages}
+          >
+            最后一页
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -561,6 +637,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [activeSmartView, setActiveSmartView] = useState("all_papers");
   const [activeReaderFocus, setActiveReaderFocus] = useState<ProjectPaperReadingFocus>("all");
   const [paperPoolScopeOrigin, setPaperPoolScopeOrigin] = useState<ProjectPaperScopeOrigin>("default");
+  const [paperPoolPage, setPaperPoolPage] = useState(1);
   const [paperBatchBusy, setPaperBatchBusy] = useState("");
   const [paperBatchReadAt, setPaperBatchReadAt] = useState("");
 
@@ -1383,37 +1460,30 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     );
     return evidenceItems.filter((item) => !insertedIds.has(item.id));
   }, [evidenceItems, reviewOutput]);
-
-  if (loading && !workspace) {
-    return <Loading text="正在加载项目工作台..." />;
-  }
-
-  if (!workspace) {
-    return <StatusStack items={error ? [{ variant: "error", message: error }] : []} />;
-  }
-
-  const totalPapers = workspace.papers.length;
-  const readCount = workspace.papers.filter((item) => Boolean(item.read_at)).length;
-  const summarizedCount = workspace.papers.filter((item) => item.summary_count > 0).length;
-  const evidenceReadyCount = workspace.papers.filter((item) => item.evidence_count > 0).length;
-  const reportableCount = workspace.papers.filter((item) => item.report_worthy_count > 0).length;
-  const activeReproductionCount = workspace.papers.filter(
+  const workspacePapers = workspace?.papers ?? [];
+  const workspaceSmartViews = workspace?.smart_views ?? [];
+  const totalPapers = workspacePapers.length;
+  const readCount = workspacePapers.filter((item) => Boolean(item.read_at)).length;
+  const summarizedCount = workspacePapers.filter((item) => item.summary_count > 0).length;
+  const evidenceReadyCount = workspacePapers.filter((item) => item.evidence_count > 0).length;
+  const reportableCount = workspacePapers.filter((item) => item.report_worthy_count > 0).length;
+  const activeReproductionCount = workspacePapers.filter(
     (item) =>
       item.reproduction_count > 0 ||
       ["planned", "in_progress", "blocked", "completed"].includes(item.latest_reproduction_status || ""),
   ).length;
   const pendingSummaryCount =
-    workspace.smart_views.find((item) => item.key === "pending_summary")?.count ?? Math.max(totalPapers - summarizedCount, 0);
+    workspaceSmartViews.find((item) => item.key === "pending_summary")?.count ?? Math.max(totalPapers - summarizedCount, 0);
   const pendingEvidenceCount =
-    workspace.smart_views.find((item) => item.key === "pending_evidence")?.count ?? Math.max(totalPapers - evidenceReadyCount, 0);
+    workspaceSmartViews.find((item) => item.key === "pending_evidence")?.count ?? Math.max(totalPapers - evidenceReadyCount, 0);
   const pendingWritingCount =
-    workspace.smart_views.find((item) => item.key === "pending_writing_citation")?.count ?? unusedEvidenceItems.length;
+    workspaceSmartViews.find((item) => item.key === "pending_writing_citation")?.count ?? unusedEvidenceItems.length;
   const missingPdfCount =
-    workspace.smart_views.find((item) => item.key === "missing_pdf")?.count ??
-    workspace.papers.filter((item) => ["missing", "landing_page_only", "error"].includes(item.pdf_status)).length;
+    workspaceSmartViews.find((item) => item.key === "missing_pdf")?.count ??
+    workspacePapers.filter((item) => ["missing", "landing_page_only", "error"].includes(item.pdf_status)).length;
   const riskyCount =
-    workspace.smart_views.find((item) => item.key === "risky")?.count ??
-    workspace.papers.filter((item) => ["warning", "error", "retracted"].includes(item.integrity_status)).length;
+    workspaceSmartViews.find((item) => item.key === "risky")?.count ??
+    workspacePapers.filter((item) => ["warning", "error", "retracted"].includes(item.integrity_status)).length;
   const readerStates = Array.from(readerStateByPaperId.values());
   const papersWithReaderSession = readerStates.length;
   const papersWithRevisit = readerStates.filter((item) => item.session.revisitParagraphIds.length > 0).length;
@@ -1432,7 +1502,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       return timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt);
     })
     .slice(0, 3);
-  const activeSmartViewLabel = workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文";
+  const activeSmartViewLabel = workspaceSmartViews.find((view) => view.key === activeSmartView)?.label || "全部论文";
   const activeReaderFocusMeta =
     PROJECT_PAPER_READING_FOCUS_OPTIONS.find((option) => option.key === activeReaderFocus) ?? PROJECT_PAPER_READING_FOCUS_OPTIONS[0];
   const isDefaultPaperPoolScope = activeSmartView === "all_papers" && activeReaderFocus === "all";
@@ -1565,6 +1635,53 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       },
     ].filter((section) => section.items.length > 0);
   })();
+  const totalPaperPoolPages = Math.max(Math.ceil(visibleProjectPapers.length / PROJECT_PAPER_PAGE_SIZE), 1);
+  const pagedProjectPaperSections = useMemo(() => {
+    const pageStart = (paperPoolPage - 1) * PROJECT_PAPER_PAGE_SIZE;
+    const pageEnd = pageStart + PROJECT_PAPER_PAGE_SIZE;
+    const pageEntries = groupedProjectPaperSections
+      .flatMap((section) =>
+        section.items.map((item) => ({
+          sectionKey: section.key,
+          sectionTitle: section.title,
+          sectionHint: section.hint,
+          item,
+        })),
+      )
+      .slice(pageStart, pageEnd);
+
+    const sections = new Map<ProjectPaperReadingSection["key"], ProjectPaperReadingSection>();
+    for (const entry of pageEntries) {
+      const current = sections.get(entry.sectionKey);
+      if (current) {
+        current.items.push(entry.item);
+        continue;
+      }
+      sections.set(entry.sectionKey, {
+        key: entry.sectionKey,
+        title: entry.sectionTitle,
+        hint: entry.sectionHint,
+        items: [entry.item],
+      });
+    }
+    return Array.from(sections.values());
+  }, [groupedProjectPaperSections, paperPoolPage]);
+
+  useEffect(() => {
+    setPaperPoolPage(1);
+  }, [projectId, activeSmartView, activeReaderFocus]);
+
+  useEffect(() => {
+    setPaperPoolPage((current) => clampProjectPaperPage(current, totalPaperPoolPages));
+  }, [totalPaperPoolPages]);
+
+  if (loading && !workspace) {
+    return <Loading text="正在加载项目工作台..." />;
+  }
+
+  if (!workspace) {
+    return <StatusStack items={error ? [{ variant: "error", message: error }] : []} />;
+  }
 
   function scrollToSection(ref: RefObject<HTMLElement | null>) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1583,6 +1700,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     setActiveSmartView(viewKey);
     setActiveReaderFocus(readerFocus);
     setPaperPoolScopeOrigin(viewKey === "all_papers" && readerFocus === "all" ? "default" : origin);
+    setPaperPoolPage(1);
     setSelectedPaperIds(projectPaperIdsForScope(viewKey, readerFocus));
     scrollToSection(paperPoolRef);
   }
@@ -1979,7 +2097,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   ))}
                 </div>
                 <div className="subtle" data-testid="project-reading-focus-summary">
-                  当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label} · {visibleProjectPapers.length} 篇
+                  当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label} · {visibleProjectPapers.length} 篇 · 第 {paperPoolPage} / {totalPaperPoolPages} 页
                 </div>
                 <div className="subtle">{activeReaderFocusMeta.hint}</div>
                 {!isDefaultPaperPoolScope ? (
@@ -2118,103 +2236,121 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     hint="切换阅读接续聚焦，或先进入阅读器建立会话后再回来。"
                   />
                 ) : (
-                  groupedProjectPaperSections.map((section) => (
-                    <div
-                      key={section.key}
-                      className="project-paper-list-section"
-                      data-testid={`project-paper-section-${section.key}`}
-                    >
-                      <div className="project-paper-list-section-head">
-                        <strong>{section.title}</strong>
-                        <span className="reader-chip">{section.items.length} 篇</span>
-                      </div>
-                      <div className="subtle">{section.hint}</div>
-                      <div className="project-paper-section-grid">
-                        {section.items.map((item) => {
-                          const checked = selectedPaperIds.includes(item.paper.id);
-                          const readerState = readerStateByPaperId.get(item.paper.id);
-                          const readerDecision = projectReaderDecision(readerState);
-                          const readerEntryPath = readerState?.resumePath ?? paperReaderPath(item.paper.id, undefined, undefined, projectId);
-                          return (
-                            <div key={item.id} className="project-paper-card">
-                              <div className="project-paper-card-top">
-                                <label className="project-paper-check">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(event) => {
-                                      setSelectedPaperIds((current) => {
-                                        if (event.target.checked) return Array.from(new Set([...current, item.paper.id]));
-                                        return current.filter((paperId) => paperId !== item.paper.id);
-                                      });
-                                    }}
-                                  />
-                                  <span>用于本次 AI 动作</span>
-                                </label>
-                                <span className="subtle">排序 {item.sort_order}</span>
-                              </div>
-                              <strong>{item.paper.title_en}</strong>
-                              <div className="subtle">
-                                {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
-                              </div>
-                              {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
-                              <div
-                                className={`project-paper-reader-panel tone-${readerDecision.tone}`.trim()}
-                                data-testid={`project-reader-state-${item.paper.id}`}
-                              >
-                                <div className="project-paper-reader-top">
-                                  <strong>阅读接续</strong>
-                                  <span className="reader-chip">{readerDecision.label}</span>
+                  <>
+                    <ProjectPaperPoolPagination
+                      currentPage={paperPoolPage}
+                      totalPages={totalPaperPoolPages}
+                      totalItems={visibleProjectPapers.length}
+                      testId="project-paper-pagination-top"
+                      onPageChange={(page) => setPaperPoolPage(clampProjectPaperPage(page, totalPaperPoolPages))}
+                    />
+                    {pagedProjectPaperSections.map((section) => (
+                      <div
+                        key={section.key}
+                        className="project-paper-list-section"
+                        data-testid={`project-paper-section-${section.key}`}
+                      >
+                        <div className="project-paper-list-section-head">
+                          <strong>{section.title}</strong>
+                          <span className="reader-chip">{section.items.length} 篇</span>
+                        </div>
+                        <div className="subtle">{section.hint}</div>
+                        <div className="project-paper-section-grid">
+                          {section.items.map((item) => {
+                            const checked = selectedPaperIds.includes(item.paper.id);
+                            const readerState = readerStateByPaperId.get(item.paper.id);
+                            const readerDecision = projectReaderDecision(readerState);
+                            const readerEntryPath = readerState?.resumePath ?? paperReaderPath(item.paper.id, undefined, undefined, projectId);
+                            return (
+                              <div key={item.id} className="project-paper-card">
+                                <div className="project-paper-card-top">
+                                  <label className="project-paper-check">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) => {
+                                        setSelectedPaperIds((current) => {
+                                          if (event.target.checked) return Array.from(new Set([...current, item.paper.id]));
+                                          return current.filter((paperId) => paperId !== item.paper.id);
+                                        });
+                                      }}
+                                    />
+                                    <span>用于本次 AI 动作</span>
+                                  </label>
+                                  <span className="subtle">排序 {item.sort_order}</span>
                                 </div>
-                                <div className="subtle">{readerDecision.summary}</div>
-                                {readerState ? (
-                                  <>
-                                    <div className="reader-chip-row">
-                                      <span className="reader-chip">阅读会话已保存</span>
-                                      {readerState.session.revisitParagraphIds.length > 0 ? (
-                                        <span
-                                          className="reader-chip"
-                                          style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#c2410c" }}
-                                        >
-                                          待回看 {readerState.session.revisitParagraphIds.length} 段
-                                        </span>
-                                      ) : null}
-                                      {readerState.session.pageNo ? <span className="reader-chip">停在第 {readerState.session.pageNo} 页</span> : null}
-                                    </div>
-                                    <div className="subtle">
-                                      上次阅读 {formatDateTime(readerState.session.savedAt)} · {readerModeLabel(readerState.session.viewMode)}
-                                      {readerState.session.paragraphId ? ` · 记住段落 ${readerState.session.paragraphId}` : ""}
-                                    </div>
-                                  </>
-                                ) : null}
+                                <strong>{item.paper.title_en}</strong>
+                                <div className="subtle">
+                                  {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
+                                </div>
+                                {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
+                                <div
+                                  className={`project-paper-reader-panel tone-${readerDecision.tone}`.trim()}
+                                  data-testid={`project-reader-state-${item.paper.id}`}
+                                >
+                                  <div className="project-paper-reader-top">
+                                    <strong>阅读接续</strong>
+                                    <span className="reader-chip">{readerDecision.label}</span>
+                                  </div>
+                                  <div className="subtle">{readerDecision.summary}</div>
+                                  {readerState ? (
+                                    <>
+                                      <div className="reader-chip-row">
+                                        <span className="reader-chip">阅读会话已保存</span>
+                                        {readerState.session.revisitParagraphIds.length > 0 ? (
+                                          <span
+                                            className="reader-chip"
+                                            style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#c2410c" }}
+                                          >
+                                            待回看 {readerState.session.revisitParagraphIds.length} 段
+                                          </span>
+                                        ) : null}
+                                        {readerState.session.pageNo ? <span className="reader-chip">停在第 {readerState.session.pageNo} 页</span> : null}
+                                      </div>
+                                      <div className="subtle">
+                                        上次阅读 {formatDateTime(readerState.session.savedAt)} · {readerModeLabel(readerState.session.viewMode)}
+                                        {readerState.session.paragraphId ? ` · 记住段落 ${readerState.session.paragraphId}` : ""}
+                                      </div>
+                                    </>
+                                  ) : null}
+                                </div>
+                                <div className="subtle">
+                                  PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
+                                </div>
+                                <div className="subtle">
+                                  复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
+                                </div>
+                                <div className="subtle">
+                                  可信度 {integrityStatusLabel(item.integrity_status)}
+                                  {item.integrity_note ? ` · ${item.integrity_note}` : ""}
+                                </div>
+                                <div className="projects-inline-actions">
+                                  <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={readerEntryPath}>
+                                    {readerDecision.actionLabel}
+                                  </Link>
+                                  <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
+                                    加入证据板
+                                  </Button>
+                                  <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: item.paper.id, projectId }))}>
+                                    进入复现工作区
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="subtle">
-                                PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
-                              </div>
-                              <div className="subtle">
-                                复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
-                              </div>
-                              <div className="subtle">
-                                可信度 {integrityStatusLabel(item.integrity_status)}
-                                {item.integrity_note ? ` · ${item.integrity_note}` : ""}
-                              </div>
-                              <div className="projects-inline-actions">
-                                <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={readerEntryPath}>
-                                  {readerDecision.actionLabel}
-                                </Link>
-                                <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
-                                  加入证据板
-                                </Button>
-                                <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: item.paper.id, projectId }))}>
-                                  进入复现工作区
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+                    {totalPaperPoolPages > 1 ? (
+                      <ProjectPaperPoolPagination
+                        currentPage={paperPoolPage}
+                        totalPages={totalPaperPoolPages}
+                        totalItems={visibleProjectPapers.length}
+                        testId="project-paper-pagination-bottom"
+                        onPageChange={(page) => setPaperPoolPage(clampProjectPaperPage(page, totalPaperPoolPages))}
+                      />
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
