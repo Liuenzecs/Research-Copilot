@@ -1,14 +1,16 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+const manageProjectsPath = "/projects?view=manage";
+
 async function createProject(page: Page, question: string) {
-  await page.goto("/projects");
+  await page.goto(manageProjectsPath);
   await page.getByTestId("project-question-input").fill(question);
   await page.getByTestId("create-project-button").click();
   await page.waitForURL(/\/projects\/\d+$/);
 }
 
 async function openSeededProject(page: Page) {
-  await page.goto("/projects");
+  await page.goto(manageProjectsPath);
   const seededProjectCard = page.locator(".project-list-card", { hasText: "E2E Context Project" });
   await seededProjectCard.getByRole("button", { name: /进入工作台/ }).click();
   await page.waitForURL(/\/projects\/\d+$/);
@@ -36,7 +38,7 @@ async function openSeededPaperReader(page: Page, title: string, options?: { stri
 }
 
 async function clearReaderLocalState(page: Page) {
-  await page.goto("/projects");
+  await page.goto(manageProjectsPath);
   await page.evaluate(() => window.localStorage.clear());
 }
 
@@ -271,6 +273,27 @@ test("keeps the selected quote when continuing into annotation flow", async ({ p
   await expect(page.getByText("将随批注保存的引用原文")).toBeVisible();
   await expect(page.getByTestId("reader-annotation-quote-text")).toContainText(selectedText);
   await expect(page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。")).toBeFocused();
+});
+
+test("opens the recent project by default and keeps project navigation inside the workspace", async ({ page }) => {
+  const suffix = Date.now();
+  const projectTitle = `E2E recent project ${suffix}: Default entry should reopen this workspace`;
+
+  await createProject(page, projectTitle);
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
+
+  await page.getByTestId("project-open-project-list").click();
+  await page.waitForURL(/\/projects\?view=manage$/);
+  await expect(page.locator(".project-list-card", { hasText: projectTitle })).toBeVisible();
+
+  await page.goto("/search");
+  await page.locator(".topbar-nav").getByRole("link", { name: "项目", exact: true }).click();
+  await page.waitForURL(/\/projects\/\d+$/);
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
+
+  await page.goto("/projects");
+  await page.waitForURL(/\/projects\/\d+$/);
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
 });
 
 test("persists revisit markers with the reader session", async ({ page }) => {

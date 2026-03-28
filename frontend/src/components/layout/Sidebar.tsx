@@ -3,14 +3,16 @@
 import { Link, useLocation } from 'react-router-dom';
 
 import { NAV_ITEMS } from '@/lib/constants';
+import { usePreferredProject } from '@/lib/usePreferredProject';
 
 export default function Sidebar() {
   const pathname = useLocation().pathname;
+  const preferredProject = usePreferredProject();
   const sidebarItems = NAV_ITEMS.map((item) => {
     const active = item.href === '/projects'
       ? pathname === '/' || pathname === '/dashboard' || pathname === '/projects' || pathname.startsWith('/projects/')
       : pathname === item.href || pathname.startsWith(`${item.href}/`);
-    return { ...item, active };
+    return { ...item, href: item.href === '/projects' ? (preferredProject.preferredProjectPath ?? item.href) : item.href, active };
   });
 
   return (

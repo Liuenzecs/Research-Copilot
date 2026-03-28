@@ -14,21 +14,21 @@
 
 ## 当前阶段
 
-### 3C：主舞台里的范围说明密度收口
+### 4B：加入项目后默认后台下载 PDF
 
 阶段目标：
 
-- 让主舞台里逐步补足的范围说明继续收口成更紧凑的阅读块，避免信息都补齐后反而显得过散。
-- 继续减少主舞台范围来源、排序、聚焦解释之间的视觉跳跃，让用户可以顺着一块说明区读完。
-- 优先复用现有信息，不引入新的后端同步字段或额外状态模型。
+- 用户把论文加入项目后，系统默认开始后台下载 PDF，尽量减少“加入了但还不能读”的断裂。
+- 在工作台、文库和阅读器入口里统一表达下载状态，避免用户反复试错后才发现 PDF 其实还没到位。
+- 第一轮优先复用现有入库与下载链路，不做高风险结构重构。
 
 ## 待确认方案
 
 ### 2026-03-29：导航、项目入口、下载与周报重构方案
 
-这部分先记录“拟定方案”，用于后续讨论与排期；暂不视为已实施。
+这部分用于记录本轮阅读体验主线里的实施方向；其中 A 已落地，B-F 仍作为后续阶段排期依据。
 
-#### A. 启动入口与“项目”导航改造
+#### A. 启动入口与“项目”导航改造（已实施）
 
 拟定目标：
 
@@ -175,6 +175,48 @@
 6. 周报工作区重构
 
 ## 最近完成
+
+### 4A：默认进入最近项目工作台并收口“项目”导航
+
+阶段目标：
+
+- 应用启动后，如果已有最近打开项目，默认直接进入该项目工作台，而不是先停在项目管理页。
+- 顶部导航栏与品牌入口里的“项目”都优先回到最近打开项目，避免在主流程里被打断到“创建项目”页。
+- 项目管理入口继续保留，但降为工作台里的弱化按钮，并在不改动既有路由语义的前提下完成收口。
+
+已完成：
+
+- 新增“最近打开项目”前端语义，`/projects` 现在会优先解析最近项目；若存在则直接跳转到 `/projects/:projectId`，否则仍展示项目首页。
+- 顶部品牌入口、顶部“项目”导航和侧边栏“项目”入口统一改为优先进入最近项目工作台，减少打开应用后与跨模块返回时的来回跳转。
+- 项目管理页改为显式入口 `/projects?view=manage`，项目工作台右上角新增弱化的“项目列表”按钮用于进入管理页。
+- 新增 `usePreferredProject` 与对应路由包装，尽量复用现有项目列表查询和后端 `last_opened_at` 排序，不新增额外后端字段。
+- 顺手把项目任务进度面板抽成独立组件，避免本轮导航收口继续把工作台主文件往更重的方向堆叠。
+- 调整前端 E2E 端口到 `3101`，避开本机 `3001` 被其他本地服务占用时对 Playwright 就绪探测的干扰。
+
+变更文件：
+
+- `frontend/src/lib/routes.ts`
+- `frontend/src/lib/usePreferredProject.ts`
+- `frontend/src/routes/projects/ProjectsEntryRoute.tsx`
+- `frontend/src/desktop/router.tsx`
+- `frontend/src/components/layout/Topbar.tsx`
+- `frontend/src/components/layout/Sidebar.tsx`
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/components/projects/ProjectTaskProgressPanel.tsx`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+- `frontend/playwright.config.ts`
+- `scripts/run_frontend_e2e.ps1`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "opens the recent project by default and keeps project navigation inside the workspace"`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "surfaces reader continuation cues inside the search workbench"`：通过
+- 补充说明：更宽的相关子集里，`supports saved search, triage persistence, ai reasons, and citation add` 仍有既存失败，表现为 AI 理由默认提示没有按旧断言消失；这与本批导航改造不直接相关，后续按阅读体验主线单独处理。
+
+下一阶段：
+
+- 进入 `4B：加入项目后默认后台下载 PDF`
 
 ### 3B：主舞台里的接续聚焦提示补足
 

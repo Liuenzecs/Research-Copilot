@@ -3,7 +3,7 @@ import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom';
 
 import RouteLoadingFallback from '@/desktop/RouteLoadingFallback';
 import Topbar from '@/components/layout/Topbar';
-const ProjectsHomeRoute = lazy(() => import('@/routes/projects/ProjectsHomeRoute'));
+const ProjectsEntryRoute = lazy(() => import('@/routes/projects/ProjectsEntryRoute'));
 const ProjectWorkspaceRoute = lazy(() => import('@/routes/projects/ProjectWorkspaceRoute'));
 const PaperReaderRoute = lazy(() => import('@/routes/papers/PaperReaderRoute'));
 const SearchRoute = lazy(() => import('@/routes/search/SearchRoute'));
@@ -44,7 +44,7 @@ export const desktopRouter = createBrowserRouter([
       },
       {
         path: 'projects',
-        element: lazyPage(<ProjectsHomeRoute />),
+        element: lazyPage(<ProjectsEntryRoute />),
       },
       {
         path: 'projects/:projectId',

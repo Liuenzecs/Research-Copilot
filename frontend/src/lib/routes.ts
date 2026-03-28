@@ -22,6 +22,10 @@ export function projectPath(projectId?: number | string | null): string {
   return projectId ? `/projects/${projectId}` : '/projects';
 }
 
+export function projectListPath(): string {
+  return '/projects?view=manage';
+}
+
 export function reflectionsPath(options?: {
   reflectionId?: number | string | null;
   paperId?: number | string | null;

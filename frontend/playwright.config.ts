@@ -13,7 +13,7 @@ export default defineConfig({
   reporter: 'list',
   outputDir: './test-results',
   use: {
-    baseURL: 'http://127.0.0.1:3001',
+    baseURL: 'http://127.0.0.1:3101',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -29,7 +29,7 @@ export default defineConfig({
     {
       command: 'powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File ..\\scripts\\run_frontend_e2e.ps1',
       cwd: frontendRoot,
-      url: 'http://127.0.0.1:3001/projects',
+      url: 'http://127.0.0.1:3101/',
       reuseExistingServer: false,
       timeout: 240_000,
     },

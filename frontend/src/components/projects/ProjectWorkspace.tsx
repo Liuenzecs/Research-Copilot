@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +24,7 @@ import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
 import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
+import ProjectTaskProgressPanel, { mergeProjectTaskStep } from "@/components/projects/ProjectTaskProgressPanel";
 import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench";
 import { loadPaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
@@ -51,7 +52,7 @@ import {
   updateProjectOutput,
 } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
-import { memoryPath, paperReaderPath, projectPath, reflectionsPath, reproductionPath, weeklyReportPath } from "@/lib/routes";
+import { memoryPath, paperReaderPath, projectListPath, projectPath, reflectionsPath, reproductionPath, weeklyReportPath } from "@/lib/routes";
 import { usePageTitle } from "@/lib/usePageTitle";
 import type {
   AutoSaveState,
@@ -377,19 +378,6 @@ function compareDraftStorageKey(projectId: number) {
 
 function reviewDraftStorageKey(projectId: number) {
   return `research-project:${projectId}:review-draft`;
-}
-
-function mergeTaskStep(task: ResearchProjectTaskDetail, step: ResearchProjectTaskProgressStep) {
-  const nextSteps = [...task.progress_steps];
-  const existingIndex = nextSteps.findIndex((item) => item.step_key === step.step_key);
-  if (existingIndex >= 0) nextSteps[existingIndex] = step;
-  else nextSteps.push(step);
-  nextSteps.sort((left, right) => {
-    const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
-    const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
-    return leftTime - rightTime;
-  });
-  return { ...task, progress_steps: nextSteps };
 }
 
 function taskFromRecent(task: ResearchProjectTask): ResearchProjectTaskDetail {
@@ -882,7 +870,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
   function handleTaskEvent(event: ResearchProjectTaskEvent) {
     if (event.type === "progress" && event.step) {
-      setActiveTask((current) => (current ? mergeTaskStep(current, event.step as ResearchProjectTaskProgressStep) : current));
+      const step = event.step;
+      setActiveTask((current) => (current ? mergeProjectTaskStep(current, step) : current));
       return;
     }
     if ((event.type === "task_started" || event.type === "task_completed" || event.type === "task_failed") && event.task) {
@@ -1765,6 +1754,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             <span className="reader-chip">论文 {workspace.papers.length}</span>
             <span className="reader-chip">证据 {evidenceItems.length}</span>
             <span className="reader-chip">成果 {workspace.outputs.length}</span>
+            <Link className="button secondary project-hero-manage-button" data-testid="project-open-project-list" to={projectListPath()}>
+              项目列表
+            </Link>
           </div>
         </div>
 
@@ -1809,9 +1801,6 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
               <Button className="secondary" type="button" onClick={() => setProjectEditorOpen((current) => !current)}>
                 {projectEditorOpen ? "收起编辑项目" : "编辑项目"}
-              </Button>
-              <Button className="secondary" type="button" onClick={() => navigate(projectPath())}>
-                返回项目列表
               </Button>
             </div>
           </div>
@@ -2774,24 +2763,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
             {!activeTaskForPanel ? (
               <EmptyState title="暂无项目任务" hint="触发提取证据、生成对比表或起草综述后，这里会出现进度快照。" />
             ) : (
-              <div className="project-progress-panel" data-testid="task-progress-panel">
-                <div className="project-progress-summary">
-                  <strong>{taskTypeLabel(activeTaskForPanel.task_type)}</strong>
-                  <span className="subtle">{taskStatusLabel(activeTaskForPanel.status)}</span>
-                  <span className="subtle">{formatDateTime(activeTaskForPanel.updated_at)}</span>
-                </div>
-                {activeTaskForPanel.progress_steps.map((step) => (
-                  <div key={`${activeTaskForPanel.id}-${step.step_key}`} className="project-progress-step">
-                    <div className="project-progress-step-head">
-                      <strong>{step.label}</strong>
-                      <span className={`project-step-status status-${step.status}`.trim()}>{taskStatusLabel(step.status)}</span>
-                    </div>
-                    <div className="subtle">{step.message}</div>
-                    {step.related_paper_ids.length > 0 ? <div className="subtle">相关论文：{step.related_paper_ids.join(", ")}</div> : null}
-                  </div>
-                ))}
-                {activeTaskForPanel.error_log ? <div className="subtle">错误：{activeTaskForPanel.error_log}</div> : null}
-              </div>
+              <ProjectTaskProgressPanel task={activeTaskForPanel} />
             )}
           </Card>
 

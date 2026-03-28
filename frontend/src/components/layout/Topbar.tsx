@@ -7,9 +7,10 @@ import Button from '@/components/common/Button';
 import HelpDrawer from '@/components/layout/HelpDrawer';
 import { APP_BRAND } from '@/lib/branding';
 import { NAV_ITEMS } from '@/lib/constants';
+import { usePreferredProject } from '@/lib/usePreferredProject';
 
 function isActivePath(href: string, pathname: string): boolean {
-  if (href === '/projects') {
+  if (href === '/projects' || href.startsWith('/projects/')) {
     return pathname === '/' || pathname === '/dashboard' || pathname === '/projects' || pathname.startsWith('/projects/');
   }
 
@@ -24,13 +25,15 @@ export default function Topbar() {
   const [helpOpen, setHelpOpen] = useState(false);
   const pathname = useLocation().pathname;
   const navigate = useNavigate();
+  const preferredProject = usePreferredProject();
 
   const searchActive = pathname === '/search';
+  const projectsHref = preferredProject.preferredProjectPath ?? '/projects';
 
   return (
     <>
       <header className="topbar">
-        <Link to="/projects" className="topbar-brand">
+        <Link to={projectsHref} className="topbar-brand">
           <span className="topbar-brand-mark">桌面研究工具</span>
           <div className="topbar-brand-copy">
             <strong className="topbar-brand-title">{APP_BRAND}</strong>
@@ -39,15 +42,18 @@ export default function Topbar() {
         </Link>
 
         <nav className="topbar-nav" aria-label="主导航">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={`topbar-link ${isActivePath(item.href, pathname) ? 'active' : ''}`.trim()}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const href = item.href === '/projects' ? projectsHref : item.href;
+            return (
+              <Link
+                key={item.href}
+                to={href}
+                className={`topbar-link ${isActivePath(item.href, pathname) ? 'active' : ''}`.trim()}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="topbar-actions">
