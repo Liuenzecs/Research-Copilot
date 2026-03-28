@@ -1465,6 +1465,16 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     .slice(0, 2);
   const visiblePendingReaderCount = Math.max(visibleProjectPapers.length - visibleReaderStates.length, 0);
   const visibleRevisitParagraphCount = visibleReaderStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
+  const stageEmptyScopeHint = (() => {
+    if (visibleProjectPapers.length > 0 || isDefaultPaperPoolScope) return null;
+    if (activeSmartView === "all_papers") {
+      return "当前组合范围暂时没有论文，可以直接清除接续聚焦，回到“全部论文 · 全部接续状态”。";
+    }
+    if (activeReaderFocus === "all") {
+      return `当前智能视图“${activeSmartViewLabel}”里暂时没有论文，可以直接回到全部论文。`;
+    }
+    return `当前组合范围暂时没有论文，可以直接回到全部论文，或保留“${activeSmartViewLabel}”清除接续聚焦。`;
+  })();
   const paperPoolScopeBanner = (() => {
     switch (effectivePaperPoolScopeOrigin) {
       case "reader_overview":
@@ -2400,8 +2410,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     当前范围另外还有 {visiblePendingReaderCount} 篇还没有本地阅读会话，可先留在论文池待处理，等需要深读时再进入阅读器。
                   </div>
                 ) : null}
-                {!visibleReaderStates.length && visiblePendingReaderCount === 0 ? (
-                  <div className="subtle">当前范围还没有论文可安排阅读接续。</div>
+                {stageEmptyScopeHint ? (
+                  <div className="subtle" data-testid="project-stage-empty-scope-hint">
+                    {stageEmptyScopeHint}
+                  </div>
+                ) : !visibleReaderStates.length && visiblePendingReaderCount === 0 ? (
+                  <div className="subtle" data-testid="project-stage-empty-scope-hint">
+                    当前范围还没有论文可安排阅读接续。
+                  </div>
                 ) : null}
               </div>
             </Card>
