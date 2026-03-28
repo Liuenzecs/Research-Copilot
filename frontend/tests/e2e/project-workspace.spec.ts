@@ -293,6 +293,13 @@ test("persists revisit markers with the reader session", async ({ page }) => {
 test("surfaces reader session state back in the project workspace", async ({ page }) => {
   await openSeededProject(page);
 
+  async function expectStageScope(origin: string, range: string, detail: string) {
+    await expect(page.getByTestId("project-stage-scope-origin-stat")).toContainText(origin);
+    await expect(page.getByTestId("project-stage-scope-origin")).toContainText(origin);
+    await expect(page.getByTestId("project-stage-scope-note")).toContainText(range);
+    await expect(page.getByTestId("project-stage-scope-detail")).toContainText(detail);
+  }
+
   await page.locator('[data-testid^="project-open-reader-"]').first().click();
   await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
 
@@ -332,6 +339,7 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-reading-focus-parked")).toContainText("只看先留在池里 1");
   await expect(page.getByTestId("project-paper-stage-reader-panel")).toContainText("阅读接续建议");
   await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围已保存会话 1 篇");
+  await expectStageScope("默认范围", "全部论文 · 全部接续状态", "当前在默认论文池范围");
   await expect(page.getByTestId(`project-stage-reader-candidate-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId(`project-stage-reader-link-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId("project-reader-overview")).toContainText("已保存会话 1 篇");
@@ -347,34 +355,41 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-paper-scope-banner")).toContainText("当前范围来自右侧阅读回流");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自状态中心");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("全部论文");
+  await expectStageScope("来自状态中心", "全部论文 · 只看先留在池里", "当前范围来自右侧阅读回流");
   await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
   await expect(page.getByTestId("project-paper-section-revisit")).toHaveCount(0);
   await page.getByTestId("project-paper-scope-reset").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
   await expect(page.getByTestId("project-paper-scope-banner")).toHaveCount(0);
+  await expectStageScope("默认范围", "全部论文 · 全部接续状态", "当前在默认论文池范围");
 
   await page.getByTestId("project-reader-overview-focus-revisit").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看优先回看");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自状态中心");
+  await expectStageScope("来自状态中心", "全部论文 · 只看优先回看", "当前范围来自右侧阅读回流");
   await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
   await expect(page.getByTestId("project-paper-section-parked")).toHaveCount(0);
 
   await page.getByTestId("project-reading-focus-revisit").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看优先回看");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自阅读接续聚焦");
+  await expectStageScope("来自阅读接续聚焦", "全部论文 · 只看优先回看", "当前范围来自阅读接续聚焦");
   await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
   await expect(page.getByTestId("project-paper-section-parked")).toHaveCount(0);
   await page.getByTestId("project-smart-view-pending_summary").click();
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自智能视图");
+  await expectStageScope("来自智能视图", "待摘要 · 只看优先回看", "当前范围来自智能视图切换");
   await expect(page.getByTestId("project-paper-scope-clear-smart-view")).toContainText("回到全部论文");
   await expect(page.getByTestId("project-paper-scope-clear-reader-focus")).toContainText("保留");
   await page.getByTestId("project-paper-scope-clear-smart-view").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部论文");
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看优先回看");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自阅读接续聚焦");
+  await expectStageScope("来自阅读接续聚焦", "全部论文 · 只看优先回看", "当前范围来自阅读接续聚焦");
   await page.getByTestId("project-paper-scope-clear-reader-focus").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
   await expect(page.getByTestId("project-paper-scope-banner")).toHaveCount(0);
+  await expectStageScope("默认范围", "全部论文 · 全部接续状态", "当前在默认论文池范围");
 
   await page.getByTestId("project-reading-focus-parked").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看先留在池里");

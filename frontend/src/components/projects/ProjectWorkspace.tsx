@@ -2257,6 +2257,12 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div className="subtle">{activeReaderFocusMeta.label}</div>
                 </div>
                 <div className="project-mini-stat">
+                  <strong>范围来源</strong>
+                  <div className="subtle" data-testid="project-stage-scope-origin-stat">
+                    {projectPaperScopeOriginLabel(effectivePaperPoolScopeOrigin)}
+                  </div>
+                </div>
+                <div className="project-mini-stat">
                   <strong>当前批量选中</strong>
                   <div className="subtle">{selectedPaperIds.length} 篇</div>
                 </div>
@@ -2292,7 +2298,19 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     当前范围已保存会话 {visibleReaderStates.length} 篇 · 优先回看 {visibleRevisitCandidates.length} 篇
                   </span>
                 </div>
-                <div className="subtle">当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label}</div>
+                <div className="project-paper-stage-scope-note" data-testid="project-stage-scope-note">
+                  <div className="project-paper-stage-scope-top">
+                    <span className="reader-chip" data-testid="project-stage-scope-origin">
+                      {projectPaperScopeOriginLabel(effectivePaperPoolScopeOrigin)}
+                    </span>
+                    <span className="reader-chip">
+                      {activeSmartViewLabel} · {activeReaderFocusMeta.label}
+                    </span>
+                  </div>
+                  <div className="subtle" data-testid="project-stage-scope-detail">
+                    {paperPoolScopeBanner.title} · {paperPoolScopeBanner.detail}
+                  </div>
+                </div>
                 {visibleRevisitCandidates.length > 0 ? (
                   <div className="project-reader-return-list">
                     <strong>优先回看候选</strong>
