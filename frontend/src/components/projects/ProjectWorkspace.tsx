@@ -2310,6 +2310,38 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div className="subtle" data-testid="project-stage-scope-detail">
                     {paperPoolScopeBanner.title} · {paperPoolScopeBanner.detail}
                   </div>
+                  {!isDefaultPaperPoolScope ? (
+                    <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                      {activeReaderFocus !== "all" ? (
+                        <Button
+                          className="secondary"
+                          type="button"
+                          data-testid="project-stage-scope-clear-reader-focus"
+                          onClick={() => clearReaderFocusScope()}
+                        >
+                          {activeSmartView === "all_papers" ? "清除接续聚焦" : `保留“${activeSmartViewLabel}”，清除接续聚焦`}
+                        </Button>
+                      ) : null}
+                      {activeSmartView !== "all_papers" ? (
+                        <Button
+                          className="secondary"
+                          type="button"
+                          data-testid="project-stage-scope-clear-smart-view"
+                          onClick={() => clearSmartViewScope()}
+                        >
+                          {activeReaderFocus === "all" ? "回到全部论文" : `回到全部论文，保留“${activeReaderFocusMeta.label}”`}
+                        </Button>
+                      ) : null}
+                      <Button
+                        className="secondary"
+                        type="button"
+                        data-testid="project-stage-scope-reset"
+                        onClick={() => resetPaperPoolScope()}
+                      >
+                        回到默认范围
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
                 {visibleRevisitCandidates.length > 0 ? (
                   <div className="project-reader-return-list">
