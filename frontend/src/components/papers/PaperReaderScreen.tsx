@@ -66,6 +66,7 @@ type FocusParagraphOptions = {
   switchToText?: boolean;
   recentActionMessage?: string;
   recentActionKind?: ReaderRecentAction["kind"];
+  recentActionAnnotationContext?: AnnotationNavigationContext | null;
 };
 
 type GoToPageOptions = {
@@ -74,6 +75,7 @@ type GoToPageOptions = {
   recentActionMessage?: string;
   recentActionKind?: ReaderRecentAction["kind"];
   recentActionParagraphId?: number | null;
+  recentActionAnnotationContext?: AnnotationNavigationContext | null;
 };
 
 type LightboxState = {
@@ -93,10 +95,16 @@ type ParagraphAnnotationSummary = {
   latestNote: string;
 };
 
+type AnnotationNavigationContext = {
+  sourceLabel: string;
+  noteText: string;
+};
+
 type ReaderRecentAction = {
   kind: "resume" | "translate" | "annotate" | "evidence" | "locate";
   message: string;
   paragraphId?: number | null;
+  annotationContext?: AnnotationNavigationContext | null;
 };
 
 type AnnotationWorkbenchItem = {
@@ -832,6 +840,13 @@ export default function PaperReaderScreen({
   const activeParagraphAnnotationSummary = activeParagraph
     ? currentPageAnnotationSummaryByParagraphId.get(activeParagraph.paragraph_id) ?? null
     : null;
+  const activeAnnotationNavigationContext =
+    viewMode === "text" &&
+    recentAction?.kind === "annotate" &&
+    recentAction.paragraphId === activeParagraphId &&
+    recentAction.annotationContext
+      ? recentAction.annotationContext
+      : null;
 
   useEffect(() => {
     if (!currentPageParagraphs.length) return;
@@ -1009,12 +1024,17 @@ export default function PaperReaderScreen({
 
   function recordRecentNavigationAction(
     message: string,
-    options?: { kind?: ReaderRecentAction["kind"]; paragraphId?: number | null },
+    options?: {
+      kind?: ReaderRecentAction["kind"];
+      paragraphId?: number | null;
+      annotationContext?: AnnotationNavigationContext | null;
+    },
   ) {
     setRecentAction({
       kind: options?.kind ?? "locate",
       message,
       paragraphId: options?.paragraphId ?? null,
+      annotationContext: options?.annotationContext ?? null,
     });
   }
 
@@ -1037,6 +1057,7 @@ export default function PaperReaderScreen({
       recordRecentNavigationAction(options.recentActionMessage, {
         kind: options.recentActionKind,
         paragraphId: options?.recentActionParagraphId ?? firstParagraph?.paragraph_id ?? null,
+        annotationContext: options?.recentActionAnnotationContext ?? null,
       });
     }
   }
@@ -1089,6 +1110,7 @@ export default function PaperReaderScreen({
       recordRecentNavigationAction(options.recentActionMessage, {
         kind: options.recentActionKind,
         paragraphId,
+        annotationContext: options?.recentActionAnnotationContext ?? null,
       });
     }
   }
@@ -1609,7 +1631,11 @@ export default function PaperReaderScreen({
       behavior: "auto",
       switchToText: true,
       recentActionKind: "annotate",
-      recentActionMessage: item.status === "pending" ? "已回到待处理批注对应段落。" : "已回到已沉淀批注对应段落。",
+      recentActionMessage: item.status === "pending" ? "已从待处理批注回到对应段落。" : "已从已沉淀批注回到对应段落。",
+      recentActionAnnotationContext: {
+        sourceLabel: item.status === "pending" ? "待处理批注" : "已沉淀批注",
+        noteText: item.annotation.note_text,
+      },
     });
     annotationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setNotice(
@@ -1905,7 +1931,17 @@ export default function PaperReaderScreen({
                     {pageModeAnchorHint}
                   </div>
                 ) : null}
-                {viewMode === "text" && activeParagraphAnnotationSummary ? (
+                {activeAnnotationNavigationContext ? (
+                  <div className="reader-focus-annotation-context is-returned" data-testid="reader-focus-annotation-context">
+                    <div className="reader-focus-annotation-context-top">
+                      <span className="reader-focus-annotation-context-label">当前由批注带回</span>
+                      <span className="subtle">{activeAnnotationNavigationContext.sourceLabel}</span>
+                    </div>
+                    <p className="reader-focus-annotation-context-note">
+                      {compactTextPreview(activeAnnotationNavigationContext.noteText, 160)}
+                    </p>
+                  </div>
+                ) : viewMode === "text" && activeParagraphAnnotationSummary ? (
                   <div className="reader-focus-annotation-context" data-testid="reader-focus-annotation-context">
                     <div className="reader-focus-annotation-context-top">
                       <span className="reader-focus-annotation-context-label">当前段落批注</span>
@@ -2163,7 +2199,11 @@ export default function PaperReaderScreen({
                         focusParagraph(annotation.paragraph_id, {
                           behavior: "auto",
                           recentActionKind: "annotate",
-                          recentActionMessage: "已从批注回跳到对应段落。",
+                          recentActionMessage: "已从最近批注快捷入口回到对应段落。",
+                          recentActionAnnotationContext: {
+                            sourceLabel: "最近批注快捷入口",
+                            noteText: annotation.note_text,
+                          },
                         })
                       }
                     >

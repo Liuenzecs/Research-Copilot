@@ -316,6 +316,29 @@ test("groups annotations into pending and resolved workbench sections", async ({
   await expect(page.getByTestId("reader-resolved-annotations")).toContainText(note);
 });
 
+test("shows which annotation brought the reader back into focus summary", async ({ page }) => {
+  await openSeededProject(page);
+
+  await page.locator('[data-testid^="project-open-reader-"]').first().click();
+  await page.waitForURL(/\/papers\/\d+\?project_id=\d+/);
+  await page.getByTestId("reader-mode-text").click();
+
+  const note = `E2E annotation return ${Date.now()}`;
+  await page.locator('[data-testid^="reader-paragraph-"]').first().click();
+  await page.getByPlaceholder("记录这一段对你的启发、疑问、复现提醒，或后续要查证的点。").fill(note);
+  await page.getByRole("button", { name: "保存当前段落批注" }).click();
+
+  const currentPageAnnotations = page.getByTestId("reader-current-page-annotations");
+  await expect(currentPageAnnotations).toContainText(note);
+  await currentPageAnnotations.getByRole("button").first().click();
+
+  const annotationContext = page.getByTestId("reader-focus-annotation-context");
+  await expect(annotationContext).toContainText("当前由批注带回");
+  await expect(annotationContext).toContainText(/待处理批注|已沉淀批注/);
+  await expect(annotationContext).toContainText(note);
+  await expect(page.getByTestId("reader-focus-summary")).not.toContainText("当前段落批注");
+});
+
 test("shows inline annotation feedback inside annotated paragraphs", async ({ page }) => {
   await openSeededProject(page);
 

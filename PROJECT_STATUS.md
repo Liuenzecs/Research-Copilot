@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2O：项目工作台里的阅读延续线索
+
+阶段目标：
+
+- 让用户从阅读器回到项目工作台后，能更快看到“刚刚读到哪、接下来该回哪篇论文”。
+- 把阅读延续线索和项目任务进度分层呈现，避免工作台再次把阅读上下文冲淡。
+- 优先利用现有本地阅读会话、批注和待回看状态，降低重新找回阅读入口的成本。
+
+## 最近完成
+
 ### 2N：批注回跳与顶部摘要继续去重收口
 
 阶段目标：
@@ -22,7 +32,27 @@
 - 继续压低顶部摘要和正文段内批注摘录之间的信息重复，避免同一条内容在多个区域机械重复。
 - 保持批注回跳、最近动作、段内摘录和顶部摘要之间的层次稳定，不把摘要区重新做成第二个批注工作台。
 
-## 最近完成
+已完成：
+
+- 为批注回跳补上来源型上下文：从批注工作台或最近批注快捷入口回到正文时，顶部摘要会直接显示“当前由批注带回”以及对应来源标签。
+- 将回跳来源携带的批注内容直接带入顶部摘要，使“回来的就是哪条批注”变成显式反馈，而不再只是笼统的最近动作提示。
+- 在存在明确批注回跳来源时，顶部摘要不再重复展示泛化的“当前段落批注”卡片，进一步压低和正文段内摘录之间的信息重复。
+- 新增端到端回归，覆盖“从批注工作台回到正文后，顶部摘要显示回跳来源与对应批注内容”的链路。
+
+变更文件：
+
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/styles/paper-reader-enhancements.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "keeps the selected quote when continuing into annotation flow|groups annotations into pending and resolved workbench sections|shows which annotation brought the reader back into focus summary|shows inline annotation feedback inside annotated paragraphs|keeps focus summary annotation context synced with the active paragraph|supports keyboard-first reader navigation and actions|keeps locator jumps synced with page state and focus summary|cycles locator matches and keeps match status in sync|highlights locator keywords inside matched paragraphs|keeps quick navigation and figure anchors synced with focus summary|supports a figure-first reading flow|pauses reader shortcuts while dropdown controls hold focus|uses escape to leave reader inputs and resume shortcuts|supports desktop-style page navigation and zoom shortcuts|supports escape-based overlay exits and quote cleanup|restores reader keyboard flow after closing overlays"`：16 项通过
+
+下一阶段：
+
+- 进入 `2O：项目工作台里的阅读延续线索`
 
 ### 2M：焦点摘要补充批注上下文
 
@@ -245,12 +275,13 @@
 - `2K` 搜索命中高亮与段内可视反馈
 - `2L` 批注段落可视化增强
 - `2M` 焦点摘要补充批注上下文
+- `2N` 批注回跳与顶部摘要继续去重收口
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2N`：让批注回跳后的顶部摘要更明确说明来源动作，并继续压低和正文段内摘录之间的信息重复。
+- [ ] 做 `2O`：把阅读会话、待回看和批注线索更明确地回流到项目工作台，减少“回到工作台后又找不到该读哪篇”的摩擦。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 
