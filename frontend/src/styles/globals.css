@@ -1110,6 +1110,30 @@ textarea {
   color: inherit;
 }
 
+.project-reader-return-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(191, 208, 215, 0.6);
+}
+
+.project-reader-return-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(191, 208, 215, 0.68);
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-reader-return-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .project-list-card {
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }

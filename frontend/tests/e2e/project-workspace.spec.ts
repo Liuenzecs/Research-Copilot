@@ -274,6 +274,8 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId(`project-open-reader-${paperId}`)).toContainText("继续阅读");
   await expect(page.getByTestId("project-reader-overview")).toContainText("已保存会话 1 篇");
   await expect(page.getByTestId("project-reader-overview")).toContainText("待回看 1 篇 / 1 段");
+  await expect(page.getByTestId(`project-reader-candidate-${paperId}`)).toContainText("待回看 1 段");
+  await expect(page.getByTestId(`project-reader-candidate-link-${paperId}`)).toContainText("优先回看");
 });
 
 test("shows a page-level reading overview in text mode", async ({ page }) => {

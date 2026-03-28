@@ -14,6 +14,16 @@
 
 ## 当前阶段
 
+### 2P：搜索工作台里的阅读接续入口
+
+阶段目标：
+
+- 让用户在项目搜索工作台里重新看到已读过或已经留过待回看标记的论文时，不需要先点进详情再判断“要不要继续读”。
+- 把搜索候选、阅读会话和回看入口重新接上，减少“先搜到、再回忆、再重新定位”的链路断裂。
+- 优先复用现有本地阅读会话与待回看状态，不为这一轮额外引入新的后端阅读同步模型。
+
+## 最近完成
+
 ### 2O：项目工作台里的阅读延续线索
 
 阶段目标：
@@ -22,7 +32,27 @@
 - 把阅读延续线索和项目任务进度分层呈现，避免工作台再次把阅读上下文冲淡。
 - 优先利用现有本地阅读会话、批注和待回看状态，降低重新找回阅读入口的成本。
 
-## 最近完成
+已完成：
+
+- 在项目工作台的“阅读回流”卡片里新增“优先回看候选”，会从已有本地阅读会话中挑出待回看段落最多、且最近保存过的论文，优先给出回看入口。
+- 每个候选会直接展示论文标题、待回看段落数、上次停留页码、阅读模式和段落锚点，减少回到工作台后还要重新判断“应该先回哪篇”的摩擦。
+- 顺手修复了工作台里新增回看候选后引入的 hooks 顺序问题，避免项目页首次渲染时因 `Rendered more hooks than during the previous render` 直接报错。
+- 新增端到端回归，覆盖“项目工作台会把待回看阅读会话作为优先回看候选显示出来”的链路。
+
+变更文件：
+
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/styles/globals.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode"`：4 项通过
+
+下一阶段：
+
+- 进入 `2P：搜索工作台里的阅读接续入口`
 
 ### 2N：批注回跳与顶部摘要继续去重收口
 
@@ -276,12 +306,13 @@
 - `2L` 批注段落可视化增强
 - `2M` 焦点摘要补充批注上下文
 - `2N` 批注回跳与顶部摘要继续去重收口
+- `2O` 项目工作台里的阅读延续线索
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2O`：把阅读会话、待回看和批注线索更明确地回流到项目工作台，减少“回到工作台后又找不到该读哪篇”的摩擦。
+- [ ] 做 `2P`：把本地阅读会话和待回看线索继续带进搜索工作台，让搜到已读论文时能直接判断“继续读 / 优先回看 / 先跳过”。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 

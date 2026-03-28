@@ -1320,6 +1320,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     if (!latest) return current;
     return timestampValue(current.session.savedAt) > timestampValue(latest.session.savedAt) ? current : latest;
   }, null);
+  const readerRevisitCandidates = [...readerStates]
+    .filter((item) => item.session.revisitParagraphIds.length > 0)
+    .sort((left, right) => {
+      const revisitGap = right.session.revisitParagraphIds.length - left.session.revisitParagraphIds.length;
+      if (revisitGap !== 0) return revisitGap;
+      return timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt);
+    })
+    .slice(0, 3);
 
   function scrollToSection(ref: RefObject<HTMLElement | null>) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2150,6 +2158,34 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     <Link className="button secondary" data-testid="project-continue-latest-reading" to={latestReaderState.resumePath}>
                       继续最近阅读
                     </Link>
+                    {readerRevisitCandidates.length > 0 ? (
+                      <div className="project-reader-return-list" data-testid="project-reader-return-list">
+                        <strong>优先回看候选</strong>
+                        {readerRevisitCandidates.map((state) => (
+                          <div
+                            key={state.paperId}
+                            className="project-reader-return-item"
+                            data-testid={`project-reader-candidate-${state.paperId}`}
+                          >
+                            <div className="project-reader-return-top">
+                              <strong>{state.paperTitle}</strong>
+                              <span className="reader-chip">待回看 {state.session.revisitParagraphIds.length} 段</span>
+                            </div>
+                            <div className="subtle">
+                              上次停在第 {state.session.pageNo ?? "?"} 页 · {readerModeLabel(state.session.viewMode)}
+                              {state.session.paragraphId ? ` · 段落 ${state.session.paragraphId}` : ""}
+                            </div>
+                            <Link
+                              className="button secondary"
+                              data-testid={`project-reader-candidate-link-${state.paperId}`}
+                              to={state.resumePath}
+                            >
+                              优先回看
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className="subtle">还没有本地阅读会话；从论文池进入阅读器后，这里会自动出现继续阅读线索。</div>
