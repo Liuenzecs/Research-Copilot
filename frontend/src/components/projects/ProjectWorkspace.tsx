@@ -102,6 +102,7 @@ type ProjectPaperReadingSection = {
 };
 
 type ProjectPaperReadingFocus = "all" | ProjectPaperReadingSection["key"];
+type ProjectPaperScopeOrigin = "default" | "smart_view" | "reader_focus" | "reader_overview";
 
 type SearchScopeFilter = "all" | "not_in_project" | "in_project";
 type DownloadFilter = "all" | "downloaded" | "not_downloaded";
@@ -409,6 +410,20 @@ function projectReaderOrderHint(focus: ProjectPaperReadingFocus) {
   }
 }
 
+function projectPaperScopeOriginLabel(origin: ProjectPaperScopeOrigin) {
+  switch (origin) {
+    case "smart_view":
+      return "来自智能视图";
+    case "reader_focus":
+      return "来自阅读接续聚焦";
+    case "reader_overview":
+      return "来自状态中心";
+    case "default":
+    default:
+      return "默认范围";
+  }
+}
+
 function featuredTask(tasks: ResearchProjectTask[]) {
   return tasks.find((task) => task.status === "running") ?? tasks[0] ?? null;
 }
@@ -557,6 +572,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [taskConnectionNotice, setTaskConnectionNotice] = useState("");
   const [activeSmartView, setActiveSmartView] = useState("all_papers");
   const [activeReaderFocus, setActiveReaderFocus] = useState<ProjectPaperReadingFocus>("all");
+  const [paperPoolScopeOrigin, setPaperPoolScopeOrigin] = useState<ProjectPaperScopeOrigin>("default");
   const [paperBatchBusy, setPaperBatchBusy] = useState("");
   const [paperBatchReadAt, setPaperBatchReadAt] = useState("");
 
@@ -1414,6 +1430,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const activeSmartViewLabel = workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文";
   const activeReaderFocusMeta =
     PROJECT_PAPER_READING_FOCUS_OPTIONS.find((option) => option.key === activeReaderFocus) ?? PROJECT_PAPER_READING_FOCUS_OPTIONS[0];
+  const isDefaultPaperPoolScope = activeSmartView === "all_papers" && activeReaderFocus === "all";
+  const effectivePaperPoolScopeOrigin = isDefaultPaperPoolScope ? "default" : paperPoolScopeOrigin;
   const readerFocusCounts: Record<ProjectPaperReadingFocus, number> = {
     all: filteredProjectPapers.length,
     revisit: 0,
@@ -1447,6 +1465,37 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     .slice(0, 2);
   const visiblePendingReaderCount = Math.max(visibleProjectPapers.length - visibleReaderStates.length, 0);
   const visibleRevisitParagraphCount = visibleReaderStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
+  const paperPoolScopeBanner = (() => {
+    switch (effectivePaperPoolScopeOrigin) {
+      case "reader_overview":
+        return {
+          title: "当前范围来自右侧阅读回流",
+          detail: `你刚刚从状态中心回到论文池，系统已经切到“${activeSmartViewLabel} · ${activeReaderFocusMeta.label}”，方便直接处理这一组论文。`,
+        };
+      case "reader_focus":
+        return {
+          title: "当前范围来自阅读接续聚焦",
+          detail:
+            activeSmartView === "all_papers"
+              ? `你刚刚把论文池聚焦到“${activeReaderFocusMeta.label}”，当前共 ${visibleProjectPapers.length} 篇。`
+              : `你刚刚在“${activeSmartViewLabel}”里聚焦到“${activeReaderFocusMeta.label}”，当前共 ${visibleProjectPapers.length} 篇。`,
+        };
+      case "smart_view":
+        return {
+          title: "当前范围来自智能视图切换",
+          detail:
+            activeReaderFocus === "all"
+              ? `你刚刚切到了“${activeSmartViewLabel}”，现在只看这个智能视图里的论文。`
+              : `你刚刚切到了“${activeSmartViewLabel}”，并保留“${activeReaderFocusMeta.label}”，当前共 ${visibleProjectPapers.length} 篇。`,
+        };
+      case "default":
+      default:
+        return {
+          title: "当前在默认论文池范围",
+          detail: "这里显示全部论文和全部阅读接续状态，可以从这里重新开始聚焦。",
+        };
+    }
+  })();
   const groupedProjectPaperSections: ProjectPaperReadingSection[] = (() => {
     const revisit: ResearchProjectWorkspace["papers"][number][] = [];
     const continueReading: ResearchProjectWorkspace["papers"][number][] = [];
@@ -1513,11 +1562,12 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       .map((item) => item.paper.id);
   }
 
-  function activatePaperPoolScope(viewKey: string, readerFocus: ProjectPaperReadingFocus) {
+  function activatePaperPoolScope(viewKey: string, readerFocus: ProjectPaperReadingFocus, origin: ProjectPaperScopeOrigin) {
     if (!workspace) return;
     setActiveStage("papers");
     setActiveSmartView(viewKey);
     setActiveReaderFocus(readerFocus);
+    setPaperPoolScopeOrigin(viewKey === "all_papers" && readerFocus === "all" ? "default" : origin);
     setSelectedPaperIds(projectPaperIdsForScope(viewKey, readerFocus));
     scrollToSection(paperPoolRef);
   }
@@ -1532,15 +1582,19 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }
 
   function activateSmartView(viewKey: string) {
-    activatePaperPoolScope(viewKey, activeReaderFocus);
+    activatePaperPoolScope(viewKey, activeReaderFocus, "smart_view");
   }
 
   function activateReaderFocus(focus: ProjectPaperReadingFocus) {
-    activatePaperPoolScope(activeSmartView, focus);
+    activatePaperPoolScope(activeSmartView, focus, "reader_focus");
   }
 
   function focusReaderOverviewScope(focus: ProjectPaperReadingFocus) {
-    activatePaperPoolScope("all_papers", focus);
+    activatePaperPoolScope("all_papers", focus, "reader_overview");
+  }
+
+  function resetPaperPoolScope() {
+    activatePaperPoolScope("all_papers", "all", "default");
   }
 
   function launchSummariesAction() {
@@ -1904,6 +1958,31 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label} · {visibleProjectPapers.length} 篇
                 </div>
                 <div className="subtle">{activeReaderFocusMeta.hint}</div>
+                {!isDefaultPaperPoolScope ? (
+                  <div className="project-paper-scope-banner" data-testid="project-paper-scope-banner">
+                    <div className="project-paper-scope-banner-top">
+                      <div>
+                        <strong>{paperPoolScopeBanner.title}</strong>
+                        <div className="subtle" data-testid="project-paper-scope-origin">
+                          {projectPaperScopeOriginLabel(effectivePaperPoolScopeOrigin)} · {paperPoolScopeBanner.detail}
+                        </div>
+                      </div>
+                      <span className="reader-chip">
+                        {activeSmartViewLabel} · {activeReaderFocusMeta.label}
+                      </span>
+                    </div>
+                    <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                      <Button
+                        className="secondary"
+                        type="button"
+                        data-testid="project-paper-scope-reset"
+                        onClick={() => resetPaperPoolScope()}
+                      >
+                        回到默认范围
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="projects-inline-actions" style={{ marginBottom: 12 }}>

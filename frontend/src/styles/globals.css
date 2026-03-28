@@ -1190,6 +1190,23 @@ textarea {
   flex-wrap: wrap;
 }
 
+.project-paper-scope-banner {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-paper-scope-banner-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .project-paper-list-section {
   display: grid;
   gap: 12px;
