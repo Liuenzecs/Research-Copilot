@@ -364,6 +364,17 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自阅读接续聚焦");
   await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
   await expect(page.getByTestId("project-paper-section-parked")).toHaveCount(0);
+  await page.getByTestId("project-smart-view-pending_summary").click();
+  await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自智能视图");
+  await expect(page.getByTestId("project-paper-scope-clear-smart-view")).toContainText("回到全部论文");
+  await expect(page.getByTestId("project-paper-scope-clear-reader-focus")).toContainText("保留");
+  await page.getByTestId("project-paper-scope-clear-smart-view").click();
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部论文");
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看优先回看");
+  await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自阅读接续聚焦");
+  await page.getByTestId("project-paper-scope-clear-reader-focus").click();
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
+  await expect(page.getByTestId("project-paper-scope-banner")).toHaveCount(0);
 
   await page.getByTestId("project-reading-focus-parked").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看先留在池里");

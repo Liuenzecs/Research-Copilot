@@ -1593,6 +1593,14 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     activatePaperPoolScope("all_papers", focus, "reader_overview");
   }
 
+  function clearReaderFocusScope() {
+    activatePaperPoolScope(activeSmartView, "all", activeSmartView === "all_papers" ? "default" : "smart_view");
+  }
+
+  function clearSmartViewScope() {
+    activatePaperPoolScope("all_papers", activeReaderFocus, activeReaderFocus === "all" ? "default" : "reader_focus");
+  }
+
   function resetPaperPoolScope() {
     activatePaperPoolScope("all_papers", "all", "default");
   }
@@ -1922,6 +1930,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     key={view.key}
                     type="button"
                     className={`project-filter-chip${activeSmartView === view.key ? " is-active" : ""}`.trim()}
+                    data-testid={`project-smart-view-${view.key}`}
                     onClick={() => activateSmartView(view.key)}
                   >
                     {view.label} {view.count}
@@ -1972,6 +1981,26 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                       </span>
                     </div>
                     <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
+                      {activeReaderFocus !== "all" ? (
+                        <Button
+                          className="secondary"
+                          type="button"
+                          data-testid="project-paper-scope-clear-reader-focus"
+                          onClick={() => clearReaderFocusScope()}
+                        >
+                          {activeSmartView === "all_papers" ? "清除接续聚焦" : `保留“${activeSmartViewLabel}”，清除接续聚焦`}
+                        </Button>
+                      ) : null}
+                      {activeSmartView !== "all_papers" ? (
+                        <Button
+                          className="secondary"
+                          type="button"
+                          data-testid="project-paper-scope-clear-smart-view"
+                          onClick={() => clearSmartViewScope()}
+                        >
+                          {activeReaderFocus === "all" ? "回到全部论文" : `回到全部论文，保留“${activeReaderFocusMeta.label}”`}
+                        </Button>
+                      ) : null}
                       <Button
                         className="secondary"
                         type="button"
