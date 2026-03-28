@@ -1396,6 +1396,8 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const readerStates = Array.from(readerStateByPaperId.values());
   const papersWithReaderSession = readerStates.length;
   const papersWithRevisit = readerStates.filter((item) => item.session.revisitParagraphIds.length > 0).length;
+  const papersWithContinueOnly = Math.max(papersWithReaderSession - papersWithRevisit, 0);
+  const papersWithoutReaderSession = Math.max(totalPapers - papersWithReaderSession, 0);
   const totalRevisitParagraphs = readerStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
   const latestReaderState = readerStates.reduce<ProjectPaperReadingState | null>((latest, current) => {
     if (!latest) return current;
@@ -1511,6 +1513,15 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       .map((item) => item.paper.id);
   }
 
+  function activatePaperPoolScope(viewKey: string, readerFocus: ProjectPaperReadingFocus) {
+    if (!workspace) return;
+    setActiveStage("papers");
+    setActiveSmartView(viewKey);
+    setActiveReaderFocus(readerFocus);
+    setSelectedPaperIds(projectPaperIdsForScope(viewKey, readerFocus));
+    scrollToSection(paperPoolRef);
+  }
+
   function openStage(stage: "papers" | "evidence" | "compare" | "review" | "citations") {
     setActiveStage(stage);
     if (stage === "papers") {
@@ -1521,19 +1532,15 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   }
 
   function activateSmartView(viewKey: string) {
-    if (!workspace) return;
-    setActiveStage("papers");
-    setActiveSmartView(viewKey);
-    setSelectedPaperIds(projectPaperIdsForScope(viewKey, activeReaderFocus));
-    scrollToSection(paperPoolRef);
+    activatePaperPoolScope(viewKey, activeReaderFocus);
   }
 
   function activateReaderFocus(focus: ProjectPaperReadingFocus) {
-    if (!workspace) return;
-    setActiveStage("papers");
-    setActiveReaderFocus(focus);
-    setSelectedPaperIds(projectPaperIdsForScope(activeSmartView, focus));
-    scrollToSection(paperPoolRef);
+    activatePaperPoolScope(activeSmartView, focus);
+  }
+
+  function focusReaderOverviewScope(focus: ProjectPaperReadingFocus) {
+    activatePaperPoolScope("all_papers", focus);
   }
 
   function launchSummariesAction() {
@@ -2481,6 +2488,39 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     <Link className="button secondary" data-testid="project-continue-latest-reading" to={latestReaderState.resumePath}>
                       继续最近阅读
                     </Link>
+                    <div className="project-chip-row" data-testid="project-reader-overview-focus-actions">
+                      {papersWithRevisit > 0 ? (
+                        <button
+                          type="button"
+                          className="project-filter-chip tone-revisit"
+                          data-testid="project-reader-overview-focus-revisit"
+                          onClick={() => focusReaderOverviewScope("revisit")}
+                        >
+                          回到论文池看优先回看 {papersWithRevisit}
+                        </button>
+                      ) : null}
+                      {papersWithContinueOnly > 0 ? (
+                        <button
+                          type="button"
+                          className="project-filter-chip tone-continue"
+                          data-testid="project-reader-overview-focus-continue"
+                          onClick={() => focusReaderOverviewScope("continue")}
+                        >
+                          回到论文池看继续阅读 {papersWithContinueOnly}
+                        </button>
+                      ) : null}
+                      {papersWithoutReaderSession > 0 ? (
+                        <button
+                          type="button"
+                          className="project-filter-chip tone-parked"
+                          data-testid="project-reader-overview-focus-parked"
+                          onClick={() => focusReaderOverviewScope("parked")}
+                        >
+                          回到论文池看先留在池里 {papersWithoutReaderSession}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="subtle">这些入口会把论文池切回“全部论文”并聚焦对应的阅读接续范围。</div>
                     {readerRevisitCandidates.length > 0 ? (
                       <div className="project-reader-return-list" data-testid="project-reader-return-list">
                         <strong>优先回看候选</strong>
