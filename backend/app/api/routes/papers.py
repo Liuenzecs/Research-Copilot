@@ -261,7 +261,10 @@ def build_workspace_payload(db: Session, paper: PaperRecord) -> dict:
 
 
 def build_reader_payload(paper: PaperRecord) -> dict:
-    return paper_reader_service.get_reader_payload(paper.id, paper.pdf_local_path)
+    payload = paper_reader_service.get_reader_payload(paper.id, paper.pdf_local_path)
+    payload['pdf_status'] = paper.pdf_status or ('downloaded' if paper.pdf_local_path else 'missing')
+    payload['pdf_status_message'] = paper.pdf_status_message or ''
+    return payload
 
 
 def ensure_research_state(db: Session, paper_id: int) -> PaperResearchStateRecord:

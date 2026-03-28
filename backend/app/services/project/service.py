@@ -2025,6 +2025,16 @@ class ProjectService:
         links: list[ResearchProjectPaperRecord],
     ) -> dict[str, Any]:
         selected_ids = [link.paper_id for link in links]
+        now = datetime.now(timezone.utc)
+        for link in links:
+            paper = link.paper
+            if paper is None or paper.pdf_local_path:
+                continue
+            paper.pdf_status = 'downloading'
+            paper.pdf_status_message = '正在后台下载 PDF。'
+            paper.pdf_last_checked_at = now
+            db.add(paper)
+        db.commit()
         self._record_progress(
             db,
             task_id=task.id,
@@ -2542,6 +2552,29 @@ class ProjectService:
         selected_ids = [link.paper_id for link in links]
         if action != 'curate_reading_list' and not selected_ids:
             raise ValueError('请先在当前项目中至少选择一篇论文，再执行该动作')
+
+        if action == 'fetch_pdfs':
+            now = datetime.now(timezone.utc)
+            queued_ids: list[int] = []
+            for link in links:
+                paper = link.paper
+                if paper is None:
+                    continue
+                if paper.pdf_local_path:
+                    paper.pdf_status = 'downloaded'
+                    paper.pdf_status_message = 'PDF already available locally.'
+                    paper.pdf_last_checked_at = now
+                    db.add(paper)
+                    continue
+                paper.pdf_status = 'queued'
+                paper.pdf_status_message = '已加入后台下载队列，准备获取 PDF。'
+                paper.pdf_last_checked_at = now
+                db.add(paper)
+                queued_ids.append(link.paper_id)
+            db.commit()
+            selected_ids = queued_ids
+            if not selected_ids:
+                raise ValueError('所选论文已经都有本地 PDF，无需重复下载')
 
         task_input: dict[str, Any] = {
             'action': action,

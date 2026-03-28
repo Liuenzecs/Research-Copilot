@@ -10,6 +10,7 @@ import {
   createProjectSearchRun,
   curateProjectReadingList,
   deleteProjectSavedSearch,
+  fetchProjectPdfs,
   generateProjectSavedSearchCandidateAiReason,
   getPaperCitationTrail,
   getProjectSavedSearch,
@@ -490,7 +491,7 @@ export default function ProjectSearchWorkbench({
     setBusy("add");
     setError("");
     try {
-      await batchAddProjectPapers(projectId, {
+      const added = await batchAddProjectPapers(projectId, {
         items: targetItems.map((item) => ({
           paper_id: item.paper.id,
           saved_search_candidate_id: item.candidate_id ?? null,
@@ -515,7 +516,25 @@ export default function ProjectSearchWorkbench({
         queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
       ]);
       await Promise.resolve(onProjectMutated?.());
-      setNotice(`已加入 ${targetItems.length} 篇论文。`);
+      const pendingPdfIds = added.items.filter((item) => !item.is_downloaded).map((item) => item.paper.id);
+      if (pendingPdfIds.length > 0) {
+        try {
+          await fetchProjectPdfs(projectId, {
+            paper_ids: pendingPdfIds,
+            instruction: "Auto fetch PDFs after adding papers to the project.",
+          });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(projectId) }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.projects.list() }),
+          ]);
+          await Promise.resolve(onProjectMutated?.());
+          setNotice(`已加入 ${targetItems.length} 篇论文，并开始后台下载 PDF。`);
+        } catch {
+          setNotice(`已加入 ${targetItems.length} 篇论文；自动下载 PDF 启动失败，请稍后手动重试。`);
+        }
+      } else {
+        setNotice(`已加入 ${targetItems.length} 篇论文，所选论文已有本地 PDF。`);
+      }
     } catch (addError) {
       setError((addError as Error).message || "加入项目失败");
     } finally {

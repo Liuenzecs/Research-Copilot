@@ -14,19 +14,19 @@
 
 ## 当前阶段
 
-### 4B：加入项目后默认后台下载 PDF
+### 4C：项目工作台论文池分页
 
 阶段目标：
 
-- 用户把论文加入项目后，系统默认开始后台下载 PDF，尽量减少“加入了但还不能读”的断裂。
-- 在工作台、文库和阅读器入口里统一表达下载状态，避免用户反复试错后才发现 PDF 其实还没到位。
-- 第一轮优先复用现有入库与下载链路，不做高风险结构重构。
+- 项目工作台里的论文池不再一次性平铺很长一列论文，先把主列表收口成稳定分页结构。
+- 分页要和当前智能视图、阅读接续聚焦、排序语义与批量选中共存，不把既有阅读工作流打散。
+- 第一轮优先做低风险分页，不先引入虚拟滚动或大规模列表重构。
 
 ## 待确认方案
 
 ### 2026-03-29：导航、项目入口、下载与周报重构方案
 
-这部分用于记录本轮阅读体验主线里的实施方向；其中 A 已落地，B-F 仍作为后续阶段排期依据。
+这部分用于记录本轮阅读体验主线里的实施方向；其中 A、C 已落地，B、D、E、F 仍作为后续阶段排期依据。
 
 #### A. 启动入口与“项目”导航改造（已实施）
 
@@ -73,7 +73,7 @@
 
 - 第一轮只分页论文池主列表，不强行同时改所有卡片区；如果你希望，我建议后续再统一把“候选卡片区”和“主列表区”的分页/折叠策略做一致。
 
-#### C. 加入项目后默认后台下载 PDF
+#### C. 加入项目后默认后台下载 PDF（已实施）
 
 拟定目标：
 
@@ -175,6 +175,43 @@
 6. 周报工作区重构
 
 ## 最近完成
+
+### 4B：加入项目后默认后台下载 PDF
+
+阶段目标：
+
+- 用户把论文加入项目后，系统默认开始后台下载 PDF，尽量减少“加入了但还不能读”的断裂。
+- 在工作台加入入口和阅读器空态里明确表达当前 PDF 状态，减少用户反复点进阅读器才发现还不能读的试错。
+- 第一轮优先复用现有 `fetch_pdfs` 任务链路，不新起一套下载系统。
+
+已完成：
+
+- 项目工作台里的批量加入改为复用 `batchAddProjectPapers`，加入成功后会自动触发既有 `fetch_pdfs` 项目动作，不再要求用户手动再点一次“补 PDF”。
+- 项目搜索工作台里的“加入项目 / 批量加入项目”也会在加入成功后自动发起后台 PDF 下载，并在提示文案里直接说明“已开始后台下载 PDF”。
+- `fetch_pdfs` 动作启动时会先把论文状态标记为 `queued`，任务真正执行时切到 `downloading`，下载完成后仍沿用既有 `downloaded / error / landing_page_only / missing` 收口。
+- 阅读器响应新增 `pdf_status` 与 `pdf_status_message`，无 PDF 时不再只显示泛化空态，而会根据当前状态显示“已排队 / 下载中 / 下载失败 / 暂无可用 PDF”等更贴近现场的提示。
+- 阅读器在 `queued` / `downloading` 状态下会自动轮询刷新，用户停在阅读页等待时不需要手动反复重开页面。
+
+变更文件：
+
+- `backend/app/models/schemas/paper.py`
+- `backend/app/api/routes/papers.py`
+- `backend/app/services/project/service.py`
+- `backend/app/tests/test_paper_reader.py`
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/components/projects/ProjectSearchWorkbench.tsx`
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/lib/types.ts`
+
+验证结果：
+
+- `pytest backend/app/tests/test_paper_reader.py -q`：7 项通过
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "surfaces reader continuation cues inside the search workbench"`：通过
+
+下一阶段：
+
+- 进入 `4C：项目工作台论文池分页`
 
 ### 4A：默认进入最近项目工作台并收口“项目”导航
 

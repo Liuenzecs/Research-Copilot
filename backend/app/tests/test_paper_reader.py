@@ -114,6 +114,8 @@ def test_paper_reader_without_downloaded_pdf_returns_empty_reader(client):
     payload = response.json()
     assert payload['paper']['id'] == paper_id
     assert payload['pdf_downloaded'] is False
+    assert payload['pdf_status'] == 'missing'
+    assert payload['pdf_status_message'] == ''
     assert payload['reader_ready'] is False
     assert payload['paragraphs'] == []
     assert payload['pages'] == []

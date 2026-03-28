@@ -448,6 +448,8 @@ export type PaperAnnotation = {
 
 export type PaperReader = PaperWorkspace & {
   pdf_downloaded: boolean;
+  pdf_status: "queued" | "downloading" | "downloaded" | "remote_pdf" | "landing_page_only" | "missing" | "error" | string;
+  pdf_status_message: string;
   reader_ready: boolean;
   paragraphs: PaperReaderParagraph[];
   pages: PaperReaderPagePreview[];

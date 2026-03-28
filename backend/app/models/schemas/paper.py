@@ -170,6 +170,8 @@ class PaperReaderResponse(BaseModel):
     reflections: list[dict[str, Any]]
     recent_tasks: list[dict[str, Any]]
     pdf_downloaded: bool
+    pdf_status: str = 'missing'
+    pdf_status_message: str = ''
     reader_ready: bool
     paragraphs: list[PaperReaderParagraph]
     pages: list[PaperReaderPagePreview] = Field(default_factory=list)

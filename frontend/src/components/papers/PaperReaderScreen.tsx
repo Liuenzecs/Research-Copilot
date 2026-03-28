@@ -161,6 +161,37 @@ function readerModeDescription(mode: ReaderMode) {
   return "适合沉淀摘要、心得、任务和论文工作记录。";
 }
 
+function readerPdfStatusTitle(reader: Pick<PaperReader, "pdf_status">) {
+  switch (reader.pdf_status) {
+    case "queued":
+      return "PDF 已进入后台下载队列";
+    case "downloading":
+      return "PDF 正在后台下载";
+    case "error":
+      return "PDF 下载失败";
+    case "landing_page_only":
+      return "暂时没有可用 PDF";
+    case "remote_pdf":
+      return "PDF 尚未下载到本地";
+    case "missing":
+    default:
+      return "当前尚未下载 PDF";
+  }
+}
+
+function readerPdfStatusHint(reader: Pick<PaperReader, "pdf_status" | "pdf_status_message">, hasProject: boolean) {
+  if (reader.pdf_status_message.trim()) {
+    return reader.pdf_status_message;
+  }
+  if (hasProject && (reader.pdf_status === "queued" || reader.pdf_status === "downloading")) {
+    return "如果这篇论文刚加入项目，系统通常已经开始后台补 PDF；稍后刷新状态即可进入原版页面阅读或辅助文本阅读。";
+  }
+  if (hasProject) {
+    return "你仍可先查看 abstract 与研究状态；如果这篇论文刚加入项目，也可以稍后刷新状态或手动重试下载。";
+  }
+  return "你仍可先查看 abstract 与研究状态；下载 PDF 后即可进入原版页面阅读、辅助文本与本页图像。";
+}
+
 function describeReaderSession(session: Pick<PaperReaderSession, "viewMode" | "pageNo" | "paragraphId">) {
   const parts = [readerModeLabel(session.viewMode)];
   if (session.pageNo) {
@@ -471,6 +502,11 @@ export default function PaperReaderScreen({
   const readerQuery = useQuery({
     queryKey: queryKeys.papers.reader(paperId),
     queryFn: ({ signal }) => getPaperReader(paperId, { signal }),
+    refetchInterval: (query) => {
+      const current = query.state.data as PaperReader | undefined;
+      if (!current || current.pdf_downloaded) return false;
+      return current.pdf_status === "queued" || current.pdf_status === "downloading" ? 2500 : false;
+    },
   });
   const projectWorkspaceQuery = useQuery({
     queryKey: queryKeys.projects.workspace(projectId ?? -1),
@@ -1891,13 +1927,18 @@ export default function PaperReaderScreen({
         <Card>
           <div className="reader-empty-task">
             <EmptyState
-              title="当前尚未下载 PDF"
-              hint="你仍可先查看 abstract 与研究状态；下载 PDF 后即可进入原版页面阅读、辅助文本与本页图像。"
+              title={readerPdfStatusTitle(reader)}
+              hint={readerPdfStatusHint(reader, Boolean(projectId))}
             />
             <div className="reader-empty-task-actions">
-              <Button type="button" onClick={() => void handleDownload()} disabled={downloading}>
-                {downloading ? "正在下载 PDF..." : "下载 PDF 并生成阅读视图"}
+              <Button className="secondary" type="button" onClick={() => void loadReader()} disabled={loading}>
+                {loading ? "刷新中..." : "刷新下载状态"}
               </Button>
+              {reader.pdf_status === "queued" || reader.pdf_status === "downloading" ? null : (
+                <Button type="button" onClick={() => void handleDownload()} disabled={downloading}>
+                  {downloading ? "正在下载 PDF..." : reader.pdf_status === "error" ? "重试下载 PDF" : "下载 PDF 并生成阅读视图"}
+                </Button>
+              )}
               {projectId ? (
                 <Link className="button secondary" to={projectPath(projectId)}>
                   返回项目工作台

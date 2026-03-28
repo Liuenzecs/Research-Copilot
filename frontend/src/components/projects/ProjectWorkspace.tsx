@@ -29,7 +29,7 @@ import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench
 import { loadPaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
-  addProjectPaper,
+  batchAddProjectPapers,
   batchUpdateProjectPaperState,
   createProjectEvidence,
   deleteProjectEvidence,
@@ -978,10 +978,26 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     setError("");
     setNotice("");
     try {
-      await Promise.all(searchSelection.map((paperId) => addProjectPaper(projectId, { paper_id: paperId })));
+      const added = await batchAddProjectPapers(projectId, {
+        items: searchSelection.map((paperId) => ({ paper_id: paperId })),
+      });
       await loadWorkspace({ quiet: true });
       setSearchSelection([]);
-      setNotice(`已把 ${searchSelection.length} 篇论文加入项目。`);
+      const pendingPdfIds = added.items.filter((item) => !item.is_downloaded).map((item) => item.paper.id);
+      if (pendingPdfIds.length > 0) {
+        try {
+          const launch = await fetchProjectPdfs(projectId, {
+            paper_ids: pendingPdfIds,
+            instruction: "Auto fetch PDFs after adding papers to the project.",
+          });
+          attachTaskTracking(launch.task, true);
+          setNotice(`已把 ${added.items.length} 篇论文加入项目，并开始后台下载 PDF。`);
+        } catch {
+          setNotice(`已把 ${added.items.length} 篇论文加入项目；自动下载 PDF 启动失败，请稍后手动重试。`);
+        }
+      } else {
+        setNotice(`已把 ${added.items.length} 篇论文加入项目，所选论文已有本地 PDF。`);
+      }
     } catch (addError) {
       setError((addError as Error).message || "批量加入项目失败");
     } finally {
