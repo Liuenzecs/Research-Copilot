@@ -343,6 +343,7 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-stage-reader-summary")).toContainText("待安排 1 篇");
   await expect(page.getByTestId("project-stage-reader-summary")).toContainText("优先回看 1 篇");
   await expect(page.getByTestId("project-stage-order-hint")).toContainText("优先回看 -> 继续阅读 -> 先留在池里");
+  await expect(page.getByTestId("project-stage-focus-hint")).toContainText("保留当前智能视图里的全部论文");
   await expectStageScope("默认范围", "全部论文 · 全部接续状态", "当前在默认论文池范围");
   await expect(page.getByTestId(`project-stage-reader-candidate-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId(`project-stage-reader-link-${paperId}`)).toContainText("优先回看");
@@ -363,6 +364,7 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围 1 篇");
   await expect(page.getByTestId("project-stage-reader-summary")).toContainText("待安排 1 篇");
   await expect(page.getByTestId("project-stage-order-hint")).toContainText("沿用项目原始排序");
+  await expect(page.getByTestId("project-stage-focus-hint")).toContainText("只保留还没有建立本地阅读会话的论文");
   await expect(page.getByTestId("project-stage-scope-reset")).toContainText("回到默认范围");
   await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
   await expect(page.getByTestId("project-paper-section-revisit")).toHaveCount(0);
@@ -400,6 +402,7 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expectStageScope("来自阅读接续聚焦", "全部论文 · 只看优先回看", "当前范围来自阅读接续聚焦");
   await expect(page.getByTestId("project-stage-empty-scope-hint")).toHaveCount(0);
   await expect(page.getByTestId("project-stage-order-hint")).toContainText("待回看段落数优先");
+  await expect(page.getByTestId("project-stage-focus-hint")).toContainText("只保留有待回看段落的论文");
   await page.getByTestId("project-stage-scope-clear-reader-focus").click();
   await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
   await expect(page.getByTestId("project-paper-scope-banner")).toHaveCount(0);

@@ -2323,6 +2323,9 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div className="subtle" data-testid="project-stage-order-hint">
                     {projectReaderOrderHint(activeReaderFocus)}
                   </div>
+                  <div className="subtle" data-testid="project-stage-focus-hint">
+                    {activeReaderFocusMeta.hint}
+                  </div>
                   {!isDefaultPaperPoolScope ? (
                     <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
                       {activeReaderFocus !== "all" ? (
