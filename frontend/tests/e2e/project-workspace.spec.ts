@@ -326,14 +326,33 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-paper-section-revisit")).toContainText("待回看 1 段");
   await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
   await expect(page.getByTestId("project-paper-section-parked")).toContainText("打开高级阅读器");
+  await expect(page.getByTestId("project-reading-order-hint")).toContainText("优先回看");
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
+  await expect(page.getByTestId("project-reading-focus-revisit")).toContainText("只看优先回看 1");
+  await expect(page.getByTestId("project-reading-focus-parked")).toContainText("只看先留在池里 1");
   await expect(page.getByTestId("project-paper-stage-reader-panel")).toContainText("阅读接续建议");
-  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前视图已保存会话 1 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围已保存会话 1 篇");
   await expect(page.getByTestId(`project-stage-reader-candidate-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId(`project-stage-reader-link-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId("project-reader-overview")).toContainText("已保存会话 1 篇");
   await expect(page.getByTestId("project-reader-overview")).toContainText("待回看 1 篇 / 1 段");
   await expect(page.getByTestId(`project-reader-candidate-${paperId}`)).toContainText("待回看 1 段");
   await expect(page.getByTestId(`project-reader-candidate-link-${paperId}`)).toContainText("优先回看");
+
+  await page.getByTestId("project-reading-focus-revisit").click();
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看优先回看");
+  await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
+  await expect(page.getByTestId("project-paper-section-parked")).toHaveCount(0);
+
+  await page.getByTestId("project-reading-focus-parked").click();
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("只看先留在池里");
+  await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
+  await expect(page.getByTestId("project-paper-section-revisit")).toHaveCount(0);
+
+  await page.getByTestId("project-reading-focus-all").click();
+  await expect(page.getByTestId("project-reading-focus-summary")).toContainText("全部接续状态");
+  await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
+  await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
 });
 
 test("shows a page-level reading overview in text mode", async ({ page }) => {

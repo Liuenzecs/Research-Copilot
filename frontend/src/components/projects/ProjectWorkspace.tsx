@@ -65,7 +65,6 @@ import type {
   ResearchProjectTask,
   ResearchProjectTaskDetail,
   ResearchProjectTaskEvent,
-  ResearchProjectTaskProgressStep,
   ResearchProjectWorkspace,
 } from "@/lib/types";
 
@@ -102,6 +101,8 @@ type ProjectPaperReadingSection = {
   items: ResearchProjectWorkspace["papers"][number][];
 };
 
+type ProjectPaperReadingFocus = "all" | ProjectPaperReadingSection["key"];
+
 type SearchScopeFilter = "all" | "not_in_project" | "in_project";
 type DownloadFilter = "all" | "downloaded" | "not_downloaded";
 
@@ -115,6 +116,33 @@ const DEFAULT_COMPARE_COLUMNS = [
   "Limitations",
   "Reproduction Value",
   "User Note",
+];
+
+const PROJECT_PAPER_READING_FOCUS_OPTIONS: Array<{
+  key: ProjectPaperReadingFocus;
+  label: string;
+  hint: string;
+}> = [
+  {
+    key: "all",
+    label: "全部接续状态",
+    hint: "保留当前智能视图里的全部论文，并按阅读接续优先级组织列表。",
+  },
+  {
+    key: "revisit",
+    label: "只看优先回看",
+    hint: "只保留有待回看段落的论文，并按待回看段落数和最近保存时间排序。",
+  },
+  {
+    key: "continue",
+    label: "只看继续阅读",
+    hint: "只保留已有会话但暂时没有待回看段落的论文，并按最近阅读时间排序。",
+  },
+  {
+    key: "parked",
+    label: "只看先留在池里",
+    hint: "只保留还没有建立本地阅读会话的论文，并沿用项目原始排序。",
+  },
 ];
 
 const EVIDENCE_AUTOSAVE_DELAY = 1200;
@@ -155,6 +183,12 @@ function readerModeLabel(mode: PaperReaderSession["viewMode"]) {
     default:
       return mode;
   }
+}
+
+function projectReaderSectionKey(readerState?: ProjectPaperReadingState | null): ProjectPaperReadingSection["key"] {
+  if (readerState?.session.revisitParagraphIds.length) return "revisit";
+  if (readerState) return "continue";
+  return "parked";
 }
 
 function projectReaderDecision(readerState?: ProjectPaperReadingState | null) {
@@ -361,6 +395,20 @@ function taskFromRecent(task: ResearchProjectTask): ResearchProjectTaskDetail {
   return { ...task, input_json: {}, output_json: {}, error_log: "" };
 }
 
+function projectReaderOrderHint(focus: ProjectPaperReadingFocus) {
+  switch (focus) {
+    case "revisit":
+      return "当前排序：待回看段落数优先，其次按最近保存时间。";
+    case "continue":
+      return "当前排序：按最近阅读时间排列。";
+    case "parked":
+      return "当前排序：沿用项目原始排序。";
+    case "all":
+    default:
+      return "当前排序：优先回看 -> 继续阅读 -> 先留在池里。";
+  }
+}
+
 function featuredTask(tasks: ResearchProjectTask[]) {
   return tasks.find((task) => task.status === "running") ?? tasks[0] ?? null;
 }
@@ -508,6 +556,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const [activeTask, setActiveTask] = useState<ResearchProjectTaskDetail | null>(null);
   const [taskConnectionNotice, setTaskConnectionNotice] = useState("");
   const [activeSmartView, setActiveSmartView] = useState("all_papers");
+  const [activeReaderFocus, setActiveReaderFocus] = useState<ProjectPaperReadingFocus>("all");
   const [paperBatchBusy, setPaperBatchBusy] = useState("");
   const [paperBatchReadAt, setPaperBatchReadAt] = useState("");
 
@@ -1361,10 +1410,28 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     })
     .slice(0, 3);
   const activeSmartViewLabel = workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文";
-  const filteredReaderStates = filteredProjectPapers
+  const activeReaderFocusMeta =
+    PROJECT_PAPER_READING_FOCUS_OPTIONS.find((option) => option.key === activeReaderFocus) ?? PROJECT_PAPER_READING_FOCUS_OPTIONS[0];
+  const readerFocusCounts: Record<ProjectPaperReadingFocus, number> = {
+    all: filteredProjectPapers.length,
+    revisit: 0,
+    continue: 0,
+    parked: 0,
+  };
+  for (const item of filteredProjectPapers) {
+    const sectionKey = projectReaderSectionKey(readerStateByPaperId.get(item.paper.id) ?? null);
+    readerFocusCounts[sectionKey] += 1;
+  }
+  const visibleProjectPapers =
+    activeReaderFocus === "all"
+      ? filteredProjectPapers
+      : filteredProjectPapers.filter(
+          (item) => projectReaderSectionKey(readerStateByPaperId.get(item.paper.id) ?? null) === activeReaderFocus,
+        );
+  const visibleReaderStates = visibleProjectPapers
     .map((item) => readerStateByPaperId.get(item.paper.id) ?? null)
     .filter((item): item is ProjectPaperReadingState => Boolean(item));
-  const filteredRevisitCandidates = [...filteredReaderStates]
+  const visibleRevisitCandidates = [...visibleReaderStates]
     .filter((item) => item.session.revisitParagraphIds.length > 0)
     .sort((left, right) => {
       const revisitGap = right.session.revisitParagraphIds.length - left.session.revisitParagraphIds.length;
@@ -1372,24 +1439,24 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       return timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt);
     })
     .slice(0, 3);
-  const filteredContinueCandidates = [...filteredReaderStates]
+  const visibleContinueCandidates = [...visibleReaderStates]
     .filter((item) => item.session.revisitParagraphIds.length === 0)
     .sort((left, right) => timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt))
     .slice(0, 2);
-  const filteredPendingReaderCount = Math.max(filteredProjectPapers.length - filteredReaderStates.length, 0);
-  const filteredRevisitParagraphCount = filteredReaderStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
+  const visiblePendingReaderCount = Math.max(visibleProjectPapers.length - visibleReaderStates.length, 0);
+  const visibleRevisitParagraphCount = visibleReaderStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
   const groupedProjectPaperSections: ProjectPaperReadingSection[] = (() => {
     const revisit: ResearchProjectWorkspace["papers"][number][] = [];
     const continueReading: ResearchProjectWorkspace["papers"][number][] = [];
     const parked: ResearchProjectWorkspace["papers"][number][] = [];
 
-    for (const item of filteredProjectPapers) {
+    for (const item of visibleProjectPapers) {
       const readerState = readerStateByPaperId.get(item.paper.id) ?? null;
-      if (readerState?.session.revisitParagraphIds.length) {
+      if (projectReaderSectionKey(readerState) === "revisit") {
         revisit.push(item);
         continue;
       }
-      if (readerState) {
+      if (projectReaderSectionKey(readerState) === "continue") {
         continueReading.push(item);
         continue;
       }
@@ -1437,6 +1504,13 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function projectPaperIdsForScope(viewKey: string, readerFocus: ProjectPaperReadingFocus) {
+    return workspace.papers
+      .filter((item) => smartViewMatches(viewKey, item, citedPaperIds, duplicatePaperIds))
+      .filter((item) => readerFocus === "all" || projectReaderSectionKey(readerStateByPaperId.get(item.paper.id) ?? null) === readerFocus)
+      .map((item) => item.paper.id);
+  }
+
   function openStage(stage: "papers" | "evidence" | "compare" | "review" | "citations") {
     setActiveStage(stage);
     if (stage === "papers") {
@@ -1450,11 +1524,15 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     if (!workspace) return;
     setActiveStage("papers");
     setActiveSmartView(viewKey);
-    setSelectedPaperIds(
-      workspace.papers
-        .filter((item) => smartViewMatches(viewKey, item, citedPaperIds, duplicatePaperIds))
-        .map((item) => item.paper.id),
-    );
+    setSelectedPaperIds(projectPaperIdsForScope(viewKey, activeReaderFocus));
+    scrollToSection(paperPoolRef);
+  }
+
+  function activateReaderFocus(focus: ProjectPaperReadingFocus) {
+    if (!workspace) return;
+    setActiveStage("papers");
+    setActiveReaderFocus(focus);
+    setSelectedPaperIds(projectPaperIdsForScope(activeSmartView, focus));
     scrollToSection(paperPoolRef);
   }
 
@@ -1783,18 +1861,42 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     key={view.key}
                     type="button"
                     className={`project-filter-chip${activeSmartView === view.key ? " is-active" : ""}`.trim()}
-                    onClick={() => {
-                      setActiveSmartView(view.key);
-                      setSelectedPaperIds(
-                        workspace.papers
-                          .filter((item) => smartViewMatches(view.key, item, citedPaperIds, duplicatePaperIds))
-                          .map((item) => item.paper.id),
-                      );
-                    }}
+                    onClick={() => activateSmartView(view.key)}
                   >
                     {view.label} {view.count}
                   </button>
                 ))}
+              </div>
+
+              <div className="project-paper-reader-toolbar">
+                <div className="project-paper-reader-toolbar-top">
+                  <div>
+                    <strong>阅读接续聚焦</strong>
+                    <div className="subtle">
+                      先用智能视图缩小范围，再按阅读接续状态聚焦，避免切换视图后还要重新扫一遍卡片。
+                    </div>
+                  </div>
+                  <span className="reader-chip" data-testid="project-reading-order-hint">
+                    {projectReaderOrderHint(activeReaderFocus)}
+                  </span>
+                </div>
+                <div className="project-chip-row">
+                  {PROJECT_PAPER_READING_FOCUS_OPTIONS.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`project-filter-chip${activeReaderFocus === option.key ? " is-active" : ""} ${option.key === "all" ? "" : `tone-${option.key}`}`.trim()}
+                      data-testid={`project-reading-focus-${option.key}`}
+                      onClick={() => activateReaderFocus(option.key)}
+                    >
+                      {option.label} {readerFocusCounts[option.key]}
+                    </button>
+                  ))}
+                </div>
+                <div className="subtle" data-testid="project-reading-focus-summary">
+                  当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label} · {visibleProjectPapers.length} 篇
+                </div>
+                <div className="subtle">{activeReaderFocusMeta.hint}</div>
               </div>
 
               <div className="projects-inline-actions" style={{ marginBottom: 12 }}>
@@ -1879,7 +1981,12 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
 
               <div className="project-paper-list" data-testid="project-paper-pool">
                 {filteredProjectPapers.length === 0 ? (
-                  <EmptyState title="项目里还没有论文" hint="先把候选论文加入项目，再继续提取证据和起草综述。" />
+                  <EmptyState title="当前智能视图里还没有论文" hint="切换智能视图，或先把候选论文加入项目后再继续提取证据和起草综述。" />
+                ) : groupedProjectPaperSections.length === 0 ? (
+                  <EmptyState
+                    title={`当前范围里没有“${activeReaderFocusMeta.label}”论文`}
+                    hint="切换阅读接续聚焦，或先进入阅读器建立会话后再回来。"
+                  />
                 ) : (
                   groupedProjectPaperSections.map((section) => (
                     <div
@@ -2031,16 +2138,20 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div className="subtle">{activeSmartViewLabel}</div>
                 </div>
                 <div className="project-mini-stat">
+                  <strong>接续聚焦</strong>
+                  <div className="subtle">{activeReaderFocusMeta.label}</div>
+                </div>
+                <div className="project-mini-stat">
                   <strong>当前批量选中</strong>
                   <div className="subtle">{selectedPaperIds.length} 篇</div>
                 </div>
                 <div className="project-mini-stat">
                   <strong>可继续阅读</strong>
-                  <div className="subtle">{filteredReaderStates.length} 篇有本地会话</div>
+                  <div className="subtle">{visibleReaderStates.length} 篇有本地会话</div>
                 </div>
                 <div className="project-mini-stat">
                   <strong>优先回看</strong>
-                  <div className="subtle">{filteredRevisitCandidates.length} 篇 / {filteredRevisitParagraphCount} 段</div>
+                  <div className="subtle">{visibleRevisitCandidates.length} 篇 / {visibleRevisitParagraphCount} 段</div>
                 </div>
               </div>
               <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
@@ -2059,17 +2170,18 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   <div>
                     <strong>阅读接续建议</strong>
                     <div className="subtle">
-                      只看当前智能视图，先判断哪些论文该优先回看、哪些可以继续读、哪些先留在池里待处理。
+                      先看当前智能视图，再叠加阅读接续聚焦，尽量把“现在该先读哪篇”压缩成一次判断。
                     </div>
                   </div>
                   <span className="reader-chip" data-testid="project-stage-reader-summary">
-                    当前视图已保存会话 {filteredReaderStates.length} 篇 · 优先回看 {filteredRevisitCandidates.length} 篇
+                    当前范围已保存会话 {visibleReaderStates.length} 篇 · 优先回看 {visibleRevisitCandidates.length} 篇
                   </span>
                 </div>
-                {filteredRevisitCandidates.length > 0 ? (
+                <div className="subtle">当前范围：{activeSmartViewLabel} · {activeReaderFocusMeta.label}</div>
+                {visibleRevisitCandidates.length > 0 ? (
                   <div className="project-reader-return-list">
                     <strong>优先回看候选</strong>
-                    {filteredRevisitCandidates.map((state) => (
+                    {visibleRevisitCandidates.map((state) => (
                       <div
                         key={state.paperId}
                         className="project-reader-return-item tone-revisit"
@@ -2094,10 +2206,10 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     ))}
                   </div>
                 ) : null}
-                {filteredContinueCandidates.length > 0 ? (
+                {visibleContinueCandidates.length > 0 ? (
                   <div className="project-reader-return-list">
                     <strong>继续阅读候选</strong>
-                    {filteredContinueCandidates.map((state) => (
+                    {visibleContinueCandidates.map((state) => (
                       <div
                         key={state.paperId}
                         className="project-reader-return-item tone-continue"
@@ -2118,13 +2230,13 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     ))}
                   </div>
                 ) : null}
-                {filteredPendingReaderCount > 0 ? (
+                {visiblePendingReaderCount > 0 ? (
                   <div className="subtle">
-                    当前视图另外还有 {filteredPendingReaderCount} 篇还没有本地阅读会话，可先留在论文池待处理，等需要深读时再进入阅读器。
+                    当前范围另外还有 {visiblePendingReaderCount} 篇还没有本地阅读会话，可先留在论文池待处理，等需要深读时再进入阅读器。
                   </div>
                 ) : null}
-                {!filteredReaderStates.length && filteredPendingReaderCount === 0 ? (
-                  <div className="subtle">当前视图还没有论文可安排阅读接续。</div>
+                {!visibleReaderStates.length && visiblePendingReaderCount === 0 ? (
+                  <div className="subtle">当前范围还没有论文可安排阅读接续。</div>
                 ) : null}
               </div>
             </Card>
