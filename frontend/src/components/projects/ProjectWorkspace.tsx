@@ -2305,7 +2305,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                     </div>
                   </div>
                   <span className="reader-chip" data-testid="project-stage-reader-summary">
-                    当前范围已保存会话 {visibleReaderStates.length} 篇 · 优先回看 {visibleRevisitCandidates.length} 篇
+                    当前范围 {visibleProjectPapers.length} 篇 · 已保存会话 {visibleReaderStates.length} 篇 · 待安排 {visiblePendingReaderCount} 篇 · 优先回看 {visibleRevisitCandidates.length} 篇
                   </span>
                 </div>
                 <div className="project-paper-stage-scope-note" data-testid="project-stage-scope-note">

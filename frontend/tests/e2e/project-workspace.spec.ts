@@ -338,7 +338,10 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-reading-focus-revisit")).toContainText("只看优先回看 1");
   await expect(page.getByTestId("project-reading-focus-parked")).toContainText("只看先留在池里 1");
   await expect(page.getByTestId("project-paper-stage-reader-panel")).toContainText("阅读接续建议");
-  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围已保存会话 1 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围 2 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("已保存会话 1 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("待安排 1 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("优先回看 1 篇");
   await expectStageScope("默认范围", "全部论文 · 全部接续状态", "当前在默认论文池范围");
   await expect(page.getByTestId(`project-stage-reader-candidate-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId(`project-stage-reader-link-${paperId}`)).toContainText("优先回看");
@@ -356,6 +359,8 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自状态中心");
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("全部论文");
   await expectStageScope("来自状态中心", "全部论文 · 只看先留在池里", "当前范围来自右侧阅读回流");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围 1 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("待安排 1 篇");
   await expect(page.getByTestId("project-stage-scope-reset")).toContainText("回到默认范围");
   await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
   await expect(page.getByTestId("project-paper-section-revisit")).toHaveCount(0);
@@ -380,6 +385,8 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await page.getByTestId("project-smart-view-pending_summary").click();
   await expect(page.getByTestId("project-paper-scope-origin")).toContainText("来自智能视图");
   await expectStageScope("来自智能视图", "待摘要 · 只看优先回看", "当前范围来自智能视图切换");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前范围 0 篇");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("待安排 0 篇");
   await expect(page.getByTestId("project-stage-empty-scope-hint")).toContainText("当前组合范围暂时没有论文");
   await expect(page.getByTestId("project-stage-empty-scope-hint")).toContainText("回到全部论文");
   await expect(page.getByTestId("project-stage-scope-clear-smart-view")).toContainText("回到全部论文");
