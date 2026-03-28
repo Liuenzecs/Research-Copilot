@@ -18,7 +18,7 @@ async function openSeededPaperReader(page: Page, title: string, options?: { stri
   await openSeededProject(page);
   const paperCard = page.locator(".project-paper-card", { hasText: title });
   await expect(paperCard).toBeVisible();
-  const readerLink = paperCard.getByRole("link", { name: /打开高级阅读器|继续阅读/ });
+  const readerLink = paperCard.getByRole("link", { name: /打开高级阅读器|继续阅读|优先回看/ });
   if (options?.stripResumeQuery) {
     const href = await readerLink.getAttribute("href");
     if (!href) {
@@ -309,9 +309,27 @@ test("surfaces reader session state back in the project workspace", async ({ pag
   await page.getByTestId("reader-return-project").click();
   await page.waitForURL(/\/projects\/\d+$/);
 
+  const secondReaderTestId = await page.locator('[data-testid^="project-open-reader-"]').nth(1).getAttribute("data-testid");
+  const secondPaperId = secondReaderTestId?.match(/project-open-reader-(\d+)/)?.[1];
+  expect(secondPaperId).toBeTruthy();
+  if (!secondPaperId) {
+    throw new Error("expected second paper id in project workspace");
+  }
+
   await expect(page.getByTestId(`project-reader-state-${paperId}`)).toContainText("阅读会话已保存");
+  await expect(page.getByTestId(`project-reader-state-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId(`project-reader-state-${paperId}`)).toContainText("待回看 1 段");
-  await expect(page.getByTestId(`project-open-reader-${paperId}`)).toContainText("继续阅读");
+  await expect(page.getByTestId(`project-open-reader-${paperId}`)).toContainText("优先回看");
+  await expect(page.getByTestId(`project-reader-state-${secondPaperId}`)).toContainText("先留在池里");
+  await expect(page.getByTestId(`project-open-reader-${secondPaperId}`)).toContainText("打开高级阅读器");
+  await expect(page.getByTestId("project-paper-section-revisit")).toContainText("优先回看");
+  await expect(page.getByTestId("project-paper-section-revisit")).toContainText("待回看 1 段");
+  await expect(page.getByTestId("project-paper-section-parked")).toContainText("先留在池里");
+  await expect(page.getByTestId("project-paper-section-parked")).toContainText("打开高级阅读器");
+  await expect(page.getByTestId("project-paper-stage-reader-panel")).toContainText("阅读接续建议");
+  await expect(page.getByTestId("project-stage-reader-summary")).toContainText("当前视图已保存会话 1 篇");
+  await expect(page.getByTestId(`project-stage-reader-candidate-${paperId}`)).toContainText("优先回看");
+  await expect(page.getByTestId(`project-stage-reader-link-${paperId}`)).toContainText("优先回看");
   await expect(page.getByTestId("project-reader-overview")).toContainText("已保存会话 1 篇");
   await expect(page.getByTestId("project-reader-overview")).toContainText("待回看 1 篇 / 1 段");
   await expect(page.getByTestId(`project-reader-candidate-${paperId}`)).toContainText("待回看 1 段");

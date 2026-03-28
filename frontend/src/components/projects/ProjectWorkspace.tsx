@@ -95,6 +95,13 @@ type ProjectPaperReadingState = {
   resumePath: string;
 };
 
+type ProjectPaperReadingSection = {
+  key: "revisit" | "continue" | "parked";
+  title: string;
+  hint: string;
+  items: ResearchProjectWorkspace["papers"][number][];
+};
+
 type SearchScopeFilter = "all" | "not_in_project" | "in_project";
 type DownloadFilter = "all" | "downloaded" | "not_downloaded";
 
@@ -148,6 +155,31 @@ function readerModeLabel(mode: PaperReaderSession["viewMode"]) {
     default:
       return mode;
   }
+}
+
+function projectReaderDecision(readerState?: ProjectPaperReadingState | null) {
+  if (!readerState) {
+    return {
+      tone: "parked" as const,
+      label: "先留在池里",
+      actionLabel: "打开高级阅读器",
+      summary: "还没有本地阅读会话，可先留在论文池，等需要深读时再进入阅读器。",
+    };
+  }
+  if (readerState.session.revisitParagraphIds.length > 0) {
+    return {
+      tone: "revisit" as const,
+      label: "优先回看",
+      actionLabel: "优先回看",
+      summary: `待回看 ${readerState.session.revisitParagraphIds.length} 段，建议先回到上次停下的位置继续确认。`,
+    };
+  }
+  return {
+    tone: "continue" as const,
+    label: "继续阅读",
+    actionLabel: "继续阅读",
+    summary: "阅读会话已保存，可以直接沿着上次停留位置继续往下读。",
+  };
 }
 
 function evidenceKindLabel(kind: string) {
@@ -1328,6 +1360,78 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
       return timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt);
     })
     .slice(0, 3);
+  const activeSmartViewLabel = workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文";
+  const filteredReaderStates = filteredProjectPapers
+    .map((item) => readerStateByPaperId.get(item.paper.id) ?? null)
+    .filter((item): item is ProjectPaperReadingState => Boolean(item));
+  const filteredRevisitCandidates = [...filteredReaderStates]
+    .filter((item) => item.session.revisitParagraphIds.length > 0)
+    .sort((left, right) => {
+      const revisitGap = right.session.revisitParagraphIds.length - left.session.revisitParagraphIds.length;
+      if (revisitGap !== 0) return revisitGap;
+      return timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt);
+    })
+    .slice(0, 3);
+  const filteredContinueCandidates = [...filteredReaderStates]
+    .filter((item) => item.session.revisitParagraphIds.length === 0)
+    .sort((left, right) => timestampValue(right.session.savedAt) - timestampValue(left.session.savedAt))
+    .slice(0, 2);
+  const filteredPendingReaderCount = Math.max(filteredProjectPapers.length - filteredReaderStates.length, 0);
+  const filteredRevisitParagraphCount = filteredReaderStates.reduce((sum, item) => sum + item.session.revisitParagraphIds.length, 0);
+  const groupedProjectPaperSections: ProjectPaperReadingSection[] = (() => {
+    const revisit: ResearchProjectWorkspace["papers"][number][] = [];
+    const continueReading: ResearchProjectWorkspace["papers"][number][] = [];
+    const parked: ResearchProjectWorkspace["papers"][number][] = [];
+
+    for (const item of filteredProjectPapers) {
+      const readerState = readerStateByPaperId.get(item.paper.id) ?? null;
+      if (readerState?.session.revisitParagraphIds.length) {
+        revisit.push(item);
+        continue;
+      }
+      if (readerState) {
+        continueReading.push(item);
+        continue;
+      }
+      parked.push(item);
+    }
+
+    revisit.sort((left, right) => {
+      const leftState = readerStateByPaperId.get(left.paper.id);
+      const rightState = readerStateByPaperId.get(right.paper.id);
+      const revisitGap =
+        (rightState?.session.revisitParagraphIds.length ?? 0) - (leftState?.session.revisitParagraphIds.length ?? 0);
+      if (revisitGap !== 0) return revisitGap;
+      return timestampValue(rightState?.session.savedAt) - timestampValue(leftState?.session.savedAt);
+    });
+    continueReading.sort((left, right) => {
+      const leftState = readerStateByPaperId.get(left.paper.id);
+      const rightState = readerStateByPaperId.get(right.paper.id);
+      return timestampValue(rightState?.session.savedAt) - timestampValue(leftState?.session.savedAt);
+    });
+    parked.sort((left, right) => left.sort_order - right.sort_order || left.id - right.id);
+
+    return [
+      {
+        key: "revisit",
+        title: "优先回看",
+        hint: "这些论文已经留下待回看段落，优先回到上次停下的位置继续确认。",
+        items: revisit,
+      },
+      {
+        key: "continue",
+        title: "继续阅读",
+        hint: "这些论文已经有阅读会话，可以直接沿着上次停留位置往下读。",
+        items: continueReading,
+      },
+      {
+        key: "parked",
+        title: "先留在池里",
+        hint: "这些论文还没有建立本地阅读会话，可先保留在池里等待后续处理。",
+        items: parked,
+      },
+    ].filter((section) => section.items.length > 0);
+  })();
 
   function scrollToSection(ref: RefObject<HTMLElement | null>) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1777,77 +1881,103 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 {filteredProjectPapers.length === 0 ? (
                   <EmptyState title="项目里还没有论文" hint="先把候选论文加入项目，再继续提取证据和起草综述。" />
                 ) : (
-                  filteredProjectPapers.map((item) => {
-                    const checked = selectedPaperIds.includes(item.paper.id);
-                    const readerState = readerStateByPaperId.get(item.paper.id);
-                    const readerEntryPath = readerState?.resumePath ?? paperReaderPath(item.paper.id, undefined, undefined, projectId);
-                    return (
-                      <div key={item.id} className="project-paper-card">
-                        <div className="project-paper-card-top">
-                          <label className="project-paper-check">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => {
-                                setSelectedPaperIds((current) => {
-                                  if (event.target.checked) return Array.from(new Set([...current, item.paper.id]));
-                                  return current.filter((paperId) => paperId !== item.paper.id);
-                                });
-                              }}
-                            />
-                            <span>用于本次 AI 动作</span>
-                          </label>
-                          <span className="subtle">排序 {item.sort_order}</span>
-                        </div>
-                        <strong>{item.paper.title_en}</strong>
-                        <div className="subtle">
-                          {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
-                        </div>
-                        {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
-                        {readerState ? (
-                          <>
-                            <div className="reader-chip-row" data-testid={`project-reader-state-${item.paper.id}`}>
-                              <span className="reader-chip">阅读会话已保存</span>
-                              {readerState.session.revisitParagraphIds.length > 0 ? (
-                                <span
-                                  className="reader-chip"
-                                  style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#c2410c" }}
-                                >
-                                  待回看 {readerState.session.revisitParagraphIds.length} 段
-                                </span>
-                              ) : null}
-                              {readerState.session.pageNo ? <span className="reader-chip">停在第 {readerState.session.pageNo} 页</span> : null}
-                            </div>
-                            <div className="subtle">
-                              上次阅读 {formatDateTime(readerState.session.savedAt)} · {readerModeLabel(readerState.session.viewMode)}
-                              {readerState.session.paragraphId ? ` · 记住段落 ${readerState.session.paragraphId}` : ""}
-                            </div>
-                          </>
-                        ) : null}
-                        <div className="subtle">
-                          PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
-                        </div>
-                        <div className="subtle">
-                          复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
-                        </div>
-                        <div className="subtle">
-                          可信度 {integrityStatusLabel(item.integrity_status)}
-                          {item.integrity_note ? ` · ${item.integrity_note}` : ""}
-                        </div>
-                        <div className="projects-inline-actions">
-                          <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={readerEntryPath}>
-                            {readerState ? "继续阅读" : "打开高级阅读器"}
-                          </Link>
-                          <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
-                            加入证据板
-                          </Button>
-                          <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: item.paper.id, projectId }))}>
-                            进入复现工作区
-                          </Button>
-                        </div>
+                  groupedProjectPaperSections.map((section) => (
+                    <div
+                      key={section.key}
+                      className="project-paper-list-section"
+                      data-testid={`project-paper-section-${section.key}`}
+                    >
+                      <div className="project-paper-list-section-head">
+                        <strong>{section.title}</strong>
+                        <span className="reader-chip">{section.items.length} 篇</span>
                       </div>
-                    );
-                  })
+                      <div className="subtle">{section.hint}</div>
+                      <div className="project-paper-section-grid">
+                        {section.items.map((item) => {
+                          const checked = selectedPaperIds.includes(item.paper.id);
+                          const readerState = readerStateByPaperId.get(item.paper.id);
+                          const readerDecision = projectReaderDecision(readerState);
+                          const readerEntryPath = readerState?.resumePath ?? paperReaderPath(item.paper.id, undefined, undefined, projectId);
+                          return (
+                            <div key={item.id} className="project-paper-card">
+                              <div className="project-paper-card-top">
+                                <label className="project-paper-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) => {
+                                      setSelectedPaperIds((current) => {
+                                        if (event.target.checked) return Array.from(new Set([...current, item.paper.id]));
+                                        return current.filter((paperId) => paperId !== item.paper.id);
+                                      });
+                                    }}
+                                  />
+                                  <span>用于本次 AI 动作</span>
+                                </label>
+                                <span className="subtle">排序 {item.sort_order}</span>
+                              </div>
+                              <strong>{item.paper.title_en}</strong>
+                              <div className="subtle">
+                                {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
+                              </div>
+                              {item.read_at ? <div className="subtle">已读于 {item.read_at}</div> : null}
+                              <div
+                                className={`project-paper-reader-panel tone-${readerDecision.tone}`.trim()}
+                                data-testid={`project-reader-state-${item.paper.id}`}
+                              >
+                                <div className="project-paper-reader-top">
+                                  <strong>阅读接续</strong>
+                                  <span className="reader-chip">{readerDecision.label}</span>
+                                </div>
+                                <div className="subtle">{readerDecision.summary}</div>
+                                {readerState ? (
+                                  <>
+                                    <div className="reader-chip-row">
+                                      <span className="reader-chip">阅读会话已保存</span>
+                                      {readerState.session.revisitParagraphIds.length > 0 ? (
+                                        <span
+                                          className="reader-chip"
+                                          style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#c2410c" }}
+                                        >
+                                          待回看 {readerState.session.revisitParagraphIds.length} 段
+                                        </span>
+                                      ) : null}
+                                      {readerState.session.pageNo ? <span className="reader-chip">停在第 {readerState.session.pageNo} 页</span> : null}
+                                    </div>
+                                    <div className="subtle">
+                                      上次阅读 {formatDateTime(readerState.session.savedAt)} · {readerModeLabel(readerState.session.viewMode)}
+                                      {readerState.session.paragraphId ? ` · 记住段落 ${readerState.session.paragraphId}` : ""}
+                                    </div>
+                                  </>
+                                ) : null}
+                              </div>
+                              <div className="subtle">
+                                PDF {pdfStatusLabel(item.pdf_status)} · 摘要 {item.summary_count} · 心得 {item.reflection_count} · 证据 {item.evidence_count}
+                              </div>
+                              <div className="subtle">
+                                复现 {reproductionStatusLabel(item.latest_reproduction_status || "") || (item.reproduction_count > 0 ? "已有记录" : "未开始")}
+                              </div>
+                              <div className="subtle">
+                                可信度 {integrityStatusLabel(item.integrity_status)}
+                                {item.integrity_note ? ` · ${item.integrity_note}` : ""}
+                              </div>
+                              <div className="projects-inline-actions">
+                                <Link className="button secondary" data-testid={`project-open-reader-${item.paper.id}`} to={readerEntryPath}>
+                                  {readerDecision.actionLabel}
+                                </Link>
+                                <Button className="secondary" type="button" onClick={() => void handleQuickEvidenceFromPaper(item.paper)}>
+                                  加入证据板
+                                </Button>
+                                <Button className="secondary" type="button" onClick={() => navigate(reproductionPath({ paperId: item.paper.id, projectId }))}>
+                                  进入复现工作区
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -1898,11 +2028,19 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 </div>
                 <div className="project-mini-stat">
                   <strong>当前智能视图</strong>
-                  <div className="subtle">{workspace.smart_views.find((view) => view.key === activeSmartView)?.label || "全部论文"}</div>
+                  <div className="subtle">{activeSmartViewLabel}</div>
                 </div>
                 <div className="project-mini-stat">
                   <strong>当前批量选中</strong>
                   <div className="subtle">{selectedPaperIds.length} 篇</div>
+                </div>
+                <div className="project-mini-stat">
+                  <strong>可继续阅读</strong>
+                  <div className="subtle">{filteredReaderStates.length} 篇有本地会话</div>
+                </div>
+                <div className="project-mini-stat">
+                  <strong>优先回看</strong>
+                  <div className="subtle">{filteredRevisitCandidates.length} 篇 / {filteredRevisitParagraphCount} 段</div>
                 </div>
               </div>
               <div className="tool-action-row" style={{ justifyContent: "flex-start" }}>
@@ -1915,6 +2053,79 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 <Button className="secondary" type="button" onClick={() => setActiveStage("evidence")}>
                   转到证据板
                 </Button>
+              </div>
+              <div className="project-paper-stage-reader-panel" data-testid="project-paper-stage-reader-panel">
+                <div className="project-paper-stage-reader-top">
+                  <div>
+                    <strong>阅读接续建议</strong>
+                    <div className="subtle">
+                      只看当前智能视图，先判断哪些论文该优先回看、哪些可以继续读、哪些先留在池里待处理。
+                    </div>
+                  </div>
+                  <span className="reader-chip" data-testid="project-stage-reader-summary">
+                    当前视图已保存会话 {filteredReaderStates.length} 篇 · 优先回看 {filteredRevisitCandidates.length} 篇
+                  </span>
+                </div>
+                {filteredRevisitCandidates.length > 0 ? (
+                  <div className="project-reader-return-list">
+                    <strong>优先回看候选</strong>
+                    {filteredRevisitCandidates.map((state) => (
+                      <div
+                        key={state.paperId}
+                        className="project-reader-return-item tone-revisit"
+                        data-testid={`project-stage-reader-candidate-${state.paperId}`}
+                      >
+                        <div className="project-reader-return-top">
+                          <strong>{state.paperTitle}</strong>
+                          <span className="reader-chip">优先回看</span>
+                        </div>
+                        <div className="subtle">
+                          待回看 {state.session.revisitParagraphIds.length} 段 · 上次停在第 {state.session.pageNo ?? "?"} 页 · {readerModeLabel(state.session.viewMode)}
+                          {state.session.paragraphId ? ` · 段落 ${state.session.paragraphId}` : ""}
+                        </div>
+                        <Link
+                          className="button secondary"
+                          data-testid={`project-stage-reader-link-${state.paperId}`}
+                          to={state.resumePath}
+                        >
+                          优先回看
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {filteredContinueCandidates.length > 0 ? (
+                  <div className="project-reader-return-list">
+                    <strong>继续阅读候选</strong>
+                    {filteredContinueCandidates.map((state) => (
+                      <div
+                        key={state.paperId}
+                        className="project-reader-return-item tone-continue"
+                        data-testid={`project-stage-continue-candidate-${state.paperId}`}
+                      >
+                        <div className="project-reader-return-top">
+                          <strong>{state.paperTitle}</strong>
+                          <span className="reader-chip">继续阅读</span>
+                        </div>
+                        <div className="subtle">
+                          上次阅读 {formatDateTime(state.session.savedAt)} · 停在第 {state.session.pageNo ?? "?"} 页 · {readerModeLabel(state.session.viewMode)}
+                          {state.session.paragraphId ? ` · 段落 ${state.session.paragraphId}` : ""}
+                        </div>
+                        <Link className="button secondary" to={state.resumePath}>
+                          继续阅读
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {filteredPendingReaderCount > 0 ? (
+                  <div className="subtle">
+                    当前视图另外还有 {filteredPendingReaderCount} 篇还没有本地阅读会话，可先留在论文池待处理，等需要深读时再进入阅读器。
+                  </div>
+                ) : null}
+                {!filteredReaderStates.length && filteredPendingReaderCount === 0 ? (
+                  <div className="subtle">当前视图还没有论文可安排阅读接续。</div>
+                ) : null}
               </div>
             </Card>
           ) : null}

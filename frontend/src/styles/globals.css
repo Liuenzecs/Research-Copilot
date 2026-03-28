@@ -1126,12 +1126,68 @@ textarea {
   background: linear-gradient(180deg, rgba(255, 247, 237, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
 }
 
+.project-reader-return-item.tone-continue {
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
 .project-reader-return-top {
   display: flex;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+}
+
+.project-paper-reader-panel,
+.project-paper-stage-reader-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(191, 208, 215, 0.72);
+  background: linear-gradient(180deg, rgba(248, 251, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-paper-reader-panel.tone-revisit {
+  border-color: rgba(251, 146, 60, 0.32);
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-paper-reader-panel.tone-continue {
+  border-color: rgba(59, 130, 246, 0.22);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-paper-reader-panel.tone-parked {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.project-paper-reader-top,
+.project-paper-stage-reader-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.project-paper-list-section {
+  display: grid;
+  gap: 12px;
+}
+
+.project-paper-list-section-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.project-paper-section-grid {
+  display: grid;
+  gap: 12px;
 }
 
 .project-list-card {

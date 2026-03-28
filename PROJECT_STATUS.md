@@ -14,6 +14,45 @@
 
 ## 当前阶段
 
+### 2S：项目论文池里的阅读接续筛选与排序一致性
+
+阶段目标：
+
+- 让用户不仅能在论文池里看到“优先回看 / 继续阅读 / 先留在池里”的分层结果，还能进一步按这些阅读接续状态快速筛选与聚焦。
+- 保持智能视图、论文池分组和阅读接续排序语义一致，减少切换视图后还要重新肉眼找目标论文的摩擦。
+- 继续复用当前前端本地阅读会话与派生状态，不为这一轮引入新的后端排序字段或额外查询。
+
+## 最近完成
+
+### 2R：项目论文池里的阅读接续分组
+
+阶段目标：
+
+- 让论文池列表本身按“优先回看 / 继续阅读 / 先留在池里”分层显示，而不是把所有论文平铺在一个列表里。
+- 让主舞台给出的阅读接续判断，能在论文池列表里被立刻对应到具体论文，而不是用户还要自己二次扫读。
+- 保持现有智能视图、批量操作和本地阅读会话方案稳定，不引入新的后端排序字段。
+
+已完成：
+
+- 项目论文池列表现在会直接分成“优先回看”“继续阅读”“先留在池里”三个阅读接续分组，先把真正需要马上回去看的论文顶出来。
+- 分组内排序会优先复用现有本地阅读会话：待回看组按待回看段落数和最近保存时间排序，继续阅读组按最近阅读时间排序，先留在池里组保留原有项目排序。
+- 新增端到端断言，覆盖“已有待回看论文进入优先回看分组、未建立会话论文留在先留在池里分组”的链路，保证论文池分组不会悄悄退化回平铺列表。
+
+变更文件：
+
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/styles/globals.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode"`：4 项通过
+
+下一阶段：
+
+- 进入 `2S：项目论文池里的阅读接续筛选与排序一致性`
+
 ### 2Q：项目论文池里的阅读接续入口
 
 阶段目标：
@@ -22,7 +61,27 @@
 - 把论文池卡片、项目主舞台和本地阅读会话重新接上，减少“先找到论文池卡片、再回忆是否读过、再切回其他区域确认”的摩擦。
 - 延续当前前端本地阅读会话方案，先做低风险的阅读接续可见性增强，不额外引入新的后端阅读同步模型。
 
-## 最近完成
+已完成：
+
+- 每张项目论文卡片现在都会直接展示“阅读接续”判断：如果有待回看段落，会明确标成“优先回看”；如果已有会话但没有待回看，会标成“继续阅读”；没有会话时则标成“先留在池里”。
+- 项目论文卡片上的主按钮已改成跟随阅读状态动态切换，不再把“有待回看段落”的论文继续写成笼统的“继续阅读”。
+- 论文池主舞台新增“阅读接续建议”卡片，只看当前智能视图就能快速看到有多少篇可继续阅读、多少篇应优先回看，以及当前最值得回去的候选论文。
+- 顺手修复了这一轮里再次暴露出来的 `ProjectWorkspace` hooks 顺序问题，避免项目工作台在加载前后因为派生阅读分组引入 `Rendered more hooks than during the previous render`。
+
+变更文件：
+
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/styles/globals.css`
+- `frontend/tests/e2e/project-workspace.spec.ts`
+
+验证结果：
+
+- `cd frontend && npm run build`：通过
+- `cd frontend && npx playwright test tests/e2e/project-workspace.spec.ts --grep "restores the last reader session after reload|persists revisit markers with the reader session|surfaces reader session state back in the project workspace|shows a page-level reading overview in text mode"`：4 项通过
+
+下一阶段：
+
+- 进入 `2R：项目论文池里的阅读接续分组`
 
 ### 2P：搜索工作台里的阅读接续入口
 
@@ -340,12 +399,14 @@
 - `2N` 批注回跳与顶部摘要继续去重收口
 - `2O` 项目工作台里的阅读延续线索
 - `2P` 搜索工作台里的阅读接续入口
+- `2Q` 项目论文池里的阅读接续入口
+- `2R` 项目论文池里的阅读接续分组
 
 ## 后续待办
 
 ### P0：继续压低阅读摩擦
 
-- [ ] 做 `2Q`：把本地阅读会话和待回看线索继续带进项目论文池主舞台，让已加入项目的论文也能直接判断“继续读 / 优先回看 / 暂不处理”。
+- [ ] 做 `2S`：让项目论文池里的阅读接续状态继续和筛选、排序保持一致，减少切换智能视图后重新找目标论文的摩擦。
 - [ ] 继续观察 Windows 下文本选择、滚动、段落定位和键盘焦点之间是否还有残余冲突。
 - [ ] 如果再发现高频“刚跳过去但焦点摘要没跟上”的路径，优先补回归再补交互收口。
 
