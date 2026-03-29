@@ -444,12 +444,44 @@ def test_ai_curated_saved_search_and_batch_add(client, monkeypatch):
         },
     )
     assert launch_resp.status_code == 202
-    task_id = launch_resp.json()['task']['id']
+    launch_payload = launch_resp.json()
+    task_id = launch_payload['task']['id']
+
+    streamed_collecting_step = None
+    with client.stream('GET', launch_payload['stream_url']) as response:
+        assert response.status_code == 200
+        for line in response.iter_lines():
+            if not line:
+                continue
+            event = json.loads(line)
+            if event['type'] == 'progress' and event.get('step', {}).get('step_key') == 'collecting_candidates':
+                streamed_collecting_step = event['step']
+            if event['type'] == 'task_completed':
+                break
+
+    assert streamed_collecting_step is not None
+    assert streamed_collecting_step['progress_unit'] == 'candidate'
+    assert streamed_collecting_step['progress_current'] is not None
+    assert streamed_collecting_step['progress_total'] is not None
+    assert streamed_collecting_step['progress_meta']['total_queries'] >= 4
 
     task_payload = _wait_for_task(client, project_id, task_id, timeout=10.0)
     assert task_payload['status'] == 'completed'
     saved_search_id = task_payload['output_json']['saved_search_id']
     assert saved_search_id
+    assert len(task_payload['progress_steps']) >= 4
+
+    steps_by_key = {step['step_key']: step for step in task_payload['progress_steps']}
+    assert steps_by_key['planning_queries']['progress_unit'] == 'query'
+    assert steps_by_key['planning_queries']['progress_current'] == steps_by_key['planning_queries']['progress_total']
+    assert 4 <= steps_by_key['planning_queries']['progress_total'] <= 6
+    assert steps_by_key['collecting_candidates']['progress_unit'] == 'candidate'
+    assert steps_by_key['collecting_candidates']['progress_total'] >= 20
+    assert steps_by_key['reranking_candidates']['progress_unit'] == 'paper'
+    assert steps_by_key['reranking_candidates']['progress_total'] == 20
+    assert steps_by_key['saving_preview']['progress_unit'] == 'paper'
+    assert steps_by_key['saving_preview']['progress_current'] == 20
+    assert steps_by_key['saving_preview']['progress_total'] == 20
 
     saved_search_detail = client.get(f'/projects/{project_id}/saved-searches/{saved_search_id}')
     assert saved_search_detail.status_code == 200

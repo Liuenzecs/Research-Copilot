@@ -238,14 +238,20 @@ class PaperSearchService:
 
         return [], None
 
-    async def _provider_results(self, query: str, limit: int, sources: list[str]) -> tuple[list[SearchPaper], list[str], list[str]]:
+    async def _provider_results(
+        self,
+        query: str,
+        limit: int,
+        sources: list[str],
+        provider_queries: list[str] | None = None,
+    ) -> tuple[list[SearchPaper], list[str], list[str]]:
         fixture_papers = load_search_fixtures(query, limit)
         if fixture_papers is not None:
             filtered = [item for item in fixture_papers if item.source in sources]
             effective_sources = sorted({item.source for item in filtered})
             return filtered, [], effective_sources or ['fixture']
 
-        provider_queries = build_provider_queries(query)
+        provider_queries = provider_queries or build_provider_queries(query)
         if not provider_queries:
             return [], [], []
 
@@ -546,20 +552,33 @@ class PaperSearchService:
             matched_in_latest_run=matched_in_latest_run,
         )
 
-    async def execute_search(self, db: Session, payload: PaperSearchRequest) -> SearchExecutionResult:
+    async def execute_search(
+        self,
+        db: Session,
+        payload: PaperSearchRequest,
+        *,
+        provider_queries: list[str] | None = None,
+        disable_seed_recall: bool = False,
+    ) -> SearchExecutionResult:
         sources = _normalize_source_list(payload.sources)
-        raw_papers, warnings, _effective_sources = await self._provider_results(payload.query.strip(), payload.limit, sources)
-        recalled_seeds, seed_warnings = await self._recall_classic_seeds(
-            query=payload.query.strip(),
-            limit=payload.limit,
-            sources=sources,
-            existing_papers=raw_papers,
+        raw_papers, warnings, _effective_sources = await self._provider_results(
+            payload.query.strip(),
+            payload.limit,
+            sources,
+            provider_queries=provider_queries,
         )
-        for warning in seed_warnings:
-            if warning not in warnings:
-                warnings.append(warning)
-        if recalled_seeds:
-            raw_papers.extend(recalled_seeds)
+        if not disable_seed_recall:
+            recalled_seeds, seed_warnings = await self._recall_classic_seeds(
+                query=payload.query.strip(),
+                limit=payload.limit,
+                sources=sources,
+                existing_papers=raw_papers,
+            )
+            for warning in seed_warnings:
+                if warning not in warnings:
+                    warnings.append(warning)
+            if recalled_seeds:
+                raw_papers.extend(recalled_seeds)
 
         filtered_raw = [paper for paper in raw_papers if self._paper_matches_metadata_filters(paper, payload)]
         ranked_papers = dedupe_and_rank(filtered_raw, payload.limit * 3, payload.query, sort_mode=payload.sort_mode)

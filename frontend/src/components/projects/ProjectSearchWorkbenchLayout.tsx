@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import Button from "@/components/common/Button";
 import Card from "@/components/common/Card";
 import EmptyState from "@/components/common/EmptyState";
+import ProjectTaskProgressPanel from "@/components/projects/ProjectTaskProgressPanel";
 import StatusStack from "@/components/common/StatusStack";
 import type { PaperReaderSession } from "@/lib/paperReaderSession";
 import { paperReaderPath } from "@/lib/routes";
@@ -13,6 +14,7 @@ import type {
   PaperSearchSortMode,
   ProjectSavedSearch,
   ProjectSearchRun,
+  ResearchProjectTaskDetail,
   SearchCandidate,
 } from "@/lib/types";
 
@@ -110,6 +112,7 @@ type Props = {
   selectedPaperIds: number[];
   setSelectedPaperIds: Dispatch<SetStateAction<number[]>>;
   selectedCandidates: SearchCandidate[];
+  curationTask: ResearchProjectTaskDetail | null;
   trail: PaperCitationTrail | null;
   trailSelection: number[];
   setTrailSelection: Dispatch<SetStateAction<number[]>>;
@@ -173,6 +176,7 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
     selectedPaperIds,
     setSelectedPaperIds,
     selectedCandidates,
+    curationTask,
     trail,
     trailSelection,
     setTrailSelection,
@@ -355,6 +359,8 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
           </div>
         ) : null}
       </div>
+
+      {hasProject && curationTask ? <ProjectTaskProgressPanel task={curationTask} /> : null}
 
       <StatusStack items={[...(error ? [{ variant: "error" as const, message: error }] : []), ...warnings.map((message) => ({ variant: "warning" as const, message })), ...(notice ? [{ variant: "success" as const, message: notice }] : [])]} />
 

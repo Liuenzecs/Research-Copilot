@@ -377,4 +377,4 @@ def test_ai_curation_classic_bucket_prefers_classic_seeds_over_vertical_applicat
     assert 'Attention Is All You Need' in classic_titles
     assert 'ReAct: Synergizing Reasoning and Acting in Language Models' in classic_titles
     assert 'Using fine-tuned large language models to parse clinical notes in musculoskeletal pain disorders' not in classic_titles
-    assert not warnings
+    assert any('未召回经典必读' in warning for warning in warnings)

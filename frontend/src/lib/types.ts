@@ -241,6 +241,11 @@ export type ResearchProjectTaskProgressStep = {
   status: string;
   message: string;
   related_paper_ids: number[];
+  progress_current?: number | null;
+  progress_total?: number | null;
+  progress_percent?: number | null;
+  progress_unit?: string;
+  progress_meta?: Record<string, unknown>;
   created_at?: string | null;
 };
 

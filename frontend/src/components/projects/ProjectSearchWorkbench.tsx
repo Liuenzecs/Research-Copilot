@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "@/components/common/Button";
+import { mergeProjectTaskStep } from "@/components/projects/ProjectTaskProgressPanel";
 import ProjectSearchWorkbenchLayout from "@/components/projects/ProjectSearchWorkbenchLayout";
 import {
   batchAddProjectPapers,
@@ -33,6 +34,8 @@ import type {
   ProjectSavedSearchDetail,
   ProjectSearchRun,
   ResearchProject,
+  ResearchProjectTaskDetail,
+  ResearchProjectTaskEvent,
   SearchCandidate,
 } from "@/lib/types";
 
@@ -133,6 +136,7 @@ export default function ProjectSearchWorkbench({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [curationTask, setCurationTask] = useState<ResearchProjectTaskDetail | null>(null);
   const [aiNeed, setAiNeed] = useState(project?.research_question || "");
   const [aiTargetCount, setAiTargetCount] = useState(100);
   const [aiProfile, setAiProfile] = useState<"balanced" | "repro_first" | "frontier_first">("balanced");
@@ -440,9 +444,17 @@ export default function ProjectSearchWorkbench({
       });
 
       setNotice("AI 选文任务已启动，正在生成预览……");
+      setCurationTask(launch.task);
       let savedSearchId = options?.savedSearchId ?? null;
       await streamProjectTask(projectId, launch.task.id, {
         onEvent: (event) => {
+          const typedEvent = event as ResearchProjectTaskEvent;
+          if (typedEvent.type === "progress" && typedEvent.step) {
+            setCurationTask((current) => (current ? mergeProjectTaskStep(current, typedEvent.step!) : current));
+          }
+          if ((typedEvent.type === "task_started" || typedEvent.type === "task_completed" || typedEvent.type === "task_failed") && typedEvent.task) {
+            setCurationTask(typedEvent.task);
+          }
           if (event.type === "progress" && event.step?.message) {
             setNotice(event.step.message);
           }
@@ -630,6 +642,7 @@ export default function ProjectSearchWorkbench({
       selectedPaperIds={selectedPaperIds}
       setSelectedPaperIds={setSelectedPaperIds}
       selectedCandidates={selectedCandidates}
+      curationTask={curationTask}
       trail={trail}
       trailSelection={trailSelection}
       setTrailSelection={setTrailSelection}

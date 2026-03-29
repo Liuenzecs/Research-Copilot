@@ -176,6 +176,46 @@
 
 ## 最近完成
 
+### 补充批次：项目搜索 AI 选文实时进度反馈
+
+阶段目标：
+
+- 让项目搜索工作台里的 AI 选文不再只是“已启动，请等待”的黑盒，而是把当前做到哪一步、还差多少、是否缺经典主干候选直接展示出来。
+- 进度反馈优先服务于“等得明白、看得懂、知道要不要继续等”的阅读准备体验，不为了炫技另起一套新任务系统或新轮询协议。
+- 第一轮先把后端任务流的阶段进度补齐，并在项目搜索工作台复用已有任务面板收口，不在这一批同时重做搜索布局。
+
+已完成：
+
+- 后端 AI 选文任务新增细粒度阶段进度，按“规划检索 -> 收集候选 -> 去重过滤 -> 重排入选 -> 构建预览 -> 保存预览”持续回流，并补充 `progress_current / progress_total / progress_percent / progress_unit / progress_meta`。
+- 项目搜索工作台在启动 AI 选文后会实时订阅任务流，边跑边更新任务面板；不再只靠顶部短提示，而是能看到当前阶段、进度条、候选累计数、已完成检索式数量与缺失经典种子数量。
+- AI 选文候选收集阶段改为先按 canonical key 去重、补召回经典主干论文，再继续过滤与重排，避免高相关但偏垂直的候选把经典主干挤掉后，前端还完全看不出任务正在做什么。
+- 任务详情流和 SSE 流统一带出新增进度字段，项目搜索工作台与项目工作台可以复用同一套任务进度面板口径，不为 AI 选文单独做一套展示模型。
+- 后端测试补上“流式进度事件 + 最终任务详情都带阶段进度”的断言，覆盖 `planning_queries / collecting_candidates / reranking_candidates / saving_preview` 等关键节点。
+
+变更文件：
+
+- `backend/app/api/routes/projects.py`
+- `backend/app/models/schemas/project.py`
+- `backend/app/services/paper_search/service.py`
+- `backend/app/services/project/curation_service.py`
+- `backend/app/services/project/service.py`
+- `backend/app/tests/test_project_search.py`
+- `backend/app/tests/test_projects.py`
+- `frontend/src/components/projects/ProjectSearchWorkbench.tsx`
+- `frontend/src/components/projects/ProjectSearchWorkbenchLayout.tsx`
+- `frontend/src/lib/types.ts`
+- `frontend/src/styles/globals.css`
+
+验证结果：
+
+- `pytest backend/app/tests/test_projects.py -q`：通过
+- `pytest backend/app/tests/test_project_search.py -q`：通过
+- `cd frontend && npm run build`：通过
+
+下一阶段：
+
+- 继续进入 `4F：论文标题中英双语显示`
+
 ### 4E：文库“我的文献”分页与已下载视图
 
 阶段目标：

@@ -943,6 +943,11 @@ class ProjectService:
                 status=str(snapshot.get('status') or ''),
                 message=str(snapshot.get('message') or ''),
                 related_paper_ids=[int(item) for item in snapshot.get('related_paper_ids', [])],
+                progress_current=int(snapshot['progress_current']) if snapshot.get('progress_current') is not None else None,
+                progress_total=int(snapshot['progress_total']) if snapshot.get('progress_total') is not None else None,
+                progress_percent=float(snapshot['progress_percent']) if snapshot.get('progress_percent') is not None else None,
+                progress_unit=str(snapshot.get('progress_unit') or ''),
+                progress_meta=dict(snapshot.get('progress_meta') or {}),
                 created_at=row.created_at,
             )
         return sorted(latest.values(), key=lambda item: (item.created_at or datetime.min.replace(tzinfo=timezone.utc), item.step_key))
@@ -1175,7 +1180,15 @@ class ProjectService:
         message: str,
         related_paper_ids: list[int],
         label: str | None = None,
+        progress_current: int | None = None,
+        progress_total: int | None = None,
+        progress_percent: float | None = None,
+        progress_unit: str = '',
+        progress_meta: dict[str, Any] | None = None,
     ) -> None:
+        normalized_percent = progress_percent
+        if normalized_percent is None and progress_current is not None and progress_total:
+            normalized_percent = max(0.0, min(100.0, (progress_current / max(progress_total, 1)) * 100.0))
         workflow_service.add_artifact(
             db,
             task_id,
@@ -1189,6 +1202,11 @@ class ProjectService:
                 'status': status,
                 'message': message,
                 'related_paper_ids': related_paper_ids,
+                'progress_current': progress_current,
+                'progress_total': progress_total,
+                'progress_percent': normalized_percent,
+                'progress_unit': progress_unit,
+                'progress_meta': progress_meta or {},
             },
         )
 
@@ -2725,6 +2743,119 @@ class ProjectService:
             saved_search = db.get(ResearchProjectSavedSearchRecord, int(saved_search_id))
             if saved_search is None or saved_search.project_id != project.id:
                 raise ValueError('Saved search not found')
+
+        planned_queries = await project_curation_service.plan_queries(user_need, selection_profile, target_count)
+        self._record_progress(
+            db,
+            task_id=task.id,
+            project_id=project.id,
+            step_key='planning_queries',
+            status='completed',
+            message=f'已规划 {len(planned_queries)} 条检索式。',
+            related_paper_ids=[],
+            progress_current=len(planned_queries),
+            progress_total=max(len(planned_queries), 1),
+            progress_unit='query',
+            progress_meta={'planned_queries': planned_queries},
+        )
+        await self._maybe_pause_for_progress()
+
+        def progress_callback(
+            *,
+            step_key: str,
+            status: str,
+            message: str,
+            related_paper_ids: list[int] | None = None,
+            progress_current: int | None = None,
+            progress_total: int | None = None,
+            progress_unit: str = '',
+            progress_meta: dict[str, Any] | None = None,
+        ) -> None:
+            self._record_progress(
+                db,
+                task_id=task.id,
+                project_id=project.id,
+                step_key=step_key,
+                status=status,
+                message=message,
+                related_paper_ids=related_paper_ids or [],
+                progress_current=progress_current,
+                progress_total=progress_total,
+                progress_unit=progress_unit,
+                progress_meta=progress_meta,
+            )
+
+        curation_result = await project_curation_service.curate_project_saved_search_result(
+            db,
+            project=project,
+            user_need=user_need,
+            target_count=target_count,
+            selection_profile=selection_profile,
+            saved_search=saved_search,
+            sources=sources,
+            planned_queries=planned_queries,
+            progress_callback=progress_callback,
+        )
+        saved_search = curation_result.saved_search
+        run = curation_result.run
+        items = curation_result.items
+        warnings = curation_result.warnings
+        selected_ids = [item.paper.id for item in items]
+
+        workflow_service.add_artifact(
+            db,
+            task.id,
+            artifact_type='saved_search',
+            artifact_ref_type='research_project_saved_searches',
+            artifact_ref_id=saved_search.id,
+            role='output',
+            snapshot_json={'search_mode': saved_search.search_mode, 'last_run_id': saved_search.last_run_id},
+        )
+        workflow_service.add_artifact(
+            db,
+            task.id,
+            artifact_type='search_run',
+            artifact_ref_type='research_project_search_runs',
+            artifact_ref_id=run.id,
+            role='output',
+            snapshot_json={'result_count': run.result_count},
+        )
+        self._log_activity(
+            db,
+            project_id=project.id,
+            event_type='ai_reading_list_curated',
+            title='AI 选文预览已生成',
+            message=f'已根据研究需求生成 {len(items)} 篇 AI 选文预览。',
+            ref_type='research_project_saved_searches',
+            ref_id=saved_search.id,
+            metadata={
+                'saved_search_id': saved_search.id,
+                'search_run_id': run.id,
+                'target_count': target_count,
+                'selection_profile': selection_profile,
+            },
+        )
+        return {
+            'saved_search_id': saved_search.id,
+            'run_id': run.id,
+            'selected_count': len(items),
+            'planned_queries': planned_queries,
+            'warnings': warnings,
+            'paper_ids': selected_ids,
+            'metrics': {
+                'planned_query_count': curation_result.metrics.planned_query_count,
+                'executed_query_count': curation_result.metrics.executed_query_count,
+                'desired_pool_size': curation_result.metrics.desired_pool_size,
+                'raw_candidate_count': curation_result.metrics.raw_candidate_count,
+                'canonical_candidate_count': curation_result.metrics.canonical_candidate_count,
+                'filtered_candidate_count': curation_result.metrics.filtered_candidate_count,
+                'selected_count': curation_result.metrics.selected_count,
+                'preview_count': curation_result.metrics.preview_count,
+                'required_seed_count': curation_result.metrics.required_seed_count,
+                'recalled_seed_count': curation_result.metrics.recalled_seed_count,
+                'missing_seed_titles': curation_result.metrics.missing_seed_titles,
+            },
+        }
 
         planned_queries = await project_curation_service.plan_queries(user_need, selection_profile, target_count)
         self._record_progress(

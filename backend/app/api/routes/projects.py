@@ -509,6 +509,11 @@ async def stream_project_task(project_id: int, task_id: int, db: Session = Depen
                                 'status': str(snapshot.get('status') or ''),
                                 'message': str(snapshot.get('message') or ''),
                                 'related_paper_ids': [int(item) for item in snapshot.get('related_paper_ids', [])],
+                                'progress_current': int(snapshot['progress_current']) if snapshot.get('progress_current') is not None else None,
+                                'progress_total': int(snapshot['progress_total']) if snapshot.get('progress_total') is not None else None,
+                                'progress_percent': float(snapshot['progress_percent']) if snapshot.get('progress_percent') is not None else None,
+                                'progress_unit': str(snapshot.get('progress_unit') or ''),
+                                'progress_meta': dict(snapshot.get('progress_meta') or {}),
                                 'created_at': progress_row.created_at.isoformat() if progress_row.created_at else None,
                             },
                         }

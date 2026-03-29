@@ -157,6 +157,11 @@ class ResearchProjectTaskProgressStepOut(BaseModel):
     status: str
     message: str
     related_paper_ids: list[int] = Field(default_factory=list)
+    progress_current: int | None = None
+    progress_total: int | None = None
+    progress_percent: float | None = None
+    progress_unit: str = ''
+    progress_meta: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
 
 
