@@ -1,3 +1,26 @@
+type BilingualPaperLike = {
+  title_en?: string | null;
+  title_zh?: string | null;
+};
+
+function normalizePaperTitle(value?: string | null) {
+  return (value ?? '').trim();
+}
+
+export function paperPrimaryTitle(paper: BilingualPaperLike): string {
+  const zh = normalizePaperTitle(paper.title_zh);
+  if (zh && !zh.startsWith('【中文辅助结果】')) return zh;
+  return normalizePaperTitle(paper.title_en) || '未命名论文';
+}
+
+export function paperSecondaryTitle(paper: BilingualPaperLike): string {
+  const zh = normalizePaperTitle(paper.title_zh);
+  const en = normalizePaperTitle(paper.title_en);
+  if (!zh || zh.startsWith('【中文辅助结果】') || !en) return '';
+  if (zh === en) return '';
+  return en;
+}
+
 export function formatDateTime(value?: string | null, fallback = '未记录'): string {
   if (!value) return fallback;
   const parsed = new Date(value);

@@ -5,6 +5,7 @@ def build_paper_index_item(paper, state=None) -> dict:
     return {
         'id': paper.id,
         'title_en': paper.title_en,
+        'title_zh': paper.title_zh or '',
         'authors': paper.authors or '',
         'source': paper.source,
         'year': paper.year,

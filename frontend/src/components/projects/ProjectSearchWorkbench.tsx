@@ -6,6 +6,7 @@ import Button from "@/components/common/Button";
 import { mergeProjectTaskStep } from "@/components/projects/ProjectTaskProgressPanel";
 import ProjectSearchWorkbenchLayout from "@/components/projects/ProjectSearchWorkbenchLayout";
 import {
+  backfillPaperTitleTranslations,
   batchAddProjectPapers,
   createProjectSavedSearch,
   createProjectSearchRun,
@@ -143,6 +144,7 @@ export default function ProjectSearchWorkbench({
   const [aiPreviewBucket, setAiPreviewBucket] = useState<(typeof AI_BUCKET_OPTIONS)[number]["key"]>("all");
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const attemptedTitleBackfillRef = useRef<Set<number>>(new Set());
 
   const hasProject = Boolean(projectId);
   const savedSearchesQuery = useQuery({
@@ -189,6 +191,37 @@ export default function ProjectSearchWorkbench({
   const selectedCandidates = items.filter((item) => selectedPaperIds.includes(item.paper.id));
   const trailItems = trail ? [...trail.references, ...trail.cited_by] : [];
   const selectedTrailItems = trailItems.filter((item) => trailSelection.includes(item.paper.id));
+
+  useEffect(() => {
+    const missingIds = displayedItems
+      .slice(0, 20)
+      .filter((item) => !item.paper.title_zh?.trim() && !attemptedTitleBackfillRef.current.has(item.paper.id))
+      .map((item) => item.paper.id);
+    if (!missingIds.length) return;
+
+    missingIds.forEach((paperId) => attemptedTitleBackfillRef.current.add(paperId));
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await backfillPaperTitleTranslations(missingIds);
+        if (cancelled || result.updated_paper_ids.length === 0) return;
+        const byId = new Map(result.items.map((paper) => [paper.id, paper]));
+        if (!cancelled) {
+          setItems((current) =>
+            current.map((item) => (byId.has(item.paper.id) ? { ...item, paper: { ...item.paper, ...byId.get(item.paper.id)! } } : item)),
+          );
+        }
+      } catch {
+        // Keep English titles when background translation is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayedItems]);
+
   const filterSummary = useMemo(() => {
     const values: string[] = [];
     if (filters.year_from || filters.year_to) values.push(`年份 ${filters.year_from ?? "不限"}-${filters.year_to ?? "不限"}`);

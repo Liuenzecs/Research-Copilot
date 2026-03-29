@@ -1,14 +1,14 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import Card from '@/components/common/Card';
 import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
-import { listLibrary } from '@/lib/api';
-import { formatDateTime } from '@/lib/presentation';
+import { backfillPaperTitleTranslations, listLibrary } from '@/lib/api';
+import { formatDateTime, paperPrimaryTitle, paperSecondaryTitle } from '@/lib/presentation';
 import { paperReaderPath } from '@/lib/routes';
 import { readingStatusLabel, READING_STATUS_OPTIONS, reproInterestLabel, REPRO_INTEREST_OPTIONS } from '@/lib/researchState';
 import { usePageTitle } from '@/lib/usePageTitle';
@@ -110,6 +110,7 @@ export default function LibraryRoute() {
   const [readingStatus, setReadingStatus] = useState('');
   const [reproInterest, setReproInterest] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const attemptedTitleBackfillRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     listLibrary()
@@ -131,7 +132,7 @@ export default function LibraryRoute() {
       if (reproInterest && item.repro_interest !== reproInterest) return false;
       if (!lowered) return true;
 
-      const haystacks = [item.title_en, item.authors, item.source, item.year ? String(item.year) : '']
+      const haystacks = [item.title_zh, item.title_en, item.authors, item.source, item.year ? String(item.year) : '']
         .join(' ')
         .toLowerCase();
       return haystacks.includes(lowered);
@@ -151,6 +152,31 @@ export default function LibraryRoute() {
   useEffect(() => {
     setCurrentPage((page) => clampLibraryPage(page, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    const missingIds = pagedItems
+      .filter((item) => !item.title_zh?.trim() && !attemptedTitleBackfillRef.current.has(item.id))
+      .map((item) => item.id);
+    if (!missingIds.length) return;
+
+    missingIds.forEach((paperId) => attemptedTitleBackfillRef.current.add(paperId));
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await backfillPaperTitleTranslations(missingIds);
+        if (cancelled || result.updated_paper_ids.length === 0) return;
+        const refreshed = await listLibrary();
+        if (!cancelled) setItems(refreshed.items);
+      } catch {
+        // Keep English titles when background title translation is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pagedItems]);
 
   return (
     <>
@@ -243,7 +269,12 @@ export default function LibraryRoute() {
                 <li key={String(item.id)} className="library-item">
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={{ display: 'grid', gap: 6 }}>
-                      <strong style={{ fontSize: 16, lineHeight: 1.5 }}>{item.title_en}</strong>
+                      <div className="paper-title-stack">
+                        <strong className="paper-title-primary" style={{ fontSize: 16, lineHeight: 1.5 }}>
+                          {paperPrimaryTitle(item)}
+                        </strong>
+                        {paperSecondaryTitle(item) ? <div className="paper-title-secondary">{paperSecondaryTitle(item)}</div> : null}
+                      </div>
                       <div className="subtle">{item.authors || '作者信息暂缺'}</div>
                       <div className="subtle">
                         {item.source} · {item.year ?? '年份未知'} · 阅读状态 {readingStatusLabel(item.reading_status)} · 复现兴趣{' '}

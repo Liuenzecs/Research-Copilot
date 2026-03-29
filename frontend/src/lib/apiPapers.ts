@@ -75,6 +75,16 @@ export async function downloadPaper(paperId: number) {
   });
 }
 
+export async function backfillPaperTitleTranslations(paperIds: number[], options?: { force?: boolean }) {
+  return request<{ updated_paper_ids: number[]; skipped_paper_ids: number[]; items: Paper[] }>('/papers/title-translations/backfill', {
+    method: 'POST',
+    body: JSON.stringify({
+      paper_ids: paperIds,
+      force: options?.force ?? false,
+    }),
+  });
+}
+
 export async function quickSummary(paperId: number) {
   return request<Summary>('/summaries/quick', {
     method: 'POST',

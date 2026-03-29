@@ -2393,6 +2393,21 @@ body {
   line-height: 1.75;
 }
 
+.paper-title-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.paper-title-primary {
+  margin: 0;
+}
+
+.paper-title-secondary {
+  color: #60707d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .projects-home-hero {
   grid-template-columns: minmax(0, 1fr) minmax(420px, 0.88fr);
   gap: 22px;

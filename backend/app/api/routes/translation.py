@@ -75,6 +75,11 @@ async def translate_key_fields(payload: KeyFieldTranslationRequest, db: Session 
             locator_json='{}',
             english_text=english_text,
         )
+        if payload.target_type == 'paper' and field == 'title' and getattr(record, 'title_zh', '') != row.content_zh:
+            record.title_zh = row.content_zh or ''
+            db.add(record)
+            db.commit()
+            db.refresh(record)
         outputs.append(to_translation_out(row))
 
     workflow_service.update_task(db, task, status='completed', output_json={'count': len(outputs)})

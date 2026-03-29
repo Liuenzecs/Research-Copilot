@@ -27,6 +27,7 @@ class PaperOut(BaseModel):
     source: str
     source_id: str
     title_en: str
+    title_zh: str = ''
     abstract_en: str
     authors: str
     year: int | None = None
@@ -95,6 +96,17 @@ class PaperCitationTrailResponse(BaseModel):
 class PaperDownloadRequest(BaseModel):
     paper_id: int | None = None
     arxiv_id: str | None = None
+
+
+class PaperTitleTranslationBatchRequest(BaseModel):
+    paper_ids: list[int] = Field(default_factory=list)
+    force: bool = False
+
+
+class PaperTitleTranslationBatchResponse(BaseModel):
+    updated_paper_ids: list[int] = Field(default_factory=list)
+    skipped_paper_ids: list[int] = Field(default_factory=list)
+    items: list[PaperOut] = Field(default_factory=list)
 
 
 class PaperDownloadResponse(BaseModel):

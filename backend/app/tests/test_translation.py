@@ -1,5 +1,7 @@
 import json
 
+from app.db.session import SessionLocal
+from app.models.db.paper_record import PaperRecord
 from app.services.paper_search.base import SearchPaper
 
 
@@ -185,3 +187,38 @@ def test_segment_selection_stream_reuses_cached_result(client, monkeypatch):
     assert events == [events[-1]]
     assert events[-1]['type'] == 'complete'
     assert events[-1]['translation']['content_zh'] == '缓存流式翻译'
+
+
+def test_paper_title_backfill_updates_title_zh_and_returns_updated_item(client, monkeypatch):
+    with SessionLocal() as db:
+        paper = PaperRecord(
+            source='arxiv',
+            source_id='title-backfill-paper',
+            title_en='Large Language Models are Zero-Shot Reasoners',
+            title_zh='',
+            abstract_en='Test abstract',
+            authors='Author A',
+            year=2022,
+            venue='NeurIPS',
+        )
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        paper_id = paper.id
+
+    monkeypatch.setattr(
+        'app.services.translation.service.translation_service._provider',
+        lambda: _FakeSelectionProvider(complete_text='大语言模型是零样本推理器'),
+    )
+
+    response = client.post('/papers/title-translations/backfill', json={'paper_ids': [paper_id]})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['updated_paper_ids'] == [paper_id]
+    assert payload['skipped_paper_ids'] == []
+    assert payload['items'][0]['title_zh'] == '大语言模型是零样本推理器'
+
+    with SessionLocal() as db:
+        paper = db.get(PaperRecord, paper_id)
+        assert paper is not None
+        assert paper.title_zh == '大语言模型是零样本推理器'

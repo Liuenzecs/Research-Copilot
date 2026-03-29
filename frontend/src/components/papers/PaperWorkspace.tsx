@@ -9,6 +9,7 @@ import EmptyState from '@/components/common/EmptyState';
 import Loading from '@/components/common/Loading';
 import StatusStack from '@/components/common/StatusStack';
 import {
+  backfillPaperTitleTranslations,
   createAiPaperReflection,
   createPaperReflection,
   deepSummaryStream,
@@ -20,7 +21,7 @@ import {
   quickSummaryStream,
   updatePaperResearchState,
 } from '@/lib/api';
-import { formatDateTime, summaryTypeLabel, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
+import { formatDateTime, paperPrimaryTitle, paperSecondaryTitle, summaryTypeLabel, taskStatusLabel, taskTypeLabel } from '@/lib/presentation';
 import { queryKeys } from '@/lib/queryKeys';
 import {
   readingStatusLabel,
@@ -206,6 +207,26 @@ export default function PaperWorkspaceView({
       setError((workspaceQuery.error as Error).message);
     }
   }, [workspaceQuery.error]);
+
+  useEffect(() => {
+    const paper = workspace?.paper;
+    if (!paper?.id || paper.title_zh?.trim()) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await backfillPaperTitleTranslations([paper.id]);
+        if (cancelled || result.updated_paper_ids.length === 0) return;
+        await queryClient.invalidateQueries({ queryKey: queryKeys.papers.workspace(paper.id) });
+      } catch {
+        // Keep English title when background translation is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient, workspace?.paper?.id, workspace?.paper?.title_zh]);
 
   async function reload() {
     if (!paperId) {
@@ -509,9 +530,12 @@ export default function PaperWorkspaceView({
 
       {showPaperHeader ? (
         <div className="card">
-          <h3 className="title" style={{ fontSize: 18 }}>
-            {currentPaper.title_en}
-          </h3>
+          <div className="paper-title-stack">
+            <h3 className="title paper-title-primary" style={{ fontSize: 18 }}>
+              {paperPrimaryTitle(currentPaper)}
+            </h3>
+            {paperSecondaryTitle(currentPaper) ? <div className="paper-title-secondary">{paperSecondaryTitle(currentPaper)}</div> : null}
+          </div>
           <p className="subtle">{currentPaper.authors || '作者未知'}</p>
           <p className="subtle">
             {currentPaper.source} · {currentPaper.year ?? '年份未知'} · PDF：{currentPaper.pdf_local_path || '未下载'}

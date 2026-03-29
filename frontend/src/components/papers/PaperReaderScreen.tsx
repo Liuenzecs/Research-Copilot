@@ -12,6 +12,7 @@ import Loading from "@/components/common/Loading";
 import StatusStack from "@/components/common/StatusStack";
 import PaperWorkspaceView from "@/components/papers/PaperWorkspace";
 import {
+  backfillPaperTitleTranslations,
   createProjectEvidence,
   createPaperAnnotation,
   downloadPaper,
@@ -29,7 +30,7 @@ import {
   type PaperReaderTextDensity,
   type PaperReaderTextWidth,
 } from "@/lib/paperReaderPreferences";
-import { formatDateTime } from "@/lib/presentation";
+import { formatDateTime, paperPrimaryTitle, paperSecondaryTitle } from "@/lib/presentation";
 import { loadPaperReaderSession, savePaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
 import { queryKeys } from "@/lib/queryKeys";
 import { paperReaderPath, projectPath } from "@/lib/routes";
@@ -574,6 +575,26 @@ export default function PaperReaderScreen({
       setError((readerQuery.error as Error).message || "论文阅读页加载失败，请稍后重试。");
     }
   }, [readerQuery.error]);
+
+  useEffect(() => {
+    if (!reader?.paper.id || reader.paper.title_zh?.trim()) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await backfillPaperTitleTranslations([reader.paper.id]);
+        if (cancelled || result.updated_paper_ids.length === 0) return;
+        await queryClient.invalidateQueries({ queryKey: queryKeys.papers.reader(reader.paper.id) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.papers.workspace(reader.paper.id) });
+      } catch {
+        // Keep English title when background translation is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient, reader?.paper.id, reader?.paper.title_zh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1834,7 +1855,10 @@ export default function PaperReaderScreen({
         <div className="paper-reader-header">
           <div>
             <div className="subtle">论文阅读</div>
-            <h2 className="title">{reader.paper.title_en}</h2>
+            <div className="paper-title-stack">
+              <h2 className="title paper-title-primary">{paperPrimaryTitle(reader.paper)}</h2>
+              {paperSecondaryTitle(reader.paper) ? <div className="paper-title-secondary">{paperSecondaryTitle(reader.paper)}</div> : null}
+            </div>
             <div className="reader-chip-row">
               <span className="reader-chip">{reader.paper.source.toUpperCase()}</span>
               {reader.paper.year ? <span className="reader-chip">{reader.paper.year}</span> : null}

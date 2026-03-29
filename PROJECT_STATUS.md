@@ -14,19 +14,19 @@
 
 ## 当前阶段
 
-### 4F：论文标题中英双语显示
+### 4D：周报工作区重构
 
 阶段目标：
 
-- 为已入库论文补上稳定的中文标题表达，同时保留原始英文标题，减少列表扫读时的语言切换成本。
-- 双语标题要先服务于文库、项目工作台和后续阅读入口的可扫读性，不为了“翻译完整覆盖”先引入高风险批处理。
-- 第一轮优先明确标题翻译的存储口径、显示层级和失败兜底，不在这一阶段同时扩展到摘要或正文翻译链路。
+- 把当前“别扭且鸡肋”的周报页，重构成真正服务每周回顾和成稿收口的工作台，而不是继续保留左右失衡、信息价值偏弱的旧布局。
+- 第一轮优先围绕“回顾本周发生了什么 -> 汇总关键材料 -> 编辑周报草稿”这条主链路收口，不在这一阶段把周报页继续扩成新的综合仪表盘。
+- 改造要优先提升扫读性、结构感和可用性，避免周报工作区继续和阅读主链路割裂。
 
 ## 待确认方案
 
 ### 2026-03-29：导航、项目入口、下载与周报重构方案
 
-这部分用于记录本轮阅读体验主线里的实施方向；其中 A、B、C、E 已落地，D、F 仍作为后续阶段排期依据。
+这部分用于记录本轮阅读体验主线里的实施方向；其中 A、B、C、E、F 已落地，D 仍作为后续阶段排期依据。
 
 #### A. 启动入口与“项目”导航改造（已实施）
 
@@ -142,7 +142,7 @@
 
 - 文库分页和项目论文池分页最好复用同一套分页组件与交互口径，避免两个地方长得完全不同。
 
-#### F. 论文标题中英双语显示
+#### F. 论文标题中英双语显示（已实施）
 
 拟定目标：
 
@@ -175,6 +175,59 @@
 6. 周报工作区重构
 
 ## 最近完成
+
+### 4F：论文标题中英双语显示
+
+阶段目标：
+
+- 为已入库论文补上稳定的中文标题表达，同时保留原始英文标题，减少列表扫读时的语言切换成本。
+- 双语标题先服务于文库、项目工作台、项目搜索工作台和阅读入口的可扫读性，不为了“翻译全覆盖”先把摘要或正文链路一起做大。
+- 第一轮优先把存储口径、可见入口、失败兜底与已有翻译能力对齐，避免后面各个列表各自临时翻译。
+
+已完成：
+
+- 论文表新增 `title_zh` 正式字段，并补上 Alembic 迁移；`PaperOut`、文库索引项和相关前端类型同步带出 `title_zh`，让中文标题成为稳定可复用的数据，而不是局部 UI 派生值。
+- 新增 `/papers/title-translations/backfill` 批量回填入口，按当前可见论文小批量补中文标题；优先复用已有翻译缓存，只有在拿到可用中文结果时才写入 `title_zh`，不会把“中文辅助占位文案”误写成论文标题。
+- 文库、项目工作台、项目搜索工作台、论文工作区、论文阅读器以及基础论文卡片/详情页统一改成“中文主标题 + 英文副标题”显示；无中文标题时平滑回退到原英文标题。
+- 文库本地筛选同时匹配中英文标题；项目工作台、项目搜索工作台、论文阅读页和论文工作区会在看到可见论文缺少中文标题时自动尝试后台回填，再静默刷新当前数据。
+- 当后端后续拿到更稳定的英文原标题并更新 `title_en` 时，会同步清空旧的 `title_zh`，避免中文标题与最新英文元数据错位。
+- 手动调用关键字段翻译时，如果翻译的是论文标题，也会同步回写 `title_zh`，避免翻译表和论文主记录长期分叉。
+
+变更文件：
+
+- `backend/app/models/db/paper_record.py`
+- `backend/app/models/schemas/paper.py`
+- `backend/app/api/routes/papers.py`
+- `backend/app/api/routes/translation.py`
+- `backend/app/services/translation/service.py`
+- `backend/app/services/paper_search/service.py`
+- `backend/app/services/project/service.py`
+- `backend/app/services/library/indexing.py`
+- `backend/app/db/migrations/versions/20260329_0005_paper_title_zh.py`
+- `backend/app/tests/test_translation.py`
+- `backend/app/tests/test_library.py`
+- `frontend/src/lib/types.ts`
+- `frontend/src/lib/presentation.ts`
+- `frontend/src/lib/apiPapers.ts`
+- `frontend/src/routes/library/LibraryRoute.tsx`
+- `frontend/src/components/projects/ProjectWorkspace.tsx`
+- `frontend/src/components/projects/ProjectSearchWorkbench.tsx`
+- `frontend/src/components/projects/ProjectSearchWorkbenchLayout.tsx`
+- `frontend/src/components/papers/PaperReaderScreen.tsx`
+- `frontend/src/components/papers/PaperWorkspace.tsx`
+- `frontend/src/components/papers/PaperCard.tsx`
+- `frontend/src/components/papers/PaperDetail.tsx`
+- `frontend/src/styles/globals.css`
+
+验证结果：
+
+- `pytest backend/app/tests/test_translation.py backend/app/tests/test_library.py -q`：通过
+- `pytest backend/app/tests/test_projects.py backend/app/tests/test_paper_reader.py -q`：通过
+- `cd frontend && npm run build`：通过
+
+下一阶段：
+
+- 进入 `4D：周报工作区重构`
 
 ### 补充批次：项目搜索 AI 选文实时进度反馈
 

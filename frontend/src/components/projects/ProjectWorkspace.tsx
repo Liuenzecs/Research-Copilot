@@ -27,8 +27,9 @@ import StatusStack from "@/components/common/StatusStack";
 import ProjectTaskProgressPanel, { mergeProjectTaskStep } from "@/components/projects/ProjectTaskProgressPanel";
 import ProjectSearchWorkbench from "@/components/projects/ProjectSearchWorkbench";
 import { loadPaperReaderSession, type PaperReaderSession } from "@/lib/paperReaderSession";
-import { reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
+import { paperPrimaryTitle, paperSecondaryTitle, reproductionStatusLabel, summaryTypeLabel, taskTypeLabel as sharedTaskTypeLabel } from "@/lib/presentation";
 import {
+  backfillPaperTitleTranslations,
   batchAddProjectPapers,
   batchUpdateProjectPaperState,
   createProjectEvidence,
@@ -599,6 +600,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
   const paperPoolRef = useRef<HTMLDivElement | null>(null);
   const evidenceBoardRef = useRef<HTMLDivElement | null>(null);
   const reviewSectionRef = useRef<HTMLDivElement | null>(null);
+  const attemptedTitleBackfillRef = useRef<Set<number>>(new Set());
   const streamAbortRef = useRef<AbortController | null>(null);
   const fallbackPollRef = useRef<number | null>(null);
   const evidenceTimersRef = useRef<Record<number, number | null>>({});
@@ -1675,6 +1677,31 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
     setPaperPoolPage((current) => clampProjectPaperPage(current, totalPaperPoolPages));
   }, [totalPaperPoolPages]);
 
+  useEffect(() => {
+    const missingIds = pagedProjectPaperSections
+      .flatMap((section) => section.items.map((item) => item.paper))
+      .filter((paper) => !paper.title_zh?.trim() && !attemptedTitleBackfillRef.current.has(paper.id))
+      .map((paper) => paper.id);
+    if (!missingIds.length) return;
+
+    missingIds.forEach((paperId) => attemptedTitleBackfillRef.current.add(paperId));
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await backfillPaperTitleTranslations(missingIds);
+        if (cancelled || result.updated_paper_ids.length === 0) return;
+        await loadWorkspace({ quiet: true });
+      } catch {
+        // Keep English titles when background translation is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pagedProjectPaperSections]);
+
   if (loading && !workspace) {
     return <Loading text="正在加载项目工作台..." />;
   }
@@ -2279,7 +2306,10 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                                   </label>
                                   <span className="subtle">排序 {item.sort_order}</span>
                                 </div>
-                                <strong>{item.paper.title_en}</strong>
+                                <div className="paper-title-stack">
+                                  <strong className="paper-title-primary">{paperPrimaryTitle(item.paper)}</strong>
+                                  {paperSecondaryTitle(item.paper) ? <div className="paper-title-secondary">{paperSecondaryTitle(item.paper)}</div> : null}
+                                </div>
                                 <div className="subtle">
                                   {item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}
                                 </div>
@@ -2587,7 +2617,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                 <option value="">未绑定具体论文</option>
                 {workspace.papers.map((item) => (
                   <option key={item.id} value={item.paper.id}>
-                    {item.paper.title_en}
+                    {paperPrimaryTitle(item.paper)}
                   </option>
                 ))}
               </select>
@@ -2958,7 +2988,7 @@ export default function ProjectWorkspace({ projectId }: { projectId: number }) {
                   {duplicateGroups.map((group) => (
                     <div key={group.key} className="project-linked-card">
                       <strong>{group.reason}</strong>
-                      <div className="subtle">{group.papers.map((item) => item.paper.title_en).join(" / ")}</div>
+                      <div className="subtle">{group.papers.map((item) => paperPrimaryTitle(item.paper)).join(" / ")}</div>
                       <div className="subtle">默认保留第一篇为 canonical，其余软合并过去。</div>
                       <Button className="secondary" type="button" onClick={() => void handleMergeDuplicateGroup(group)} disabled={duplicateBusy !== ""}>
                         {duplicateBusy === group.key ? "合并中..." : "执行软合并"}

@@ -292,6 +292,7 @@ class ProjectService:
             source=row.source,
             source_id=row.source_id,
             title_en=row.title_en,
+            title_zh=row.title_zh or '',
             abstract_en=row.abstract_en,
             authors=row.authors,
             year=row.year,
@@ -1314,6 +1315,7 @@ class ProjectService:
         changed = False
         if candidate.title_en and candidate.title_en != paper.title_en:
             paper.title_en = candidate.title_en
+            paper.title_zh = ''
             changed = True
         if candidate.abstract_en and len(candidate.abstract_en) > len(paper.abstract_en or ''):
             paper.abstract_en = candidate.abstract_en

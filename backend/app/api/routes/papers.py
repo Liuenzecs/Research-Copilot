@@ -38,6 +38,8 @@ from app.models.schemas.paper import (
     PaperSearchReasonOut,
     PaperSearchRequest,
     PaperSearchResponse,
+    PaperTitleTranslationBatchRequest,
+    PaperTitleTranslationBatchResponse,
     PaperWorkspaceResponse,
     SearchCandidateOut,
 )
@@ -52,6 +54,7 @@ from app.services.memory.service import memory_service
 from app.services.pdf.downloader import pdf_downloader
 from app.services.pdf.reader import paper_reader_service
 from app.services.reflection.service import reflection_service
+from app.services.translation.service import translation_service
 from app.services.workflow.service import workflow_service
 
 router = APIRouter(prefix='/papers', tags=['papers'])
@@ -112,6 +115,7 @@ def to_paper_out(p: PaperRecord) -> PaperOut:
         source=p.source,
         source_id=p.source_id,
         title_en=p.title_en,
+        title_zh=p.title_zh or '',
         abstract_en=p.abstract_en,
         authors=p.authors,
         year=p.year,
@@ -293,7 +297,9 @@ def upsert_paper(db: Session, paper) -> PaperRecord:
 
 
 def enrich_existing_paper(db: Session, row: PaperRecord, paper: SearchPaper) -> PaperRecord:
-    row.title_en = paper.title_en or row.title_en
+    if paper.title_en and paper.title_en != row.title_en:
+        row.title_en = paper.title_en
+        row.title_zh = ''
     if paper.abstract_en and len(paper.abstract_en) > len(row.abstract_en or ''):
         row.abstract_en = paper.abstract_en
     row.authors = paper.authors or row.authors
@@ -314,6 +320,34 @@ def enrich_existing_paper(db: Session, row: PaperRecord, paper: SearchPaper) -> 
     db.refresh(row)
     ensure_research_state(db, row.id)
     return row
+
+
+@router.post('/title-translations/backfill', response_model=PaperTitleTranslationBatchResponse)
+async def backfill_paper_title_translations(
+    payload: PaperTitleTranslationBatchRequest,
+    db: Session = Depends(get_db),
+) -> PaperTitleTranslationBatchResponse:
+    requested_ids: list[int] = []
+    for paper_id in payload.paper_ids:
+        if paper_id not in requested_ids:
+            requested_ids.append(int(paper_id))
+
+    updated_ids: list[int] = []
+    skipped_ids: list[int] = []
+    updated_items: list[PaperOut] = []
+    for paper_id in requested_ids[:20]:
+        paper = db.get(PaperRecord, paper_id)
+        if paper is None:
+            skipped_ids.append(paper_id)
+            continue
+        translated = await translation_service.ensure_paper_title_translation(db, paper, force=payload.force)
+        if translated:
+            updated_ids.append(paper_id)
+            updated_items.append(to_paper_out(db.get(PaperRecord, paper_id) or paper))
+        else:
+            skipped_ids.append(paper_id)
+
+    return PaperTitleTranslationBatchResponse(updated_paper_ids=updated_ids, skipped_paper_ids=skipped_ids, items=updated_items)
 
 
 def derive_related_task_id(db: Session, paper_id: int, summary_id: int | None) -> int | None:

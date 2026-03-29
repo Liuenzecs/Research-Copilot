@@ -7,6 +7,7 @@ import EmptyState from "@/components/common/EmptyState";
 import ProjectTaskProgressPanel from "@/components/projects/ProjectTaskProgressPanel";
 import StatusStack from "@/components/common/StatusStack";
 import type { PaperReaderSession } from "@/lib/paperReaderSession";
+import { paperPrimaryTitle, paperSecondaryTitle } from "@/lib/presentation";
 import { paperReaderPath } from "@/lib/routes";
 import type {
   PaperCitationTrail,
@@ -493,7 +494,10 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                         <span className="project-filter-chip is-static">{triageText(candidate.triage_status)}</span>
                       </div>
                     </div>
-                    <strong>{candidate.paper.title_en}</strong>
+                    <div className="paper-title-stack">
+                      <strong className="paper-title-primary">{paperPrimaryTitle(candidate.paper)}</strong>
+                      {paperSecondaryTitle(candidate.paper) ? <div className="paper-title-secondary">{paperSecondaryTitle(candidate.paper)}</div> : null}
+                    </div>
                     <div className="subtle">{candidate.reason.ranking_reason || candidate.reason.filter_reason}</div>
                     <div className="subtle">{candidate.paper.authors || "作者未知"} · {candidate.paper.year ?? "年份未知"} · 引用 {candidate.paper.citation_count ?? 0}</div>
                     <div className="subtle">{topicScoreLabel(candidate.reason.topic_match_score)} · 摘要 {candidate.summary_count} · 心得 {candidate.reflection_count} · 复现 {candidate.reproduction_count}</div>
@@ -564,7 +568,10 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
               <div className="search-inspector-card">
                 <div className="page-toolbar-row">
                   <div>
-                    <h3 className="title" style={{ fontSize: 20 }}>{activeCandidate.paper.title_en}</h3>
+                    <div className="paper-title-stack">
+                      <h3 className="title paper-title-primary" style={{ fontSize: 20 }}>{paperPrimaryTitle(activeCandidate.paper)}</h3>
+                      {paperSecondaryTitle(activeCandidate.paper) ? <div className="paper-title-secondary">{paperSecondaryTitle(activeCandidate.paper)}</div> : null}
+                    </div>
                     <p className="subtle" style={{ margin: "6px 0 0" }}>{activeCandidate.paper.authors || "作者未知"} · {activeCandidate.paper.venue || "Venue 未知"} · {activeCandidate.paper.year ?? "年份未知"}</p>
                   </div>
                   <span className="project-stat-chip">排序 #{activeCandidate.rank_position}</span>
@@ -654,7 +661,7 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                         {trail.references.map((item) => (
                           <div key={`ref-${item.paper.id}`} className="search-citation-item">
                             {projectId ? <label className="project-paper-check"><input type="checkbox" checked={trailSelection.includes(item.paper.id)} onChange={(event) => setTrailSelection((current) => event.target.checked ? [...new Set([...current, item.paper.id])] : current.filter((paperId) => paperId !== item.paper.id))} /><span>勾选加入项目</span></label> : null}
-                            <strong>{item.paper.title_en}</strong>
+                            <strong>{paperPrimaryTitle(item.paper)}</strong>
                             <div className="subtle">{item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}</div>
                           </div>
                         ))}
@@ -666,7 +673,7 @@ export default function ProjectSearchWorkbenchLayout(props: Props) {
                         {trail.cited_by.map((item) => (
                           <div key={`cit-${item.paper.id}`} className="search-citation-item">
                             {projectId ? <label className="project-paper-check"><input type="checkbox" checked={trailSelection.includes(item.paper.id)} onChange={(event) => setTrailSelection((current) => event.target.checked ? [...new Set([...current, item.paper.id])] : current.filter((paperId) => paperId !== item.paper.id))} /><span>勾选加入项目</span></label> : null}
-                            <strong>{item.paper.title_en}</strong>
+                            <strong>{paperPrimaryTitle(item.paper)}</strong>
                             <div className="subtle">{item.paper.authors || "作者未知"} · {item.paper.year ?? "年份未知"}</div>
                           </div>
                         ))}

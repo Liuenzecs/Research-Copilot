@@ -19,6 +19,7 @@ def test_library_list_exposes_my_paper_flags_and_recent_activity(client):
             source='arxiv',
             source_id='library-paper',
             title_en='Library Paper',
+            title_zh='文库论文',
             abstract_en='Library abstract',
             authors='Alice, Bob',
             year=2025,
@@ -103,6 +104,7 @@ def test_library_list_exposes_my_paper_flags_and_recent_activity(client):
     payload = response.json()
     assert payload['total'] == 1
     item = payload['items'][0]
+    assert item['title_zh'] == '文库论文'
     assert item['authors'] == 'Alice, Bob'
     assert item['is_downloaded'] is True
     assert item['in_memory'] is True

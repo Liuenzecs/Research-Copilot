@@ -65,6 +65,7 @@ def _paper_to_out(row: PaperRecord) -> PaperOut:
         source=row.source,
         source_id=row.source_id,
         title_en=row.title_en,
+        title_zh=row.title_zh or '',
         abstract_en=row.abstract_en,
         authors=row.authors,
         year=row.year,
@@ -352,6 +353,7 @@ class PaperSearchService:
                 source=paper.source,
                 source_id=paper.source_id,
                 title_en=paper.title_en,
+                title_zh='',
                 abstract_en=paper.abstract_en,
                 authors=paper.authors,
                 year=paper.year,
@@ -374,7 +376,9 @@ class PaperSearchService:
             db.refresh(row)
             return row
 
-        row.title_en = paper.title_en or row.title_en
+        if paper.title_en and paper.title_en != row.title_en:
+            row.title_en = paper.title_en
+            row.title_zh = ''
         if paper.abstract_en and len(paper.abstract_en) > len(row.abstract_en or ''):
             row.abstract_en = paper.abstract_en
         row.authors = paper.authors or row.authors

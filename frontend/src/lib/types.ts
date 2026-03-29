@@ -3,6 +3,7 @@ export type Paper = {
   source: string;
   source_id: string;
   title_en: string;
+  title_zh?: string;
   abstract_en: string;
   authors: string;
   year?: number;
@@ -467,6 +468,7 @@ export type PaperReader = PaperWorkspace & {
 export type LibraryItem = {
   id: number;
   title_en: string;
+  title_zh?: string;
   authors: string;
   source: string;
   year?: number;

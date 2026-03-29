@@ -17,6 +17,7 @@ class PaperRecord(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(50), index=True)
     source_id: Mapped[str] = mapped_column(String(255), index=True)
     title_en: Mapped[str] = mapped_column(Text)
+    title_zh: Mapped[str] = mapped_column(Text, default='')
     abstract_en: Mapped[str] = mapped_column(Text, default='')
     authors: Mapped[str] = mapped_column(Text, default='')
     year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

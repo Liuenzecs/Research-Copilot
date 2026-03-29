@@ -5,6 +5,7 @@ import re
 
 from sqlalchemy import select
 
+from app.models.db.paper_record import PaperRecord
 from app.models.db.translation_record import TranslationRecord
 from app.services.llm.provider_registry import get_primary_provider, get_selection_provider
 from app.services.llm.prompts.translate import TRANSLATE_SYSTEM, translation_prompt
@@ -48,6 +49,20 @@ class TranslationService:
             'local',
             'selection-fallback',
         )
+
+    @staticmethod
+    def _normalize_title_text(text: str) -> str:
+        return re.sub(r'\s+', ' ', (text or '').strip())
+
+    def _is_usable_title_translation(self, source_text: str, translated_text: str) -> bool:
+        normalized = self._normalize_title_text(translated_text)
+        if not normalized:
+            return False
+        if normalized.startswith('【中文辅助结果】'):
+            return False
+        if self._looks_like_invalid_chinese_translation(source_text, normalized):
+            return False
+        return self._contains_chinese(normalized)
 
     async def translate_selection_text(self, text: str) -> tuple[str, str, str]:
         provider = self.selection_provider()
@@ -108,6 +123,24 @@ class TranslationService:
                 .where(
                     TranslationRecord.unit_type == unit_type,
                     TranslationRecord.content_en_snapshot == english_text,
+                )
+                .order_by(TranslationRecord.updated_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+
+    def find_reusable_key_field_translation(self, db, *, field_name: str, english_text: str) -> TranslationRecord | None:
+        normalized = self._normalize_title_text(english_text)
+        if not normalized:
+            return None
+        return (
+            db.execute(
+                select(TranslationRecord)
+                .where(
+                    TranslationRecord.unit_type == 'key_field',
+                    TranslationRecord.field_name == field_name,
+                    TranslationRecord.content_en_snapshot == normalized,
                 )
                 .order_by(TranslationRecord.updated_at.desc())
             )
@@ -228,6 +261,86 @@ class TranslationService:
             provider_name=provider_name,
             model_name=model_name,
         )
+
+    async def ensure_paper_title_translation(self, db, paper: PaperRecord, *, force: bool = False) -> str | None:
+        source_title = self._normalize_title_text(paper.title_en)
+        if not source_title:
+            return None
+        if not force and self._normalize_title_text(paper.title_zh):
+            return self._normalize_title_text(paper.title_zh)
+
+        if self._contains_chinese(source_title):
+            paper.title_zh = source_title
+            db.add(paper)
+            db.commit()
+            db.refresh(paper)
+            return paper.title_zh
+
+        existing = self.find_existing_translation(
+            db,
+            target_type='paper',
+            target_id=paper.id,
+            unit_type='key_field',
+            field_name='title',
+            locator_json='{}',
+            english_text=source_title,
+        )
+        if existing is not None and self._is_usable_title_translation(source_title, existing.content_zh):
+            paper.title_zh = self._normalize_title_text(existing.content_zh)
+            db.add(paper)
+            db.commit()
+            db.refresh(paper)
+            return paper.title_zh
+
+        reusable = self.find_reusable_key_field_translation(db, field_name='title', english_text=source_title)
+        if reusable is not None and self._is_usable_title_translation(source_title, reusable.content_zh):
+            if existing is None:
+                self.clone_translation(
+                    db,
+                    source=reusable,
+                    target_type='paper',
+                    target_id=paper.id,
+                    unit_type='key_field',
+                    field_name='title',
+                    locator_json='{}',
+                    english_text=source_title,
+                )
+            paper.title_zh = self._normalize_title_text(reusable.content_zh)
+            db.add(paper)
+            db.commit()
+            db.refresh(paper)
+            return paper.title_zh
+
+        provider = self._provider()
+        if provider is None:
+            return None
+
+        try:
+            translated, provider_name, model_name = await self.translate_text(source_title)
+        except Exception:
+            return None
+
+        if not self._is_usable_title_translation(source_title, translated):
+            return None
+
+        normalized_zh = self._normalize_title_text(translated)
+        self.save_translation(
+            db,
+            target_type='paper',
+            target_id=paper.id,
+            unit_type='key_field',
+            field_name='title',
+            locator_json='{}',
+            english_text=source_title,
+            chinese_text=normalized_zh,
+            provider_name=provider_name,
+            model_name=model_name,
+        )
+        paper.title_zh = normalized_zh
+        db.add(paper)
+        db.commit()
+        db.refresh(paper)
+        return paper.title_zh
 
 
 translation_service = TranslationService()
